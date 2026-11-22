@@ -81,6 +81,10 @@ disappears, any Linux system can open the drives with `integritysetup open`,
 
 ## Develop
 
+All contributions follow Fedora best practices; see
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+
 ```sh
 python3 -m pytest
 ruff check . && ruff format --check .
