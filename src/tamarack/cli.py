@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Command-line interface.
 
-layerctl plan 4TB 4TB 8TB 8TB
-layerctl plan /dev/sda=4TB /dev/sdb=4TB /dev/sdc=8TB --commands
-layerctl plan 4TB 8TB --json
+tamarack plan 4TB 4TB 8TB 8TB
+tamarack plan /dev/sda=4TB /dev/sdb=4TB /dev/sdc=8TB --commands
+tamarack plan 4TB 8TB --json
 """
 
 from __future__ import annotations
@@ -96,9 +96,9 @@ def format_plan(plan: Plan) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="layerctl", description="Drobo-style mixed-drive storage planner."
+        prog="tamarack", description="Drobo-style mixed-drive storage planner."
     )
-    parser.add_argument("--version", action="version", version=f"layerctl {__version__}")
+    parser.add_argument("--version", action="version", version=f"tamarack {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
     plan = sub.add_parser("plan", help="show the layout for a set of drives (never writes)")
     plan.add_argument(
@@ -121,7 +121,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parsed = [parse_drive(a, i) for i, a in enumerate(args.drives, start=1)]
         plan = make_plan([s for _, s in parsed], [d for d, _ in parsed])
     except ValueError as exc:
-        print(f"layerctl: {exc}", file=sys.stderr)
+        print(f"tamarack: {exc}", file=sys.stderr)
         return 2
     if args.json:
         print(json.dumps(plan_to_dict(plan), indent=2))

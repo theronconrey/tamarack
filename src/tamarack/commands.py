@@ -13,11 +13,11 @@ from dataclasses import dataclass
 from .model import Layer, Level, Plan
 from .units import MiB
 
-VG_NAME = "lcvg"
+VG_NAME = "tamarack"
 LV_NAME = "data"
-MOUNT_POINT = "/srv/layerctl"
-FS_LABEL = "layerctl"
-META_PARTLABEL = "lc-meta"
+MOUNT_POINT = "/srv/tamarack"
+FS_LABEL = "tamarack"
+META_PARTLABEL = "tk-meta"
 LINUX_RAID_TYPE = "fd00"
 LINUX_FS_TYPE = "8300"
 
@@ -59,7 +59,7 @@ def partitions(plan: Plan) -> list[Partition]:
                         drive,
                         next_number[drive],
                         layer.slice_size,
-                        f"lc-l{layer.index}{suffix}",
+                        f"tk-l{layer.index}{suffix}",
                         layer.index,
                     )
                 )
@@ -68,11 +68,11 @@ def partitions(plan: Plan) -> list[Partition]:
 
 
 def integrity_name(part: Partition) -> str:
-    return f"lc-d{part.drive + 1}-p{part.number}"
+    return f"tk-d{part.drive + 1}-p{part.number}"
 
 
 def md_path(layer: Layer) -> str:
-    return f"/dev/md/lc-l{layer.index}"
+    return f"/dev/md/tk-l{layer.index}"
 
 
 def _q(value: str) -> str:
@@ -83,7 +83,7 @@ def render(plan: Plan) -> list[str]:
     """Return the command lines, with comments, that would build the plan."""
     parts = partitions(plan)
     lines: list[str] = [
-        "# layerctl dry run: nothing below has been executed.",
+        "# tamarack dry run: nothing below has been executed.",
         "# DESTRUCTIVE: these commands erase every listed drive.",
         "set -euo pipefail",
         "",
@@ -141,6 +141,6 @@ def render(plan: Plan) -> list[str]:
         f"btrfs subvolume create {MOUNT_POINT}/shares",
         f"btrfs subvolume create {MOUNT_POINT}/snapshots",
         "",
-        "# 6. Layout metadata to the lc-meta partitions (not implemented yet)",
+        "# 6. Layout metadata to the tk-meta partitions (not implemented yet)",
     ]
     return lines

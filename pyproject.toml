@@ -3,9 +3,9 @@ requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "layerctl"
+name = "tamarack-nas"
 version = "0.1.0"
-description = "Drobo-style mixed-drive storage planner for mdadm, dm-integrity, LVM and Btrfs"
+description = "Tamarack: Drobo-style mixed-drive storage planner for mdadm, dm-integrity, LVM and Btrfs"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "GPL-3.0-or-later"
@@ -15,7 +15,7 @@ dependencies = []
 dev = ["pytest", "ruff", "mypy"]
 
 [project.scripts]
-layerctl = "layerctl.cli:main"
+tamarack = "tamarack.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -35,4 +35,4 @@ ignore = ["SIM108"]  # keep commented if/else branches readable
 [tool.mypy]
 strict = true
 mypy_path = "src"
-packages = ["layerctl"]
+packages = ["tamarack"]
