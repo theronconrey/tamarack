@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Checks every push and pull request inside Fedora: the code checks, then an
+# RPM build from tamarack.spec, rpmlint, and an install of the built package.
+
+name: Fedora
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  fedora:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    container: registry.fedoraproject.org/${{ matrix.image }}
+    continue-on-error: ${{ matrix.image == 'fedora:rawhide' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["fedora:latest", "fedora:rawhide"]
+    steps:
+      - name: Install Fedora tooling
+        run: >
+          dnf -y install git-core rpm-build rpmdevtools rpmlint
+          python3-devel pyproject-rpm-macros python3-pytest python3-mypy ruff
+
+      - uses: actions/checkout@v4
+
+      - name: Code checks
+        run: |
+          python3 -m pytest
+          ruff check .
+          ruff format --check .
+          mypy
+
+      - name: Build the RPM
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          rpmdev-setuptree
+          version=$(rpmspec -q --srpm --qf '%{version}' tamarack.spec)
+          git archive --format=tar.gz --prefix="tamarack-$version/" \
+            -o "$HOME/rpmbuild/SOURCES/tamarack-$version.tar.gz" HEAD
+          # Resolve the dynamic BuildRequires from %generate_buildrequires.
+          for attempt in 1 2 3; do
+            rpmbuild -br tamarack.spec && break
+            dnf -y builddep "$HOME"/rpmbuild/SRPMS/tamarack-*.buildreqs.nosrc.rpm
+          done
+          rpmbuild -ba tamarack.spec
+
+      - name: rpmlint
+        run: |
+          rpmlint tamarack.spec "$HOME"/rpmbuild/SRPMS/tamarack-*.src.rpm \
+            "$HOME"/rpmbuild/RPMS/noarch/tamarack-*.rpm
+
+      - name: Install and smoke-test the package
+        run: |
+          dnf -y install "$HOME"/rpmbuild/RPMS/noarch/tamarack-*.noarch.rpm
+          cd /
+          tamarack --version
+          tamarack plan 4TB 4TB 8TB 8TB
+          tamarack grow /dev/sda=4TB --add /dev/sdb=4TB
+          rpm -q --qf '%{LICENSE}\n' tamarack

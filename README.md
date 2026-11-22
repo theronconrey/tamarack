@@ -18,7 +18,7 @@ writes to a disk yet.
 ## Try it
 
 ```sh
-python3 -m pip install -e '.[dev]'
+# On Fedora: sudo dnf install python3-pytest python3-mypy ruff
 tamarack plan 4TB 4TB 8TB 8TB
 tamarack plan /dev/sda=4TB /dev/sdb=8TB --json
 tamarack plan /dev/sda=4TB /dev/sdb=4TB /dev/sdc=8TB /dev/sdd=8TB --commands   # dry run
@@ -120,7 +120,14 @@ ruff check . && ruff format --check .
 mypy
 ```
 
+## Packaging
+
+Tamarack ships as an RPM built from [`tamarack.spec`](tamarack.spec) under the
+Fedora Python Packaging Guidelines. Every push and pull request is tested in a
+Fedora container: code checks, RPM build, rpmlint, and an install of the built
+package. Packit Copr builds for every supported Fedora release are configured
+in [`.packit.yaml`](.packit.yaml).
+
 ## License
 
-GPL-3.0-or-later. Add the official license text from
-<https://www.gnu.org/licenses/gpl-3.0.txt> as `LICENSE` before publishing.
+GPL-3.0-or-later; see [LICENSE](LICENSE).
