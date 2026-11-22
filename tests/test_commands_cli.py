@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-from layerctl.cli import main
-from layerctl.commands import partition_path, partitions, render
-from layerctl.planner import make_plan
+from tamarack.cli import main
+from tamarack.commands import partition_path, partitions, render
+from tamarack.planner import make_plan
 
 TB = 10**12
 
@@ -26,8 +26,8 @@ def test_partitions_follow_layers() -> None:
     plan = make_plan([4 * TB, 4 * TB, 8 * TB, 8 * TB], ["/dev/a", "/dev/b", "/dev/c", "/dev/d"])
     parts = partitions(plan)
     per_drive = {i: [p.label for p in parts if p.drive == i] for i in range(4)}
-    assert per_drive[0] == ["lc-meta", "lc-l1"]
-    assert per_drive[2] == ["lc-meta", "lc-l1", "lc-l2"]
+    assert per_drive[0] == ["tk-meta", "tk-l1"]
+    assert per_drive[2] == ["tk-meta", "tk-l1", "tk-l2"]
 
 
 def test_unused_layer_gets_no_partition() -> None:
@@ -38,10 +38,10 @@ def test_unused_layer_gets_no_partition() -> None:
 def test_single_drive_gets_two_copies() -> None:
     plan = make_plan([2 * TB], ["/dev/sda"])
     labels = [p.label for p in partitions(plan)]
-    assert labels == ["lc-meta", "lc-l1a", "lc-l1b"]
+    assert labels == ["tk-meta", "tk-l1a", "tk-l1b"]
     text = "\n".join(render(plan))
     assert "--level=1 --raid-devices=2" in text
-    assert "/dev/mapper/lc-d1-p2 /dev/mapper/lc-d1-p3" in text
+    assert "/dev/mapper/tk-d1-p2 /dev/mapper/tk-d1-p3" in text
 
 
 def test_raid5_uses_ppl_and_mirrors_use_bitmap() -> None:
@@ -54,7 +54,7 @@ def test_raid5_uses_ppl_and_mirrors_use_bitmap() -> None:
 def test_render_is_marked_as_dry_run_and_quotes_paths() -> None:
     plan = make_plan([4 * TB, 4 * TB], ["/dev/disk/by-id/odd name", "/dev/sdb"])
     lines = render(plan)
-    assert lines[0].startswith("# layerctl dry run")
+    assert lines[0].startswith("# tamarack dry run")
     assert any("'/dev/disk/by-id/odd name'" in line for line in lines)
 
 

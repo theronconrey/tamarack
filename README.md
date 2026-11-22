@@ -1,10 +1,13 @@
-# layerctl
+# Tamarack
 
 Drobo-style storage for mixed-size drives, built entirely from stock Linux tools:
 **dm-integrity → mdadm → LVM → Btrfs**. You never pick a RAID level; the planner
 decides from the drives you insert.
 
-> Working name. The project name is still to be decided.
+> Named for the tamarack, the northern Minnesota conifer that drops its needles
+> every fall and grows them back each spring. A Borealis project.
+
+Command: `tamarack`. Python package: `tamarack-nas`.
 
 ## Status
 
@@ -15,12 +18,12 @@ generator. Nothing in this repository writes to a disk yet.
 
 ```sh
 python3 -m pip install -e '.[dev]'
-layerctl plan 4TB 4TB 8TB 8TB
-layerctl plan /dev/sda=4TB /dev/sdb=8TB --json
-layerctl plan /dev/sda=4TB /dev/sdb=4TB /dev/sdc=8TB /dev/sdd=8TB --commands   # dry run
+tamarack plan 4TB 4TB 8TB 8TB
+tamarack plan /dev/sda=4TB /dev/sdb=8TB --json
+tamarack plan /dev/sda=4TB /dev/sdb=4TB /dev/sdc=8TB /dev/sdd=8TB --commands   # dry run
 ```
 
-Without installing: `PYTHONPATH=src python3 -m layerctl plan 4TB 8TB`.
+Without installing: `PYTHONPATH=src python3 -m tamarack plan 4TB 8TB`.
 
 ## How the layout is chosen
 

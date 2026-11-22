@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 import pytest
 
-from layerctl.model import Level, Protection
-from layerctl.planner import make_plan, usable_space
-from layerctl.policy import level_for, protection_for
-from layerctl.units import GiB, MiB, parse_size
+from tamarack.model import Level, Protection
+from tamarack.planner import make_plan, usable_space
+from tamarack.policy import level_for, protection_for
+from tamarack.units import GiB, MiB, parse_size
 
 TB = 10**12
 
