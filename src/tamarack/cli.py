@@ -5,6 +5,8 @@ tamarack plan 4TB 4TB 8TB 8TB
 tamarack plan /dev/sda=4TB /dev/sdb=4TB /dev/sdc=8TB --commands
 tamarack plan 4TB 8TB --json
 tamarack grow /dev/sda=4TB --add /dev/sdb=4TB --commands
+tamarack plan /dev/sda=4TB /dev/sdb=4TB --layout > layout.json
+tamarack grow --from layout.json --add /dev/sdc=4TB --layout-out next.json
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ from typing import Any
 from . import __version__
 from .commands import render
 from .grow import GrowPlan, plan_add_drive, render_grow
+from .layout import Layout, layout_from_plan
 from .model import Level, Plan, Protection
 from .planner import make_plan
 from .units import format_size, parse_size
@@ -114,28 +117,37 @@ def build_parser() -> argparse.ArgumentParser:
     out.add_argument(
         "--commands", action="store_true", help="print the commands that would build it (dry run)"
     )
+    out.add_argument("--layout", action="store_true", help="print the layout file it would create")
     grow = sub.add_parser("grow", help="plan adding a drive to an existing layout (never writes)")
     grow.add_argument(
         "drives",
-        nargs="+",
+        nargs="*",
         metavar="DRIVE",
-        help="the drives in the current layout, as DEVICE=SIZE",
+        help="drives of a layout Tamarack created fresh, as DEVICE=SIZE (or use --from)",
     )
+    grow.add_argument("--from", dest="layout_file", metavar="FILE", help="current layout file")
     grow.add_argument("--add", required=True, metavar="DRIVE", help="the new drive, DEVICE=SIZE")
     grow.add_argument(
         "--commands", action="store_true", help="print the commands that would do it (dry run)"
     )
+    grow.add_argument("--layout-out", metavar="FILE", help="write the resulting layout file here")
     return parser
+
+
+def _failures_text(n: int) -> str:
+    if n == 0:
+        return "no drive-failure protection"
+    return f"survives {n} drive failure{'s' if n != 1 else ''}"
 
 
 def format_grow(plan: GrowPlan) -> str:
     before = plan.before
     out = [
-        f"Adding {plan.drives[-1].device} to {', '.join(d.device for d in before.drives)}",
+        f"Adding {plan.new_device} to {', '.join(d.device for d in before.drives)}",
         "",
-        f"Before: {_PROTECTION_TEXT[before.protection]}, {format_size(plan.usable_before)} usable",
-        f"After:  survives {plan.drive_failures_tolerated} drive failure"
-        f"{'s' if plan.drive_failures_tolerated != 1 else ''}, "
+        f"Before: {_failures_text(before.drive_failures_tolerated)}, "
+        f"{format_size(plan.usable_before)} usable",
+        f"After:  {_failures_text(plan.drive_failures_tolerated)}, "
         f"{format_size(plan.usable_after)} usable (before dm-integrity overhead)",
         "",
         "Steps:",
@@ -152,15 +164,40 @@ def _main_plan(args: argparse.Namespace) -> str:
     plan = make_plan([s for _, s in parsed], [d for d, _ in parsed])
     if args.json:
         return json.dumps(plan_to_dict(plan), indent=2)
+    if args.layout:
+        return layout_from_plan(plan).to_json()
     if args.commands:
         return "\n".join(render(plan))
     return format_plan(plan)
 
 
-def _main_grow(args: argparse.Namespace) -> str:
+def _current_layout(args: argparse.Namespace) -> Layout:
+    if args.layout_file and args.drives:
+        raise ValueError("give either --from FILE or the current drives, not both")
+    if args.layout_file:
+        try:
+            with open(args.layout_file, encoding="utf-8") as f:
+                return Layout.from_json(f.read())
+        except OSError as exc:
+            raise ValueError(f"cannot read {args.layout_file}: {exc.strerror}") from exc
+        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"{args.layout_file} is not a valid layout file") from exc
+    if not args.drives:
+        raise ValueError("give the current drives or --from FILE")
     parsed = [parse_drive(a, i) for i, a in enumerate(args.drives, start=1)]
-    new_device, new_size = parse_drive(args.add, len(parsed) + 1)
-    plan = plan_add_drive([s for _, s in parsed], [d for d, _ in parsed], new_size, new_device)
+    return layout_from_plan(make_plan([s for _, s in parsed], [d for d, _ in parsed]))
+
+
+def _main_grow(args: argparse.Namespace) -> str:
+    current = _current_layout(args)
+    new_device, new_size = parse_drive(args.add, len(current.drives) + 1)
+    plan = plan_add_drive(current, new_size, new_device)
+    if args.layout_out:
+        try:
+            with open(args.layout_out, "w", encoding="utf-8") as f:
+                f.write(plan.after.to_json() + "\n")
+        except OSError as exc:
+            raise ValueError(f"cannot write {args.layout_out}: {exc.strerror}") from exc
     return "\n".join(render_grow(plan)) if args.commands else format_grow(plan)
 
 
