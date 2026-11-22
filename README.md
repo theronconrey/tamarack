@@ -11,8 +11,8 @@ Command: `tamarack`. Python package: `tamarack-nas`.
 
 ## Status
 
-Phase 1: **the planner** and the first **grow** path (one drive to two). Both
-are pure functions with dry-run command output. Nothing in this repository
+Phase 1: **the planner** and **grow** from one drive up to four. Both are pure
+functions with dry-run command output. Nothing in this repository
 writes to a disk yet.
 
 ## Try it
@@ -38,7 +38,36 @@ least the same size:
 3. grows LVM and Btrfs onto it.
 
 Result: survives the loss of either drive, and usable space doubles. Nothing is
-shrunk or reshaped in place. Other transitions (2 to 3 drives and up) come next.
+shrunk or reshaped in place.
+
+## Growing to three and four drives
+
+The new drive joins existing layers in order while it has room:
+
+- a two-drive mirror converts to single parity in place, then widens onto the
+  new drive;
+- a single-parity layer widens by one drive (PPL is paused for the reshape and
+  switched back on after);
+- space that was waiting for a partner (for example the top half of an 8 TB
+  drive next to 4 TB drives) pairs with the new drive as a new layer.
+
+Widening is an mdadm reshape: the data stays online and protected, and mdadm
+resumes from its checkpoint after a power cut. Growing to five or more drives
+(two-drive protection) is not supported yet.
+
+## Layout files
+
+A layout records what was actually built, which drive sizes alone can't tell
+you (a two-drive box grown from one drive has two mirror layers; a fresh one
+has one). Grow reads one and can write the next:
+
+```sh
+tamarack plan /dev/sda=4TB --layout > 1.json
+tamarack grow --from 1.json --add /dev/sdb=4TB --layout-out 2.json
+tamarack grow --from 2.json --add /dev/sdc=4TB --commands
+```
+
+The same format will be written to every `tk-meta` partition.
 
 Without installing: `PYTHONPATH=src python3 -m tamarack plan 4TB 8TB`.
 
