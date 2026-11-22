@@ -45,7 +45,9 @@ jobs:
           version=$(rpmspec -q --srpm --qf '%{version}' tamarack.spec)
           git archive --format=tar.gz --prefix="tamarack-$version/" \
             -o "$HOME/rpmbuild/SOURCES/tamarack-$version.tar.gz" HEAD
-          # Resolve the dynamic BuildRequires from %generate_buildrequires.
+          # Static BuildRequires first, then the dynamic ones that
+          # %generate_buildrequires produces.
+          dnf -y builddep tamarack.spec
           for attempt in 1 2 3; do
             rpmbuild -br tamarack.spec && break
             dnf -y builddep "$HOME"/rpmbuild/SRPMS/tamarack-*.buildreqs.nosrc.rpm
