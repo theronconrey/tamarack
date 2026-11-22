@@ -26,7 +26,7 @@ jobs:
     steps:
       - name: Install Fedora tooling
         run: >
-          dnf -y install git-core rpm-build rpmdevtools rpmlint
+          dnf -y install glibc-langpack-en git-core rpm-build rpmdevtools rpmlint
           python3-devel pyproject-rpm-macros python3-pytest python3-mypy ruff
 
       - uses: actions/checkout@v4
@@ -54,7 +54,7 @@ jobs:
 
       - name: rpmlint
         run: |
-          rpmlint tamarack.spec "$HOME"/rpmbuild/SRPMS/tamarack-*.src.rpm \
+          rpmlint -r tamarack.rpmlintrc tamarack.spec "$HOME"/rpmbuild/SRPMS/tamarack-*.src.rpm \
             "$HOME"/rpmbuild/RPMS/noarch/tamarack-*.rpm
 
       - name: Install and smoke-test the package
@@ -62,6 +62,7 @@ jobs:
           dnf -y install "$HOME"/rpmbuild/RPMS/noarch/tamarack-*.noarch.rpm
           cd /
           tamarack --version
+          rpm -ql tamarack | grep -q "/man1/tamarack.1"
           tamarack plan 4TB 4TB 8TB 8TB
           tamarack grow /dev/sda=4TB --add /dev/sdb=4TB
           rpm -q --qf '%{LICENSE}\n' tamarack
