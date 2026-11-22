@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# rpmlint filters. Each one needs a reason (CONTRIBUTING.md, section 3).
+
+# mdadm and dm-integrity are the names of the Linux tools Tamarack builds on;
+# the spell checker doesn't know them.
+addFilter(r"spelling-error \('(mdadm|dm)'")
