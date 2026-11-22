@@ -11,8 +11,9 @@ Command: `tamarack`. Python package: `tamarack-nas`.
 
 ## Status
 
-Phase 1, step 1: **the planner**. It is a pure function and a dry-run command
-generator. Nothing in this repository writes to a disk yet.
+Phase 1: **the planner** and the first **grow** path (one drive to two). Both
+are pure functions with dry-run command output. Nothing in this repository
+writes to a disk yet.
 
 ## Try it
 
@@ -21,7 +22,23 @@ python3 -m pip install -e '.[dev]'
 tamarack plan 4TB 4TB 8TB 8TB
 tamarack plan /dev/sda=4TB /dev/sdb=8TB --json
 tamarack plan /dev/sda=4TB /dev/sdb=4TB /dev/sdc=8TB /dev/sdd=8TB --commands   # dry run
+tamarack grow /dev/sda=4TB --add /dev/sdb=4TB              # add a second drive
+tamarack grow /dev/sda=4TB --add /dev/sdb=4TB --commands   # dry run
 ```
+
+## Adding a second drive
+
+One drive starts as two mirrored copies on itself. Adding a second drive of at
+least the same size:
+
+1. moves one copy onto the new drive with `mdadm --replace` (the old copy stays
+   active until the new one is complete, so protection never drops);
+2. pairs the freed half of the first drive with the new drive as a second
+   mirror layer;
+3. grows LVM and Btrfs onto it.
+
+Result: survives the loss of either drive, and usable space doubles. Nothing is
+shrunk or reshaped in place. Other transitions (2 to 3 drives and up) come next.
 
 Without installing: `PYTHONPATH=src python3 -m tamarack plan 4TB 8TB`.
 
