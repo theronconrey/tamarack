@@ -4,6 +4,7 @@
 tamarack plan 4TB 4TB 8TB 8TB
 tamarack plan /dev/sda=4TB /dev/sdb=4TB /dev/sdc=8TB --commands
 tamarack plan 4TB 8TB --json
+tamarack grow /dev/sda=4TB --add /dev/sdb=4TB --commands
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import Any
 
 from . import __version__
 from .commands import render
+from .grow import GrowPlan, plan_add_drive, render_grow
 from .model import Level, Plan, Protection
 from .planner import make_plan
 from .units import format_size, parse_size
@@ -112,23 +114,64 @@ def build_parser() -> argparse.ArgumentParser:
     out.add_argument(
         "--commands", action="store_true", help="print the commands that would build it (dry run)"
     )
+    grow = sub.add_parser("grow", help="plan adding a drive to an existing layout (never writes)")
+    grow.add_argument(
+        "drives",
+        nargs="+",
+        metavar="DRIVE",
+        help="the drives in the current layout, as DEVICE=SIZE",
+    )
+    grow.add_argument("--add", required=True, metavar="DRIVE", help="the new drive, DEVICE=SIZE")
+    grow.add_argument(
+        "--commands", action="store_true", help="print the commands that would do it (dry run)"
+    )
     return parser
+
+
+def format_grow(plan: GrowPlan) -> str:
+    before = plan.before
+    out = [
+        f"Adding {plan.drives[-1].device} to {', '.join(d.device for d in before.drives)}",
+        "",
+        f"Before: {_PROTECTION_TEXT[before.protection]}, {format_size(plan.usable_before)} usable",
+        f"After:  survives {plan.drive_failures_tolerated} drive failure"
+        f"{'s' if plan.drive_failures_tolerated != 1 else ''}, "
+        f"{format_size(plan.usable_after)} usable (before dm-integrity overhead)",
+        "",
+        "Steps:",
+    ]
+    out += [f"  {i}. {step.title}" for i, step in enumerate(plan.steps, start=1)]
+    if plan.warnings:
+        out += ["", "Warnings:"] + [f"  - {w}" for w in plan.warnings]
+    out += ["", "Run with --commands to see every command (nothing is executed)."]
+    return "\n".join(out)
+
+
+def _main_plan(args: argparse.Namespace) -> str:
+    parsed = [parse_drive(a, i) for i, a in enumerate(args.drives, start=1)]
+    plan = make_plan([s for _, s in parsed], [d for d, _ in parsed])
+    if args.json:
+        return json.dumps(plan_to_dict(plan), indent=2)
+    if args.commands:
+        return "\n".join(render(plan))
+    return format_plan(plan)
+
+
+def _main_grow(args: argparse.Namespace) -> str:
+    parsed = [parse_drive(a, i) for i, a in enumerate(args.drives, start=1)]
+    new_device, new_size = parse_drive(args.add, len(parsed) + 1)
+    plan = plan_add_drive([s for _, s in parsed], [d for d, _ in parsed], new_size, new_device)
+    return "\n".join(render_grow(plan)) if args.commands else format_grow(plan)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        parsed = [parse_drive(a, i) for i, a in enumerate(args.drives, start=1)]
-        plan = make_plan([s for _, s in parsed], [d for d, _ in parsed])
+        output = _main_grow(args) if args.command == "grow" else _main_plan(args)
     except ValueError as exc:
         print(f"tamarack: {exc}", file=sys.stderr)
         return 2
-    if args.json:
-        print(json.dumps(plan_to_dict(plan), indent=2))
-    elif args.commands:
-        print("\n".join(render(plan)))
-    else:
-        print(format_plan(plan))
+    print(output)
     return 0
 
 

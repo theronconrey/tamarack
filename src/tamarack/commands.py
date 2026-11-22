@@ -67,12 +67,21 @@ def partitions(plan: Plan) -> list[Partition]:
     return parts
 
 
+def integrity_device_name(drive: int, number: int) -> str:
+    """dm-integrity mapping name for partition ``number`` on drive index ``drive``."""
+    return f"tk-d{drive + 1}-p{number}"
+
+
 def integrity_name(part: Partition) -> str:
-    return f"tk-d{part.drive + 1}-p{part.number}"
+    return integrity_device_name(part.drive, part.number)
+
+
+def md_device(layer_index: int) -> str:
+    return f"/dev/md/tk-l{layer_index}"
 
 
 def md_path(layer: Layer) -> str:
-    return f"/dev/md/tk-l{layer.index}"
+    return md_device(layer.index)
 
 
 def _q(value: str) -> str:
