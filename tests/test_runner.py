@@ -72,3 +72,11 @@ def test_execution_is_off_unless_turned_on(tmp_path: Path) -> None:
     ):
         config.write_text(text)
         assert execution_enabled(str(config)) is enabled, text
+
+
+def test_tamarack_helpers_resolve_only_in_libexec(tmp_path: Path) -> None:
+    from tamarack.runner import LIBEXEC
+
+    assert LIBEXEC == {"tamarack-meta": "/usr/libexec"}
+    with pytest.raises(UnsafeProgram, match="not installed in /usr/libexec"):
+        resolve("tamarack-meta")

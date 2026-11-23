@@ -97,6 +97,7 @@ install -Dpm 0644 tamarack.1 %{buildroot}%{_mandir}/man1/tamarack.1
 # The engine is started by systemd, never by hand.
 install -dm 0755 %{buildroot}%{_libexecdir}
 mv %{buildroot}%{_bindir}/tamarack-engine %{buildroot}%{_libexecdir}/tamarack-engine
+mv %{buildroot}%{_bindir}/tamarack-meta %{buildroot}%{_libexecdir}/tamarack-meta
 install -Dpm 0644 data/systemd/tamarack-engine.service \
     %{buildroot}%{_unitdir}/tamarack-engine.service
 install -Dpm 0644 data/dbus/com.borealislogistics.Tamarack1.conf \
@@ -151,6 +152,7 @@ fi
 %files engine
 %doc docs/design/engine.md
 %{_libexecdir}/tamarack-engine
+%{_libexecdir}/tamarack-meta
 %{_unitdir}/tamarack-engine.service
 %{_datadir}/dbus-1/system.d/com.borealislogistics.Tamarack1.conf
 %{_datadir}/dbus-1/system-services/com.borealislogistics.Tamarack1.service

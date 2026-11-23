@@ -121,7 +121,7 @@ def plan_replace(
         steps += [_copy(index, n, layer) for n, _, layer in held]
         steps.append(_retire_old(index, [n for n, _, _ in held]))
     steps += expansion_steps(base, exp, index)
-    steps.append(metadata_step())
+    steps.append(metadata_step(exp.after))
 
     warnings = leftover_warnings(exp.after)
     if failed:
