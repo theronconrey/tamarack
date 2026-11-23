@@ -53,7 +53,8 @@ MemoryDenyWriteExecute=yes
 NoNewPrivileges=yes
 RestrictNamespaces=yes
 RestrictRealtime=yes
-RestrictSUIDSGID=yes
+# RestrictSUIDSGID= stays off: share folders are setgid (mode 2775) so new
+# files keep the share's group, and its filter refuses that with EPERM.
 
 # The engine needs no network: D-Bus and udev only.
 PrivateNetwork=yes

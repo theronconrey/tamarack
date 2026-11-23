@@ -104,6 +104,19 @@ def md_path(layer: Layer) -> str:
 FIRST_LAYER_START = START_RESERVE + META_PARTITION  # bytes from the start of a drive
 
 
+def write_safety(level: Level) -> tuple[str, ...]:
+    """mdadm --create options that keep a new array safe across a crash.
+
+    RAID5 gets md's partial parity log. ``--force`` makes mdadm build it
+    with every member active and resync, instead of its default of building
+    onto the last member as a spare: that recovery reports the new array as
+    degraded until it ends, which would block every other job (mdadm(8)).
+    """
+    if level is Level.RAID5:
+        return ("--force", "--consistency-policy=ppl")
+    return ("--bitmap=internal",)
+
+
 def new_partition_table(device: str) -> Command:
     """A fresh, empty GPT, replacing whatever the drive held."""
     return cmd("parted", "--script", device, "mklabel", "gpt")
@@ -142,10 +155,6 @@ def build_steps(plan: Plan) -> list[Step]:
     for layer in plan.used_layers:
         members = [f"/dev/mapper/{integrity_name(p)}" for p in parts if p.layer == layer.index]
         level = layer.level.value.removeprefix("raid")
-        if layer.level is Level.RAID5:
-            safety = "--consistency-policy=ppl"  # closes the RAID5 write hole
-        else:
-            safety = "--bitmap=internal"  # fast resync after a crash
         arrays.append(
             cmd(
                 "mdadm",
@@ -156,7 +165,7 @@ def build_steps(plan: Plan) -> list[Step]:
                 MD_DATA_OFFSET,
                 f"--level={level}",
                 f"--raid-devices={layer.member_count}",
-                safety,
+                *write_safety(layer.level),
                 *members,
             )
         )

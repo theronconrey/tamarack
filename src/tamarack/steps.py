@@ -25,6 +25,7 @@ from .commands import (
     md_device,
     new_partition_table,
     partition_path,
+    write_safety,
 )
 from .layout import Layout, LayoutLayer, Member
 from .model import Level, PlanKind, Protection
@@ -289,13 +290,12 @@ def widen_step(before: LayoutLayer, after: LayoutLayer) -> Step:
 
 def create_array(md: str, level: Level, members: list[str]) -> Command:
     """``mdadm --create`` with Tamarack's write-safety option for the level."""
-    safety = "--consistency-policy=ppl" if level is Level.RAID5 else "--bitmap=internal"
     return cmd(
         "mdadm",
         *("--create", md, "--run", "--metadata=1.2", MD_DATA_OFFSET),
         f"--level={level.value.removeprefix('raid')}",
         f"--raid-devices={len(members)}",
-        safety,
+        *write_safety(level),
         *members,
     )
 

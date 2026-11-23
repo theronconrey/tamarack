@@ -131,6 +131,9 @@ optional_policy(`
 # NFS shares: the engine writes /etc/exports.d/tamarack.exports, asks
 # firewalld to open NFS, and creates each share's folder with its owner.
 allow tamarack_engine_t self:capability { chown fowner };
+# btrfs (bin_t, so in the engine's domain) needs CAP_SYS_ADMIN for its
+# ioctls: filesystem resize after a grow, subvolume creation.
+allow tamarack_engine_t self:capability sys_admin;
 
 optional_policy(`
 	gen_require(`

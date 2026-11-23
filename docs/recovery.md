@@ -22,10 +22,14 @@ This is what the `recover-by-hand` VM test does, step by step.
    done
    ```
 
-3. **Assemble the md arrays.** mdadm finds them by their superblocks:
+3. **Assemble the md arrays.** mdadm finds them by their superblocks. Fedora
+   may already have assembled them as the mappings appeared; then this says
+   "No arrays found" and there is nothing more to do. Check that
+   `/dev/md/tk-l1` (and any further layers) exist:
 
    ```sh
    sudo mdadm --assemble --scan
+   ls /dev/md/
    ```
 
 4. **Activate the volume group and mount**, read-only to be safe:

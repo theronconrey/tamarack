@@ -172,6 +172,13 @@ def _retire_old(drive: int, partitions: list[int]) -> Step:
 
 def _remove_failed(layout: Layout, drive: int, held: list[tuple[int, int, int]]) -> Step:
     commands: list[Command] = []
+    # md may not have noticed yet that a pulled drive is gone (its mapping
+    # still answers), so fail and remove each member by name first; either
+    # can find the member already gone, which is fine.
+    for n, _, layer in held:
+        md, member = md_device(layer), mapper(drive, n)
+        commands.append(cmd("mdadm", md, "--fail", member, tolerate_failure=True))
+        commands.append(cmd("mdadm", md, "--remove", member, tolerate_failure=True))
     for layer in sorted({layer for _, _, layer in held}):
         md = md_device(layer)
         commands.append(cmd("mdadm", md, "--remove", "failed"))

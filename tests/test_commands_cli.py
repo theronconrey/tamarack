@@ -40,7 +40,7 @@ def test_single_drive_gets_two_copies() -> None:
     labels = [p.label for p in partitions(plan)]
     assert labels == ["tk-meta", "tk-l1a", "tk-l1b"]
     text = "\n".join(render(plan))
-    assert "--level=5 --raid-devices=2 --consistency-policy=ppl" in text
+    assert "--level=5 --raid-devices=2 --force --consistency-policy=ppl" in text
     assert "/dev/mapper/tk-d1-p2 /dev/mapper/tk-d1-p3" in text
 
 

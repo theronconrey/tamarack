@@ -501,6 +501,15 @@ What the first enforcing VM runs taught us:
   added while PPL is still on (so mdadm reserves room for it) and PPL is only
   switched off for the reshape itself. During a reshape a layer has neither
   PPL nor a bitmap.
+- By default `mdadm --create` builds RAID5 onto its last member as a spare,
+  and until that recovery ends the array reports degraded, which blocked
+  every following job. RAID5 is created with `--force`: all members active
+  and an ordinary resync, which the health check waits for.
+- btrfs runs in the engine's domain and needs `CAP_SYS_ADMIN` for resize
+  and subvolumes; `RestrictSUIDSGID=` is off because share folders are
+  setgid.
+- A rebuild fails and removes the pulled drive's members by name: md may
+  not have noticed the drive is gone while its mapping still answers.
 - snapper's timers carry the generic `systemd_unit_file_t` label; the engine
   may ask for their status, not start or enable other generic units.
 

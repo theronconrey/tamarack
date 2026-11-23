@@ -16,7 +16,7 @@ integritysetup format --batch-mode --integrity crc32c /dev/sda3
 integritysetup open --integrity crc32c /dev/sda3 tk-d1-p3
 
 # 3. One md array per layer
-mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=2 --consistency-policy=ppl /dev/mapper/tk-d1-p2 /dev/mapper/tk-d1-p3
+mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=2 --force --consistency-policy=ppl /dev/mapper/tk-d1-p2 /dev/mapper/tk-d1-p3
 
 # 4. LVM joins the layers into one volume
 wipefs --all /dev/md/tk-l1

@@ -8,6 +8,7 @@ start_engine
 d=("${DRIVES[@]}")
 
 drive create "${d[0]}" "${d[1]}" "${d[2]}"
+mdadm --wait /dev/md/tk-l1 || :  # a drive lost during the first sync is another test
 write_data
 drive confirm-backup
 

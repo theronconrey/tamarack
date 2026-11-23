@@ -3,6 +3,8 @@
 set -euo pipefail
 
 # 1. Remove the failed /dev/sdb from its layers
+mdadm /dev/md/tk-l1 --fail /dev/mapper/tk-d2-p2 || :
+mdadm /dev/md/tk-l1 --remove /dev/mapper/tk-d2-p2 || :
 mdadm /dev/md/tk-l1 --remove failed
 mdadm /dev/md/tk-l1 --remove detached
 integritysetup close tk-d2-p2 || :
