@@ -8,10 +8,10 @@
      _keep), so every change asks for the admin password again.
 -->
 <policyconfig>
-  <vendor>Tamarack</vendor>
+  <vendor>Tamarack (Borealis Logistics)</vendor>
   <vendor_url>https://github.com/theronconrey/tamarack</vendor_url>
 
-  <action id="io.github.theronconrey.tamarack.read">
+  <action id="com.borealislogistics.tamarack.read">
     <description>View storage layout and plan changes</description>
     <message>Authentication is required to view the storage layout</message>
     <defaults>
@@ -21,7 +21,7 @@
     </defaults>
   </action>
 
-  <action id="io.github.theronconrey.tamarack.create">
+  <action id="com.borealislogistics.tamarack.create">
     <description>Create a new storage pool</description>
     <message>Authentication is required to create a storage pool. This erases every drive listed.</message>
     <defaults>
@@ -31,7 +31,7 @@
     </defaults>
   </action>
 
-  <action id="io.github.theronconrey.tamarack.add-drive">
+  <action id="com.borealislogistics.tamarack.add-drive">
     <description>Add a drive to the storage pool</description>
     <message>Authentication is required to add a drive. The new drive will be erased.</message>
     <defaults>
@@ -41,7 +41,7 @@
     </defaults>
   </action>
 
-  <action id="io.github.theronconrey.tamarack.replace-drive">
+  <action id="com.borealislogistics.tamarack.replace-drive">
     <description>Replace or rebuild a drive in the storage pool</description>
     <message>Authentication is required to replace a drive. The new drive will be erased.</message>
     <defaults>
@@ -51,7 +51,7 @@
     </defaults>
   </action>
 
-  <action id="io.github.theronconrey.tamarack.resume">
+  <action id="com.borealislogistics.tamarack.resume">
     <description>Resume an interrupted storage change</description>
     <message>Authentication is required to resume an interrupted storage change</message>
     <defaults>
@@ -61,7 +61,7 @@
     </defaults>
   </action>
 
-  <action id="io.github.theronconrey.tamarack.cancel">
+  <action id="com.borealislogistics.tamarack.cancel">
     <description>Cancel a storage change between steps</description>
     <message>Authentication is required to cancel a storage change</message>
     <defaults>
@@ -71,7 +71,7 @@
     </defaults>
   </action>
 
-  <action id="io.github.theronconrey.tamarack.confirm-backup">
+  <action id="com.borealislogistics.tamarack.confirm-backup">
     <description>Confirm a current backup exists</description>
     <message>Authentication is required to confirm that a current backup exists</message>
     <defaults>
