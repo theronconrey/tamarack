@@ -31,8 +31,8 @@ mdadm /dev/md/tk-l1 --remove /dev/mapper/tk-d1-p3
 mdadm --zero-superblock /dev/mapper/tk-d1-p3
 parted --script /dev/sda name 2 tk-l1 name 3 tk-l2
 
-# 6. Mirror the freed halves as a new layer
-mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --data-offset=128M --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d1-p3 /dev/mapper/tk-d2-p3
+# 6. Pair the freed halves as a new layer
+mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=2 --consistency-policy=ppl /dev/mapper/tk-d1-p3 /dev/mapper/tk-d2-p3
 
 # 7. Grow the volume and file system
 wipefs --all /dev/md/tk-l2
@@ -43,5 +43,5 @@ btrfs filesystem resize max /srv/tamarack
 
 # 8. Write the new layout to every tk-meta partition
 #    Each drive carries the whole layout, so the box can be read from any of them.
-tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid1","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":1999989899264},{"index":2,"level":"raid1","members":[{"drive":0,"partition":3},{"drive":1,"partition":3}],"slice_bytes":1999989899264}],"version":1}'
-tamarack-meta write /dev/sdb1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid1","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":1999989899264},{"index":2,"level":"raid1","members":[{"drive":0,"partition":3},{"drive":1,"partition":3}],"slice_bytes":1999989899264}],"version":1}'
+tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":1999989899264},{"index":2,"level":"raid5","members":[{"drive":0,"partition":3},{"drive":1,"partition":3}],"slice_bytes":1999989899264}],"version":1}'
+tamarack-meta write /dev/sdb1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":1999989899264},{"index":2,"level":"raid5","members":[{"drive":0,"partition":3},{"drive":1,"partition":3}],"slice_bytes":1999989899264}],"version":1}'

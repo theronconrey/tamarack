@@ -43,13 +43,13 @@ tamarack grow /dev/sda=4TB --add /dev/sdb=4TB --commands   # dry run
 
 ## Adding a second drive
 
-One drive starts as two mirrored copies on itself. Adding a second drive of at
+One drive starts as two copies on itself. Adding a second drive of at
 least the same size:
 
 1. moves one copy onto the new drive with `mdadm --replace` (the old copy stays
    active until the new one is complete, so protection never drops);
 2. pairs the freed half of the first drive with the new drive as a second
-   mirror layer;
+   two-copy layer;
 3. grows LVM and Btrfs onto it.
 
 Result: survives the loss of either drive, and usable space doubles. Nothing is
@@ -59,15 +59,16 @@ shrunk or reshaped in place.
 
 The new drive joins existing layers in order while it has room:
 
-- a two-drive mirror converts to single parity in place, then widens onto the
-  new drive;
-- a single-parity layer widens by one drive (PPL is paused for the reshape and
+- a single-parity layer widens by one drive; a two-drive layer is already
+  single parity, so it simply widens (PPL is paused for the reshape and
   switched back on after);
 - space that was waiting for a partner (for example the top half of an 8 TB
   drive next to 4 TB drives) pairs with the new drive as a new layer.
 
-Widening is an mdadm reshape: the data stays online and protected, and mdadm
-resumes from its checkpoint after a power cut. Growing to five or more drives
+Widening is an mdadm reshape: the data stays online and readable, and mdadm
+resumes from its checkpoint after a power cut. During the reshape the layer has
+neither PPL nor a bitmap, so a power cut while a drive is also missing can
+damage data: keep the power on (a UPS helps) and let it finish. Growing to five or more drives
 (two-drive protection) is not supported yet.
 
 ## Replacing a drive
@@ -94,7 +95,7 @@ tamarack replace --from now.json --old /dev/sdb --with /dev/sdb=4TB --failed   #
 ## Layout files
 
 A layout records what was actually built, which drive sizes alone can't tell
-you (a two-drive box grown from one drive has two mirror layers; a fresh one
+you (a two-drive box grown from one drive has two two-copy layers; a fresh one
 has one). Grow reads one and can write the next:
 
 ```sh
@@ -133,8 +134,8 @@ Protection is picked from the drive count and only ever moves up:
 
 | Drives | Protection |
 | --- | --- |
-| 1 | Two partitions mirrored on that drive (bad sectors, not drive loss) + warning |
-| 2 | Mirror |
+| 1 | Two copies on that drive, in two partitions (bad sectors, not drive loss) + warning |
+| 2 | Survives one drive failure (two copies) |
 | 3–4 | Survives one drive failure |
 | 5+ | Survives two drive failures |
 
@@ -144,7 +145,7 @@ Drives are cut into layers at each size step, SHR / BeyondRAID style. Example,
 | Layer | Drives | Slice | Protection | Usable |
 | --- | --- | --- | --- | --- |
 | 1 | all 4 | 4 TB | single parity (RAID5) | 12 TB |
-| 2 | the two 8 TB | 4 TB | mirror (RAID1) | 4 TB |
+| 2 | the two 8 TB | 4 TB | single parity on two drives (two copies) | 4 TB |
 
 A slice that exists on only one drive stays unallocated until a matching drive
 arrives. Drives within 1 GiB or 0.5% of each other count as equal.
@@ -153,7 +154,12 @@ Per layer, under the hood:
 
 - every partition gets **dm-integrity** (crc32c, journal mode), so a corrupted
   block reads as an error and mdadm repairs it from the other copy or parity;
-- RAID5 layers use **PPL** to close the write hole; mirror and RAID6 layers use
+- layers with one-drive protection are RAID5 from the start, even on two
+  drives (where parity is a plain copy, so it holds what a mirror would), and
+  use **PPL** to close the write hole: after a power cut, even with a drive
+  missing, md replays the log and the pool starts on its own. A mirror can't
+  keep PPL once it becomes parity (mdadm has no room for it next to the bad
+  block log), which is why two-drive layers are not mirrors. RAID6 layers use
   an internal write-intent bitmap;
 - **LVM** joins the layers into one volume; **Btrfs** sits on top with
   metadata DUP, zstd compression and snapshots.

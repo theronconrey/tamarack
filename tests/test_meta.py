@@ -37,7 +37,7 @@ def test_record_round_trip_and_padding() -> None:
     "damage",
     [
         lambda r: b"garbage" + r,
-        lambda r: r.replace(b"raid1", b"raid5", 1),
+        lambda r: r.replace(b"raid5", b"raid6", 1),
         lambda r: r.replace(b"TAMARACK-META 1", b"TAMARACK-META 9", 1),
         lambda r: r[:40],
     ],

@@ -115,7 +115,7 @@ def expand(layout: Layout, drive: int) -> Expansion:
     """Put ``drive``'s free space to work.
 
     The drive joins layers it is not yet in, in order, while it has room: a
-    two-drive mirror becomes single parity, a single-parity layer widens. Then
+    single-parity layer (two members included) widens. Then
     leftover space on any drives is paired into new layers, SHR style.
     """
     if protection_for(len(layout.drives)) is Protection.TWO_DRIVE:
@@ -251,6 +251,9 @@ def widen_step(before: LayoutLayer, after: LayoutLayer) -> Step:
     added = member_path(after.members[-1])
     width = after.member_count
     if before.level is Level.RAID1:
+        # Only layouts from before every one-drive-protection layer was RAID5
+        # (policy.py). A mirror has no room for PPL after the conversion, so
+        # it keeps md's resync policy; the health report says so.
         return Step(
             f"Layer {before.index}: mirror -> single parity across {width} drives",
             (
@@ -259,23 +262,28 @@ def widen_step(before: LayoutLayer, after: LayoutLayer) -> Step:
                 cmd("mdadm", md, "--add", added),
                 cmd("mdadm", "--grow", md, f"--raid-devices={width}"),
                 wait_idle(md),
-                cmd("mdadm", "--grow", md, "--consistency-policy=ppl"),
+                cmd("mdadm", "--grow", md, "--bitmap=internal"),
             ),
             "A two-drive mirror converts to single parity in place, then reshapes onto "
-            "the drive. The data stays online and protected throughout; mdadm resumes "
-            "from its checkpoint after a power cut. Large layers take hours to days.",
+            "the drive. During the reshape the layer has neither a bitmap nor a parity "
+            "log, so keep the power on; mdadm resumes from its checkpoint after a power "
+            "cut. Large layers take hours to days.",
         )
     return Step(
         f"Layer {before.index}: widen single parity to {width} drives",
         (
-            cmd("mdadm", "--grow", md, "--consistency-policy=resync"),
+            # Added while PPL is on, so mdadm reserves PPL space on the new
+            # member; added later, a small member gets no room for it.
             cmd("mdadm", md, "--add", added),
+            cmd("mdadm", "--grow", md, "--consistency-policy=resync"),
             cmd("mdadm", "--grow", md, f"--raid-devices={width}"),
             wait_idle(md),
             cmd("mdadm", "--grow", md, "--consistency-policy=ppl"),
         ),
-        "PPL is paused for the reshape and switched back on afterwards. The data stays "
-        "online and protected; mdadm resumes from its checkpoint after a power cut.",
+        "md cannot reshape with its partial parity log on, so the log is off for the "
+        "reshape and back on afterwards. During the reshape a power cut while a drive "
+        "is also missing can damage data, so keep the power on; mdadm resumes from its "
+        "checkpoint after a power cut. Large layers take hours to days.",
     )
 
 

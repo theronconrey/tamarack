@@ -102,8 +102,8 @@ def _single_to_mirror(layout: Layout, new: Disk) -> ChangePlan:
     after = Layout(
         drives=[old, new],
         layers=[
-            LayoutLayer(layer.index, Level.RAID1, half, (a_first, b_first)),
-            LayoutLayer(layer.index + 1, Level.RAID1, half, (a_second, b_second)),
+            LayoutLayer(layer.index, Level.RAID5, half, (a_first, b_first)),
+            LayoutLayer(layer.index + 1, Level.RAID5, half, (a_second, b_second)),
         ],
     )
     a, a3 = old.device, member_path(a_second)
@@ -136,8 +136,8 @@ def _single_to_mirror(layout: Layout, new: Disk) -> ChangePlan:
             ),
         ),
         Step(
-            "Mirror the freed halves as a new layer",
-            (create_array(l2, Level.RAID1, [a3, b3]),),
+            "Pair the freed halves as a new layer",
+            (create_array(l2, Level.RAID5, [a3, b3]),),
         ),
         grow_volume(grown=[], created=[l2]),
         metadata_step(after),

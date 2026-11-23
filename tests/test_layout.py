@@ -10,7 +10,7 @@ TB = 10**12
 
 def test_from_plan_records_partitions() -> None:
     layout = layout_from_plan(make_plan([4 * TB, 4 * TB, 8 * TB, 8 * TB]))
-    assert [layer.level for layer in layout.layers] == [Level.RAID5, Level.RAID1]
+    assert [layer.level for layer in layout.layers] == [Level.RAID5, Level.RAID5]
     assert layout.layers[1].members == (Member(2, 3), Member(3, 3))
 
 

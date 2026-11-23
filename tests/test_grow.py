@@ -40,7 +40,7 @@ def first(lines: list[str], prefix: str) -> int:
 
 def test_single_drive_becomes_two_mirror_layers() -> None:
     plan = add(fresh(4), 4)
-    assert [layer.level for layer in plan.after.layers] == [Level.RAID1, Level.RAID1]
+    assert [layer.level for layer in plan.after.layers] == [Level.RAID5, Level.RAID5]
     assert all(layer.drive_indexes == {0, 1} for layer in plan.after.layers)
     assert plan.before.drive_failures_tolerated == 0
     assert plan.drive_failures_tolerated == 1
@@ -87,7 +87,7 @@ def test_larger_second_drive_warns_about_unused_space() -> None:
 # --- 2 -> 3 and 3 -> 4 ---
 
 
-def test_mirror_converts_to_single_parity() -> None:
+def test_two_copies_widen_to_single_parity() -> None:
     plan = add(fresh(4, 4), 4)
     (layer,) = plan.after.layers
     assert layer.level is Level.RAID5 and layer.member_count == 3
@@ -101,9 +101,8 @@ def test_conversion_order_is_safe() -> None:
         for prefix in (
             "mdadm --detail --test /dev/md/tk-l1",
             "integritysetup format --batch-mode --integrity crc32c /dev/sdc2",
-            "mdadm --grow /dev/md/tk-l1 --bitmap=none",
-            "mdadm --grow /dev/md/tk-l1 --level=5",
             "mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d3-p2",
+            "mdadm --grow /dev/md/tk-l1 --consistency-policy=resync",
             "mdadm --grow /dev/md/tk-l1 --raid-devices=3",
             "mdadm --wait /dev/md/tk-l1",
             "mdadm --grow /dev/md/tk-l1 --consistency-policy=ppl",
@@ -120,6 +119,8 @@ def test_single_parity_widens_with_ppl_paused() -> None:
     order = [
         first(lines, prefix)
         for prefix in (
+            # Added while PPL is on, so the new member gets room for it.
+            "mdadm /dev/md/tk-l1 --add",
             "mdadm --grow /dev/md/tk-l1 --consistency-policy=resync",
             "mdadm --grow /dev/md/tk-l1 --raid-devices=4",
             "mdadm --grow /dev/md/tk-l1 --consistency-policy=ppl",
@@ -141,7 +142,7 @@ def test_walk_from_one_to_four_drives_matches_a_fresh_build() -> None:
 def test_waiting_slice_pairs_with_the_new_drive() -> None:
     # 4 + 4 + 8: the top 4 TB of the 8 TB drive waits for a partner.
     plan = add(fresh(4, 4, 8), 8)
-    assert [layer.level for layer in plan.after.layers] == [Level.RAID5, Level.RAID1]
+    assert [layer.level for layer in plan.after.layers] == [Level.RAID5, Level.RAID5]
     assert plan.after.layers[1].drive_indexes == {2, 3}
     assert plan.usable_after == pytest.approx(fresh(4, 4, 8, 8).usable_nominal, rel=1e-6)
     lines = render_grow(plan)

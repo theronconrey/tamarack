@@ -15,7 +15,7 @@ findmnt /srv/tamarack >/dev/null || fail "not mounted"
 write_data
 
 # The second 4 GB drive widens the parity layer to four drives, and its
-# other 2 GB pair with the unused 2 GB of the first in a new mirror layer.
+# other 2 GB pair with the unused 2 GB of the first in a new two-copy layer.
 drive confirm-backup
 drive add "${d[3]}"
 check_data
@@ -25,4 +25,5 @@ for d1 in "${d[@]}"; do
     /usr/libexec/tamarack-meta read "${d1}1" >/dev/null || fail "no layout on ${d1}1"
 done
 btrfs scrub start -B /srv/tamarack || fail "scrub found errors"
+check_ppl
 check_avc

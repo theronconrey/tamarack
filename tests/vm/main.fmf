@@ -43,3 +43,7 @@ require:
 /nfs:
     summary: Shares over NFSv4, squashing, read-only
     test: ./nfs.sh
+
+/ppl-cost:
+    summary: Write speed with and without md's partial parity log
+    test: ./ppl-cost.sh

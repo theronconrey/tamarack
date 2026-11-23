@@ -21,9 +21,9 @@ integritysetup format --batch-mode --integrity crc32c /dev/sdd3
 integritysetup open --integrity crc32c /dev/sdd3 tk-d4-p3
 
 # 4. Layer 1: widen single parity to 4 drives
-#    PPL is paused for the reshape and switched back on afterwards. The data stays online and protected; mdadm resumes from its checkpoint after a power cut.
-mdadm --grow /dev/md/tk-l1 --consistency-policy=resync
+#    md cannot reshape with its partial parity log on, so the log is off for the reshape and back on afterwards. During the reshape a power cut while a drive is also missing can damage data, so keep the power on; mdadm resumes from its checkpoint after a power cut. Large layers take hours to days.
 mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d4-p2
+mdadm --grow /dev/md/tk-l1 --consistency-policy=resync
 mdadm --grow /dev/md/tk-l1 --raid-devices=4
 mdadm --wait /dev/md/tk-l1 || :
 mdadm --grow /dev/md/tk-l1 --consistency-policy=ppl
@@ -36,7 +36,7 @@ integritysetup format --batch-mode --integrity crc32c /dev/sdc3
 integritysetup open --integrity crc32c /dev/sdc3 tk-d3-p3
 
 # 6. Create layer 2 from leftover space
-mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --data-offset=128M --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d3-p3 /dev/mapper/tk-d4-p3
+mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=2 --consistency-policy=ppl /dev/mapper/tk-d3-p3 /dev/mapper/tk-d4-p3
 
 # 7. Grow the volume and file system
 pvresize /dev/md/tk-l1
@@ -48,7 +48,7 @@ btrfs filesystem resize max /srv/tamarack
 
 # 8. Write the new layout to every tk-meta partition
 #    Each drive carries the whole layout, so the box can be read from any of them.
-tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid1","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
-tamarack-meta write /dev/sdb1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid1","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
-tamarack-meta write /dev/sdc1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid1","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
-tamarack-meta write /dev/sdd1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid1","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
+tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid5","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
+tamarack-meta write /dev/sdb1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid5","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
+tamarack-meta write /dev/sdc1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid5","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
+tamarack-meta write /dev/sdd1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid5","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'

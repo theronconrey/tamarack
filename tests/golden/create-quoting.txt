@@ -19,7 +19,7 @@ integritysetup format --batch-mode --integrity crc32c /dev/nvme0n1p2
 integritysetup open --integrity crc32c /dev/nvme0n1p2 tk-d2-p2
 
 # 3. One md array per layer
-mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --data-offset=128M --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d1-p2 /dev/mapper/tk-d2-p2
+mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=2 --consistency-policy=ppl /dev/mapper/tk-d1-p2 /dev/mapper/tk-d2-p2
 
 # 4. LVM joins the layers into one volume
 wipefs --all /dev/md/tk-l1
@@ -40,5 +40,5 @@ systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
 
 # 7. Write the layout to every tk-meta partition
 #    Each drive carries the whole layout, so the box can be read from any of them.
-tamarack-meta write '/dev/disk/by-id/ata-WDC odd-part1' '{"drives":[{"device":"/dev/disk/by-id/ata-WDC odd","size":4000000000000},{"device":"/dev/nvme0n1","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid1","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":3999980847104}],"version":1}'
-tamarack-meta write /dev/nvme0n1p1 '{"drives":[{"device":"/dev/disk/by-id/ata-WDC odd","size":4000000000000},{"device":"/dev/nvme0n1","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid1","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":3999980847104}],"version":1}'
+tamarack-meta write '/dev/disk/by-id/ata-WDC odd-part1' '{"drives":[{"device":"/dev/disk/by-id/ata-WDC odd","size":4000000000000},{"device":"/dev/nvme0n1","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":3999980847104}],"version":1}'
+tamarack-meta write /dev/nvme0n1p1 '{"drives":[{"device":"/dev/disk/by-id/ata-WDC odd","size":4000000000000},{"device":"/dev/nvme0n1","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":3999980847104}],"version":1}'

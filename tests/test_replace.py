@@ -64,7 +64,7 @@ def test_second_upgrade_pairs_the_free_space() -> None:
     once = upgrade(fresh(4, 4, 4, 4), "/dev/sda", "/dev/sde", 8).after
     plan = upgrade(once, "/dev/sdb", "/dev/sdf", 8)
     new_layer = plan.after.layers[-1]
-    assert new_layer.level is Level.RAID1 and new_layer.drive_indexes == {0, 1}
+    assert new_layer.level is Level.RAID5 and new_layer.drive_indexes == {0, 1}
     lines = render(plan)
     # sde (drive 0) gains a partition in free space; it is never wiped.
     assert any(line.startswith("parted --script /dev/sde mkpart tk-l") for line in lines)

@@ -100,7 +100,7 @@ def make_plan(
         layers = [
             Layer(
                 index=1,
-                level=Level.RAID1,
+                level=Level.RAID5,  # two members: a copy, with PPL (policy.py)
                 slice_size=align_down(drives[0].bucket // 2),
                 members=(0,),
                 copies_on_same_drive=True,

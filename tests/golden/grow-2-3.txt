@@ -17,11 +17,10 @@ partprobe /dev/sdc
 integritysetup format --batch-mode --integrity crc32c /dev/sdc2
 integritysetup open --integrity crc32c /dev/sdc2 tk-d3-p2
 
-# 4. Layer 1: mirror -> single parity across 3 drives
-#    A two-drive mirror converts to single parity in place, then reshapes onto the drive. The data stays online and protected throughout; mdadm resumes from its checkpoint after a power cut. Large layers take hours to days.
-mdadm --grow /dev/md/tk-l1 --bitmap=none
-mdadm --grow /dev/md/tk-l1 --level=5
+# 4. Layer 1: widen single parity to 3 drives
+#    md cannot reshape with its partial parity log on, so the log is off for the reshape and back on afterwards. During the reshape a power cut while a drive is also missing can damage data, so keep the power on; mdadm resumes from its checkpoint after a power cut. Large layers take hours to days.
 mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d3-p2
+mdadm --grow /dev/md/tk-l1 --consistency-policy=resync
 mdadm --grow /dev/md/tk-l1 --raid-devices=3
 mdadm --wait /dev/md/tk-l1 || :
 mdadm --grow /dev/md/tk-l1 --consistency-policy=ppl

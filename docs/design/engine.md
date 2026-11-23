@@ -493,11 +493,14 @@ What the first enforcing VM runs taught us:
 - A new array reuses space an older one had, at the same data offset, so
   the old PV label showed through and `pvcreate` found a duplicate PV ID.
   `wipefs --all` now runs on every new array before `pvcreate`.
-- Reshaping a mirror into parity still left no room for PPL. The VM
-  diagnostics now print each member's data offset and unused space to
-  find out why. Fedora 45
-  labels `wipefs` `bin_t`, so the module labels it `fsadm_exec_t`, like
-  `blkid` and `mkfs`, to run it in `fsadm_t`.
+- Reshaping a mirror into parity still left no room for PPL: mdadm only puts
+  PPL between the superblock and the bad block log, and a member written with
+  a bitmap has its bad block log 8 sectors after the superblock (read from
+  mdadm's super1.c). Layers with one-drive protection are now RAID5 from the
+  start, two members included, so PPL is on from creation; a new member is
+  added while PPL is still on (so mdadm reserves room for it) and PPL is only
+  switched off for the reshape itself. During a reshape a layer has neither
+  PPL nor a bitmap.
 - snapper's timers carry the generic `systemd_unit_file_t` label; the engine
   may ask for their status, not start or enable other generic units.
 

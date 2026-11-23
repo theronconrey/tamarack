@@ -216,6 +216,17 @@ TRANSITION_NOISE='denied +\{ (siginh|rlimitinh|noatsecure) \}'
 #  - mdadm checks /dev/kmsg, which these VMs label init_var_run_t.
 FEDORA_POLICY_GAPS='scontext=system_u:system_r:snapperd_t:s0 tcontext=system_u:system_r:init_t:s0 tclass=system|denied +\{ getattr \} for .*comm="mdadm" path="/dev/kmsg"'
 
+# Every layer keeps md's partial parity log once nothing is reshaping.
+check_ppl() {
+    local md policy
+    for md in /dev/md/tk-l*; do
+        [ -e "$md" ] || continue
+        mdadm --wait "$md" >/dev/null 2>&1 || :
+        policy=$(mdadm --detail "$md" | sed -n 's/^ *Consistency Policy : //p')
+        [ "$policy" = ppl ] || fail "$md has consistency policy '$policy', not ppl"
+    done
+}
+
 check_avc() {
     local denials
     denials=$(ausearch -m AVC,USER_AVC -ts "$START" 2>/dev/null | grep denied \

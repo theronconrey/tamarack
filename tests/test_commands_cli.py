@@ -40,15 +40,18 @@ def test_single_drive_gets_two_copies() -> None:
     labels = [p.label for p in partitions(plan)]
     assert labels == ["tk-meta", "tk-l1a", "tk-l1b"]
     text = "\n".join(render(plan))
-    assert "--level=1 --raid-devices=2" in text
+    assert "--level=5 --raid-devices=2 --consistency-policy=ppl" in text
     assert "/dev/mapper/tk-d1-p2 /dev/mapper/tk-d1-p3" in text
 
 
-def test_raid5_uses_ppl_and_mirrors_use_bitmap() -> None:
+def test_every_layer_is_raid5_with_ppl() -> None:
+    # Two-member layers too: they keep two copies and can keep PPL (policy.py).
     plan = make_plan([4 * TB, 4 * TB, 8 * TB, 8 * TB])
     lines = [line for line in render(plan) if line.startswith("mdadm --create")]
-    assert "--level=5" in lines[0] and "--consistency-policy=ppl" in lines[0]
-    assert "--level=1" in lines[1] and "--bitmap=internal" in lines[1]
+    assert len(lines) == 2
+    for line in lines:
+        assert "--level=5" in line and "--consistency-policy=ppl" in line
+        assert "--bitmap" not in line
 
 
 def test_render_is_marked_as_dry_run_and_quotes_paths() -> None:
@@ -62,13 +65,13 @@ def test_cli_table(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["plan", "4TB", "4TB", "8TB", "8TB"]) == 0
     out = capsys.readouterr().out
     assert "survives one drive failure" in out
-    assert "single parity" in out and "mirror" in out
+    assert "single parity" in out and "mirror" not in out
 
 
 def test_cli_json(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["plan", "/dev/sda=4TB", "/dev/sdb=8TB", "--json"]) == 0
     data = json.loads(capsys.readouterr().out)
-    assert data["layers"][0]["level"] == "raid1"
+    assert data["layers"][0]["level"] == "raid5"
     assert data["layers"][1]["level"] == "unused"
     assert data["drives"][0]["device"] == "/dev/sda"
 

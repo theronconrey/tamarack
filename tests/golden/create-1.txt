@@ -16,7 +16,7 @@ integritysetup format --batch-mode --integrity crc32c /dev/sda3
 integritysetup open --integrity crc32c /dev/sda3 tk-d1-p3
 
 # 3. One md array per layer
-mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --data-offset=128M --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d1-p2 /dev/mapper/tk-d1-p3
+mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=2 --consistency-policy=ppl /dev/mapper/tk-d1-p2 /dev/mapper/tk-d1-p3
 
 # 4. LVM joins the layers into one volume
 wipefs --all /dev/md/tk-l1
@@ -37,4 +37,4 @@ systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
 
 # 7. Write the layout to every tk-meta partition
 #    Each drive carries the whole layout, so the box can be read from any of them.
-tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid1","members":[{"drive":0,"partition":2},{"drive":0,"partition":3}],"slice_bytes":1999989899264}],"version":1}'
+tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":0,"partition":3}],"slice_bytes":1999989899264}],"version":1}'
