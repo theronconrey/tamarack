@@ -150,7 +150,7 @@ def test_existing_drives_are_never_erased() -> None:
     for plan in (add(fresh(4), 4), add(fresh(4, 4), 4), add(fresh(4, 4, 8), 8)):
         for line in render_grow(plan):
             if line.startswith("sgdisk --zap-all"):
-                assert line.endswith(plan.new_device)
+                assert line.endswith(plan.erases)
 
 
 def test_small_new_drive_joins_only_what_fits() -> None:
