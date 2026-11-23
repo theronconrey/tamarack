@@ -29,6 +29,11 @@ files_type(tamarack_var_lib_t)
 type tamarack_etc_t;
 files_config_file(tamarack_etc_t)
 
+# /etc/integritytab: the engine keeps its lines there; systemd's
+# integritysetup generator reads it at boot to open the pool's mappings.
+type tamarack_integritytab_t;
+files_config_file(tamarack_integritytab_t)
+
 # tamarack-meta: writes the layout record to tk-meta partitions. The only
 # Tamarack code with raw-disk access; it checks the partition label first.
 type tamarack_meta_t;
@@ -51,6 +56,7 @@ manage_files_pattern(tamarack_engine_t, tamarack_var_lib_t, tamarack_var_lib_t)
 files_var_lib_filetrans(tamarack_engine_t, tamarack_var_lib_t, dir)
 
 read_files_pattern(tamarack_engine_t, tamarack_etc_t, tamarack_etc_t)
+rw_files_pattern(tamarack_engine_t, tamarack_integritytab_t, tamarack_integritytab_t)
 list_dirs_pattern(tamarack_engine_t, tamarack_etc_t, tamarack_etc_t)
 files_read_etc_files(tamarack_engine_t)
 
@@ -107,6 +113,21 @@ optional_policy(`
 
 optional_policy(`
 	fstools_domtrans(tamarack_engine_t)
+')
+
+# Whichever domain runs systemd's generators must read /etc/integritytab.
+optional_policy(`
+	gen_require(`
+		type init_t;
+	')
+	allow init_t tamarack_integritytab_t:file read_file_perms;
+')
+
+optional_policy(`
+	gen_require(`
+		type systemd_generator_t;
+	')
+	allow systemd_generator_t tamarack_integritytab_t:file read_file_perms;
 ')
 
 domtrans_pattern(tamarack_engine_t, tamarack_meta_exec_t, tamarack_meta_t)

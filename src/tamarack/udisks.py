@@ -84,6 +84,19 @@ def find_drive(objects: Objects, device: str, unused: bool) -> DriveInfo:
     return DriveInfo(device=device, size=int(block.get("Size", 0)), identity=identity)
 
 
+def find_partition_uuids(objects: Objects, device: str) -> dict[int, str]:
+    """GPT partition number -> partition UUID for the drive at ``device``."""
+    tables = [p for p, i in objects.items() if BLOCK in i and device in _paths(i[BLOCK])]
+    if not tables:
+        raise NoSuchDrive(f"{device}: no such block device")
+    uuids = {}
+    for interfaces in objects.values():
+        part = interfaces.get(PARTITION, {})
+        if part.get("Table") == tables[0] and part.get("UUID"):
+            uuids[int(part["Number"])] = str(part["UUID"])
+    return uuids
+
+
 def find_present(objects: Objects, devices: Iterable[str]) -> dict[str, str]:
     """Identity of the whole drive at each of ``devices`` now; absent paths are left out."""
     present = {}
@@ -142,6 +155,9 @@ class UDisksDrives:
 
     def present(self, devices: list[str]) -> dict[str, str]:
         return find_present(self.objects(), devices)
+
+    def partition_uuids(self, device: str) -> dict[int, str]:
+        return find_partition_uuids(self.objects(), device)
 
 
 class DriveRecords:

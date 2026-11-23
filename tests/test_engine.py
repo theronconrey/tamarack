@@ -54,6 +54,12 @@ class FakeDrives:
     def present(self, devices: list[str]) -> dict[str, str]:
         return {d: self.drives[d][1] for d in devices if d in self.drives}
 
+    def partition_uuids(self, device: str) -> dict[int, str]:
+        if device not in self.drives:
+            raise NoSuchDrive(f"{device}: no such block device")
+        index = sorted(self.drives).index(device)
+        return {n: f"0000000{index}-0000-4000-8000-00000000000{n}" for n in range(1, 10)}
+
     def lookup(self, device: str, unused: bool) -> DriveInfo:
         self.lookups.append((device, unused))
         if device not in self.drives:
