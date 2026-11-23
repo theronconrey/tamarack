@@ -124,6 +124,7 @@ def test_create_document_erases_every_drive() -> None:
     assert doc["steps"][0]["commands"][0] == {
         "argv": ["sgdisk", "--zap-all", "/dev/sda"],
         "tolerate_failure": False,
+        "resume": "rerun",
     }
 
 
