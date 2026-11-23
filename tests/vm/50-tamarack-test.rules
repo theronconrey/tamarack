@@ -1,0 +1,7 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Installed only by the VM tests: root may use Tamarack without a prompt.
+polkit.addRule(function(action, subject) {
+    if (action.id.indexOf("com.borealislogistics.tamarack.") === 0 && subject.user === "root") {
+        return polkit.Result.YES;
+    }
+});

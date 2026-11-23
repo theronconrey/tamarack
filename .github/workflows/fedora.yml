@@ -28,7 +28,7 @@ jobs:
         run: >
           dnf -y install glibc-langpack-en git-core rpm-build rpmdevtools rpmlint
           python3-devel pyproject-rpm-macros python3-pytest python3-mypy ruff
-          python3-gobject-base dbus-daemon
+          python3-gobject-base dbus-daemon tmt
 
       - uses: actions/checkout@v4
 
@@ -41,6 +41,8 @@ jobs:
           ruff check .
           ruff format --check .
           mypy
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          tmt lint
 
       - name: Build the RPM
         run: |
