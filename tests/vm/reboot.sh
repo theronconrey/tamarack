@@ -49,6 +49,13 @@ if [ "${TMT_REBOOT_COUNT:-0}" -eq 0 ]; then
     echo "$START" > "$STATE/start"
     ls /dev/md/ | grep '^tk-l' | sort > "$STATE/arrays"
     [ -s "$STATE/arrays" ] || fail "no /dev/md/tk-l* arrays"
+    # Created with --homehost=any, so every host (and boot, before the
+    # hostname is set) treats the arrays as local and keeps their names.
+    echo "hostname before reboot: $(hostname)"
+    for md in $(cat "$STATE/arrays"); do
+        mdadm --detail "/dev/md/$md" | grep -q "Name : any:$md\b" \
+            || { mdadm --detail "/dev/md/$md" >&2; fail "$md is not stored as any:$md"; }
+    done
     check_avc
     sync
     trap - EXIT  # keep the pool for the next boot
@@ -66,7 +73,7 @@ for name in $(sed -n 's/^\(tk-[^ ]*\) .*/\1/p' /etc/integritytab); do
 done
 ls /dev/md/ | grep '^tk-l' | sort > "$STATE/arrays-after"
 diff -u "$STATE/arrays" "$STATE/arrays-after" \
-    || { cat /proc/mdstat >&2; mdadm --detail --scan >&2; fail "md arrays came back under other names"; }
+    || { echo "hostname: $(hostname)" >&2; cat /proc/mdstat >&2; mdadm --detail --scan >&2; fail "md arrays came back under other names"; }
 systemctl is-active --quiet srv-tamarack.mount || fail "srv-tamarack.mount is not active"
 findmnt /srv/tamarack >/dev/null || fail "not mounted after reboot"
 check_data

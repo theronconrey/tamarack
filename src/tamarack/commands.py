@@ -32,6 +32,11 @@ SHARES = f"{MOUNT_POINT}/shares"
 # there was no room left for RAID5's partial parity log. Fixed here, so
 # every layer can be reshaped and still get its PPL.
 MD_DATA_OFFSET = "--data-offset=128M"
+# Store "any" as the array's home host. Without it mdadm records the hostname
+# at create time, and early in boot (hostname still "localhost") udev treats
+# the array as foreign: it comes back as tk-lN_0, started read-auto. "any"
+# also lets the drives move to another box under the same names.
+MD_HOMEHOST = "--homehost=any"
 SNAPPER_TIMERS = ("snapper-timeline.timer", "snapper-cleanup.timer")
 FS_LABEL = "tamarack"
 META_PARTLABEL = "tk-meta"
@@ -162,6 +167,7 @@ def build_steps(plan: Plan) -> list[Step]:
                 md_path(layer),
                 "--run",
                 "--metadata=1.2",
+                MD_HOMEHOST,
                 MD_DATA_OFFSET,
                 f"--level={level}",
                 f"--raid-devices={layer.member_count}",
