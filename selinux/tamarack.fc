@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+/usr/libexec/tamarack-engine	--	gen_context(system_u:object_r:tamarack_engine_exec_t,s0)
+/usr/lib/systemd/system/tamarack-engine\.service	--	gen_context(system_u:object_r:tamarack_unit_file_t,s0)
+/var/lib/tamarack(/.*)?		gen_context(system_u:object_r:tamarack_var_lib_t,s0)
+/etc/tamarack(/.*)?		gen_context(system_u:object_r:tamarack_etc_t,s0)
