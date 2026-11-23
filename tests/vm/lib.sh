@@ -32,8 +32,18 @@ diagnostics() {
     cat /proc/mdstat >&2 || :
     lsmod | grep -E '^(raid1|raid456|dm_integrity|md_mod) ' >&2 || echo "md/dm modules: none loaded" >&2
     ls -lZ /dev/md* /sys/module/md_mod/parameters/new_array >&2 2>&1 || :
-    echo "=== failed system calls in mdadm_t ===" >&2
-    ausearch -k tamarack-md -i 2>/dev/null | grep -E 'type=SYSCALL|type=PATH' | tail -40 >&2 || :
+    echo "=== failed system calls by mdadm ===" >&2
+    auditctl -l 2>&1 | grep tamarack-md >&2 || echo "no tamarack-md audit rule loaded" >&2
+    ausearch -k tamarack-md -i 2>/dev/null | grep -E 'type=SYSCALL|type=PATH' \
+        | grep -Ev 'exit=ENOENT' | tail -40 >&2 || :
+    echo "=== the same mdadm --create, outside the engine's sandbox ===" >&2
+    local members
+    mapfile -t members < <(ls /dev/mapper/tk-d* 2>/dev/null | head -2)
+    if [ "${#members[@]}" -eq 2 ] && [ ! -e /dev/md/tk-l1 ]; then
+        mdadm --create /dev/md/tk-probe --run --metadata=1.2 --level=1 --raid-devices=2 \
+            --bitmap=internal "${members[@]}" >&2 2>&1 && echo "outside the sandbox: created" >&2
+        mdadm --stop /dev/md/tk-probe >/dev/null 2>&1 || :
+    fi
     sandbox_probe
     return "$status"
 }
@@ -161,8 +171,8 @@ start_engine() {
     # Record every failed system call made in mdadm's domain, with its
     # error number: mdadm --create fails with no AVC and no kernel message.
     auditctl -D -k tamarack-md >/dev/null 2>&1 || :
-    auditctl -a always,exit -F arch=b64 -S openat,mknodat,write,ioctl \
-        -F subj_type=mdadm_t -F success=0 -k tamarack-md >/dev/null 2>&1 || :
+    auditctl -a always,exit -F arch=b64 -S all -F exe="$(readlink -f "$(command -v mdadm)")" \
+        -F success=0 -k tamarack-md >&2 || echo "auditctl: could not add the mdadm rule" >&2
     systemctl restart tamarack-engine
     START=$(date '+%m/%d/%Y %H:%M:%S')
     ps -eo label,comm | grep -q '^system_u:system_r:tamarack_engine_t:s0 *tamarack-engine' \
