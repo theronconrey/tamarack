@@ -38,3 +38,7 @@ require:
 /mixed:
     summary: Mixed sizes, leftover space paired later
     test: ./mixed.sh
+
+/reboot:
+    summary: The pool comes back by itself after a reboot
+    test: ./reboot.sh

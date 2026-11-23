@@ -10,10 +10,12 @@ so it cannot erase a real drive even if run on the wrong machine.
     drive.py confirm-backup     drive.py tolerated     drive.py degraded
     drive.py start-add DEV      drive.py wait-for JOB STATE
     drive.py resume JOB         drive.py state JOB
+    drive.py health
 """
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -169,6 +171,8 @@ def main(argv: list[str]) -> None:
         print(get(ROOT, MANAGER, "DriveFailuresTolerated"))
     elif command == "degraded":
         print(get(ROOT, MANAGER, "Degraded"))
+    elif command == "health":  # ok | warning | degraded | none
+        print(json.loads(get(ROOT, MANAGER, "Health"))["status"])
     else:
         sys.exit(f"drive.py: unknown command {command}")
 
