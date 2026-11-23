@@ -434,6 +434,10 @@ What the first enforcing VM runs taught us:
   too, so it runs in `lvm_t` like `cryptsetup`; this belongs in
   selinux-policy upstream and should move there.
 - `tamarack-meta` (Python) reads `/etc/passwd` and `/etc/pki` at start-up.
+- `modules-load.d` is only read at boot, and the sandboxed engine cannot load
+  modules, so on a freshly installed box `mdadm --create` failed with no md
+  personality loaded. The package's `%post` now runs `systemd-modules-load`
+  for Tamarack's list.
 
 ## 10. Testing on (virtual) disks
 

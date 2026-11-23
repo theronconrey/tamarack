@@ -29,6 +29,7 @@ diagnostics() {
         | grep -Ei 'md[0-9:/]|md_mod|raid|device-mapper|integrity' | tail -60 >&2 || :
     echo "=== md devices ===" >&2
     cat /proc/mdstat >&2 || :
+    lsmod | grep -E '^(raid1|raid456|dm_integrity|md_mod) ' >&2 || echo "md/dm modules: none loaded" >&2
     ls -lZ /dev/md* /sys/module/md_mod/parameters/new_array >&2 2>&1 || :
     return "$status"
 }
@@ -159,9 +160,16 @@ check_data() {
         || fail "data changed"
 }
 
+# siginh, rlimitinh and noatsecure are checked on every domain transition
+# and dontaudit'ed by Fedora's policy; they only show with semodule -DB.
+TRANSITION_NOISE='denied +\{ (siginh|rlimitinh|noatsecure) \}'
+
 check_avc() {
-    if ausearch -m AVC,USER_AVC -ts "$START" 2>/dev/null | grep -q denied; then
-        ausearch -m AVC,USER_AVC -ts "$START" >&2
+    local denials
+    denials=$(ausearch -m AVC,USER_AVC -ts "$START" 2>/dev/null | grep denied \
+        | grep -Ev "$TRANSITION_NOISE") || :
+    if [ -n "$denials" ]; then
+        echo "$denials" >&2
         fail "SELinux denials"
     fi
 }

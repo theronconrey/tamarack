@@ -52,6 +52,7 @@ Requires:       device-mapper
 Requires:       btrfs-progs
 Requires:       util-linux-core
 Requires:       systemd
+Requires(post): systemd
 # SMART monitoring (smartd, enabled by Fedora's presets) and the weekly md
 # check (raid-check.timer, from mdadm).
 Requires:       smartmontools
@@ -139,6 +140,10 @@ if [ ! -e %{_sysconfdir}/integritytab ]; then
     chmod 0644 %{_sysconfdir}/integritytab
 fi
 command -v restorecon >/dev/null && restorecon %{_sysconfdir}/integritytab || :
+# The sandboxed engine cannot load kernel modules, and modules-load.d is
+# only read at boot: load the md personalities and dm-integrity now, so a
+# pool can be made before the first reboot.
+/usr/lib/systemd/systemd-modules-load %{_modulesloaddir}/tamarack.conf || :
 
 %preun engine
 %systemd_preun tamarack-engine.service
