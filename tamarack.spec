@@ -51,8 +51,6 @@ Requires:       lvm2
 Requires:       device-mapper
 Requires:       btrfs-progs
 Requires:       util-linux-core
-# restorecon, for the new shares subvolume.
-Requires:       policycoreutils
 Requires:       systemd
 Requires(post): systemd
 # SMART monitoring (smartd, enabled by Fedora's presets) and the weekly md

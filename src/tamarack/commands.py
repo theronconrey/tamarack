@@ -191,7 +191,7 @@ def build_steps(plan: Plan) -> list[Step]:
                 cmd("btrfs", "subvolume", "create", SHARES),
                 # btrfs leaves a new subvolume's root unlabelled; give it the
                 # volume's label (selinux/tamarack.fc) so all below inherits it.
-                cmd("restorecon", SHARES),
+                cmd("chcon", DATA_CONTEXT, SHARES),
             ),
         ),
         Step(

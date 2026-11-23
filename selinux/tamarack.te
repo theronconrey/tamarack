@@ -67,15 +67,13 @@ manage_dirs_pattern(tamarack_engine_t, tamarack_data_t, tamarack_data_t)
 read_files_pattern(tamarack_engine_t, tamarack_data_t, tamarack_data_t)
 allow tamarack_engine_t tamarack_data_t:dir { setattr ioctl };
 allow tamarack_engine_t tamarack_data_t:filesystem getattr;
-# btrfs leaves a new subvolume's root unlabelled; the engine runs
-# restorecon on it (in its own domain, so only this relabel is allowed).
+# btrfs leaves a new subvolume's root unlabelled; the engine relabels it
+# with chcon (in its own domain, so only this relabel is allowed).
 gen_require(`
 	type unlabeled_t;
 ')
 allow tamarack_engine_t unlabeled_t:dir { getattr search relabelfrom };
 allow tamarack_engine_t tamarack_data_t:dir relabelto;
-seutil_exec_setfiles(tamarack_engine_t)
-seutil_read_file_contexts(tamarack_engine_t)
 selinux_validate_context(tamarack_engine_t)
 
 manage_dirs_pattern(tamarack_engine_t, tamarack_var_lib_t, tamarack_var_lib_t)

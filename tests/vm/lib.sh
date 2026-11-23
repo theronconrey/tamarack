@@ -20,7 +20,7 @@ diagnostics() {
     echo "=== engine process context ===" >&2
     ps -eZ | grep -i tamarack >&2 || :
     echo "=== SELinux labels of the programs the engine runs ===" >&2
-    for p in parted partprobe integritysetup wipefs restorecon mdadm pvcreate pvresize vgcreate vgextend \
+    for p in parted partprobe integritysetup wipefs chcon mdadm pvcreate pvresize vgcreate vgextend \
         lvcreate lvextend mkfs.btrfs btrfs dmsetup systemctl blkid findmnt pvs vgs lvs; do
         ls -LZ "$(command -v "$p")" 2>&1 >&2 || echo "$p: not found" >&2
     done
@@ -44,6 +44,14 @@ diagnostics() {
             --bitmap=internal "${members[@]}" >&2 2>&1 && echo "outside the sandbox: created" >&2
         mdadm --stop /dev/md/tk-probe >/dev/null 2>&1 || :
     fi
+    echo "=== md members ===" >&2
+    for m in /dev/mapper/tk-d*; do
+        [ -e "$m" ] || continue
+        echo "$m:" >&2
+        mdadm --examine "$m" 2>&1 | grep -E 'Data Offset|New Offset|Super Offset|Unused Space|Feature Map|Array State|Reshape' >&2 || :
+    done
+    echo "=== the volume's labels ===" >&2
+    ls -ldZ /srv /srv/tamarack /srv/tamarack/shares >&2 2>&1 || :
     sandbox_probe
     return "$status"
 }
@@ -148,6 +156,7 @@ sandbox_probe() {
     [ "${pid:-0}" != 0 ] || { echo "engine not running" >&2; return 0; }
     grep -E ' /(sys|dev)( |/(module|mapper|md)?)' "/proc/$pid/mountinfo" | head -20 >&2 || :
     grep -E '^(Cap(Eff|Bnd)|NoNewPrivs|Seccomp):' "/proc/$pid/status" >&2 || :
+    nsenter -t "$pid" -m -- sh -c 'ls -ldZ /srv /srv/tamarack /srv/tamarack/shares; findmnt -T /srv/tamarack' >&2 2>&1 || :
     systemctl show tamarack-engine -p DevicePolicy -p DeviceAllow >&2 || :
     local out
     out=$(sh -c "echo md120 > $new" 2>&1) && out="ok $out"

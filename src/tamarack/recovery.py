@@ -110,7 +110,7 @@ def rule_for(command: Command) -> Rule:
             return RERUN
     if program == "wipefs":
         return RERUN  # only ever run on a new array, before pvcreate
-    if program == "restorecon":
+    if program == "chcon":
         return RERUN  # labelling again changes nothing
     if program == "btrfs":
         if args[:2] == ("subvolume", "create"):

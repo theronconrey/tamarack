@@ -19,6 +19,7 @@ from dataclasses import dataclass
 ALLOWED_PROGRAMS = frozenset(
     {
         "btrfs",
+        "chcon",
         "dmsetup",
         "firewall-cmd",
         "integritysetup",
@@ -30,7 +31,6 @@ ALLOWED_PROGRAMS = frozenset(
         "partprobe",
         "pvcreate",
         "pvresize",
-        "restorecon",
         "snapper",
         "systemctl",
         "tamarack-meta",

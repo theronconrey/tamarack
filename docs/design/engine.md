@@ -485,14 +485,17 @@ What the first enforcing VM runs taught us:
   check now runs `mdadm --wait` first; `--wait` exits 1 when there was
   nothing to wait for, so its failure is tolerated everywhere.
 - btrfs leaves a new subvolume's root unlabelled, so the engine could not
-  make share folders in `shares`; the create plan now runs `restorecon` on
-  it, and snapperd may relabel `.snapshots`.
+  make share folders in `shares`; the create plan now labels it with
+  `chcon`, and snapperd may relabel `.snapshots`.
 - Every array is created with `--data-offset=128M`. On small members mdadm
   reserves much less, and after a mirror was reshaped into parity there was
   no room left to add RAID5's partial parity log.
 - A new array reuses space an older one had, at the same data offset, so
   the old PV label showed through and `pvcreate` found a duplicate PV ID.
-  `wipefs --all` now runs on every new array before `pvcreate`. Fedora 45
+  `wipefs --all` now runs on every new array before `pvcreate`.
+- Reshaping a mirror into parity still left no room for PPL. The VM
+  diagnostics now print each member's data offset and unused space to
+  find out why. Fedora 45
   labels `wipefs` `bin_t`, so the module labels it `fsadm_exec_t`, like
   `blkid` and `mkfs`, to run it in `fsadm_t`.
 - snapper's timers carry the generic `systemd_unit_file_t` label; the engine
