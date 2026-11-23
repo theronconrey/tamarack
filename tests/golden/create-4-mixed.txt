@@ -47,11 +47,15 @@ lvcreate --yes --extents 100%FREE --name data tamarack
 
 # 5. Btrfs on top
 mkfs.btrfs --label tamarack --metadata dup /dev/tamarack/data
-systemctl enable --now srv-tamarack.mount
+systemctl enable --now srv-tamarack.mount tamarack-scrub.timer
 btrfs subvolume create /srv/tamarack/shares
-btrfs subvolume create /srv/tamarack/snapshots
 
-# 6. Write the layout to every tk-meta partition
+# 6. Snapshots of the shares: 24 hourly, 7 daily, 4 weekly, 6 monthly
+#    snapper keeps them in shares/.snapshots; the schedule can be changed or turned off later.
+snapper --config tamarack create-config --template tamarack --fstype btrfs /srv/tamarack/shares
+systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
+
+# 7. Write the layout to every tk-meta partition
 #    Each drive carries the whole layout, so the box can be read from any of them.
 tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid1","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
 tamarack-meta write /dev/sdb1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid1","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'

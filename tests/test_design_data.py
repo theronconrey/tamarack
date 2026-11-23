@@ -206,3 +206,37 @@ def test_mount_unit_matches_what_the_planner_builds() -> None:
     assert mount["Options"] == MOUNT_OPTIONS
     # systemd requires a mount unit to be named after its mount point.
     assert MOUNT_POINT.strip("/").replace("/", "-") + ".mount" == MOUNT_UNIT
+
+
+def test_scrub_runs_monthly_on_the_volume_and_create_enables_it() -> None:
+    from tamarack.commands import MOUNT_POINT, MOUNT_UNIT, SCRUB_TIMER, build_steps
+    from tamarack.planner import make_plan
+
+    def read(name: str) -> configparser.ConfigParser:
+        parser = configparser.ConfigParser(strict=False)
+        parser.optionxform = str  # type: ignore[assignment,method-assign]
+        parser.read(DATA / "systemd" / name)
+        return parser
+
+    service, timer = read("tamarack-scrub.service"), read("tamarack-scrub.timer")
+    assert service["Service"]["ExecStart"].endswith(f"scrub start -B -d {MOUNT_POINT}")
+    assert service["Unit"]["Requires"] == MOUNT_UNIT
+    assert service["Unit"]["ConditionPathIsMountPoint"] == MOUNT_POINT
+    assert timer["Timer"]["OnCalendar"] == "monthly"
+    assert timer["Timer"]["Persistent"] == "true"
+    argvs = [c.argv for step in build_steps(make_plan([4 * 10**12])) for c in step.commands]
+    assert ("systemctl", "enable", "--now", MOUNT_UNIT, SCRUB_TIMER) in argvs
+
+
+def test_snapper_template_matches_the_default_schedule() -> None:
+    from tamarack.engine import DEFAULT_SCHEDULE
+
+    values = {}
+    for line in (DATA / "snapper" / "tamarack").read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, _, value = line.partition("=")
+            values[key] = value.strip('"')
+    assert values["FSTYPE"] == "btrfs"
+    assert values["TIMELINE_CREATE"] == "yes" and values["TIMELINE_CLEANUP"] == "yes"
+    for period, kept in DEFAULT_SCHEDULE.items():
+        assert values[f"TIMELINE_LIMIT_{period.upper()}"] == str(kept)

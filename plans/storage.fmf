@@ -3,7 +3,8 @@
 # The VM test matrix (docs/design/engine.md, section 10). Runs on Testing
 # Farm through Packit, or locally with `tmt run` (it provisions a VM).
 # Every test runs with SELinux enforcing, on RAM-backed scsi_debug drives
-# created inside the VM, so nothing outside the VM can ever be touched.
+# or file-backed LIO loopback drives created inside the VM, so nothing
+# outside the VM can ever be touched.
 
 summary: Engine on a real kernel, SELinux enforcing
 discover:

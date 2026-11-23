@@ -97,6 +97,16 @@ optional_policy(`
 	init_dbus_chat(tamarack_engine_t)
 ')
 
+# snapper is a D-Bus client of snapperd, which makes and prunes snapshots.
+optional_policy(`
+	gen_require(`
+		type snapperd_t;
+		class dbus send_msg;
+	')
+	allow tamarack_engine_t snapperd_t:dbus send_msg;
+	allow snapperd_t tamarack_engine_t:dbus send_msg;
+')
+
 # systemctl enable --now srv-tamarack.mount, after creating a pool.
 optional_policy(`
 	systemd_exec_systemctl(tamarack_engine_t)

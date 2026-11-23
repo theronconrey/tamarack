@@ -26,6 +26,7 @@ Run as ``/usr/libexec/tamarack-engine`` by ``tamarack-engine.service``
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import signal
@@ -161,6 +162,7 @@ class Service:
         self._plans: dict[int, int] = {}  # plan id -> registration id
         self._jobs: dict[str, int] = {}  # job id -> registration id
         self._threads: list[threading.Thread] = []
+        self._last_health: dict[str, Any] | None = None
         self.sync_objects()
 
     # --- bus plumbing --------------------------------------------------------
@@ -308,6 +310,17 @@ class Service:
                     return "(o)", (plan_path(stored.id),)
 
                 return READ_ACTION, {}, plan
+            if method == "SetSnapshotSchedule":
+                (schedule,) = args
+                action = e.authorize_snapshot_schedule(schedule)
+
+                def snapshots() -> Reply:
+                    applied = e.set_snapshot_schedule(schedule)
+                    log.info("snapshot schedule set to %s", applied)
+                    self._manager_changed("SnapshotSchedule")
+                    return "", ()
+
+                return action, {}, snapshots
             if method == "ConfirmBackup":
 
                 def confirm() -> Reply:
@@ -421,6 +434,45 @@ class Service:
             success = report.state == "completed"
             self._emit(job_path(job_id), JOB, "Finished", "(bs)", (success, report.message))
 
+    # --- health ----------------------------------------------------------------
+
+    def check_health(self) -> bool:
+        """Compare the pool's health with the last check; alert on what got worse.
+
+        Runs every minute from the main loop. Alerts go to the journal (with an
+        ALERT prefix) and out as D-Bus signals for Cockpit or any other client.
+        """
+        try:
+            health = self.engine.health()
+        except Exception:
+            log.exception("health check failed")
+            return True
+        # The first check compares against a clean slate, so a pool that is
+        # already degraded when the engine starts is reported too.
+        before = self._last_health or {"status": "none", "degraded_layers": [], "drives": []}
+        self._last_health = health
+        if before == health:
+            return True
+        new_layers = set(health["degraded_layers"]) - set(before["degraded_layers"])
+        for layer in sorted(new_layers):
+            log.warning("ALERT: layer %d is degraded; replace the failed drive", layer)
+            self._emit(MANAGER_PATH, MANAGER, "ArrayDegraded", "(u)", (layer,))
+        was_bad = {d["device"] for d in before["drives"] if d["state"] in ("failing", "missing")}
+        for drive in health["drives"]:
+            if drive["state"] in ("failing", "missing") and drive["device"] not in was_bad:
+                log.warning("ALERT: %s is %s: %s", drive["device"], drive["state"], drive["detail"])
+                self._emit(
+                    MANAGER_PATH,
+                    MANAGER,
+                    "DriveFailing",
+                    "(ss)",
+                    (drive["device"], f"{drive['state']}: {drive['detail']}"),
+                )
+        if health["status"] == "ok" and before["status"] != "ok":
+            log.info("the pool is healthy again")
+        self._manager_changed("Health", "Degraded")
+        return True
+
     # --- change notification -------------------------------------------------
 
     def _emit(self, path: str, interface: str, name: str, signature: str, value: Any) -> None:
@@ -457,8 +509,10 @@ class Service:
             "DriveFailuresTolerated": lambda: e.drive_failures_tolerated,
             "UsableBytes": lambda: e.usable_bytes,
             "Degraded": lambda: e.degraded,
+            "Health": lambda: json.dumps(e.health(), sort_keys=True),
             "OnBattery": lambda: e.on_battery,
             "LastBackupConfirmed": lambda: e.last_backup_confirmed,
+            "SnapshotSchedule": lambda: e.snapshot_schedule,
             "ActiveJob": lambda: job_path(e.active_job) if e.active_job else "/",
         }
 
@@ -577,6 +631,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     service.start_reattached()
     loop = GLib.MainLoop()
     GLib.timeout_add_seconds(30, service.sync_objects)
+    service.check_health()
+    GLib.timeout_add_seconds(60, service.check_health)
     for signum in (signal.SIGTERM, signal.SIGINT):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signum, loop.quit)
     log.info("tamarack-engine %s ready on the %s bus", engine.version, bus_kind(args.session))

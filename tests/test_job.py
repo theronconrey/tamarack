@@ -376,7 +376,7 @@ def test_journal_path() -> None:
             ("lvs", "tamarack/data"),
         ),
         (
-            ("systemctl", "enable", "--now", "srv-tamarack.mount"),
+            ("systemctl", "enable", "--now", "srv-tamarack.mount", "tamarack-scrub.timer"),
             "probe",
             ("findmnt", "--mountpoint", "/srv/tamarack"),
         ),
@@ -402,6 +402,7 @@ def test_every_probe_is_a_read_only_program() -> None:
         ("lvs",),
         ("mdadm", "--detail"),
         ("pvs",),
+        ("snapper", "--config", "tamarack", "get-config"),
         ("vgs",),
     }
     for doc in (make() for make in PLANS.values()):

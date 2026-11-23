@@ -26,7 +26,9 @@ from .commands import MOUNT_POINT, MOUNT_UNIT
 from .ops import Command
 
 # Read-only programs a probe may call, in the forms used below.
-PROBE_PROGRAMS = frozenset({"blkid", "btrfs", "dmsetup", "findmnt", "lvs", "mdadm", "pvs", "vgs"})
+PROBE_PROGRAMS = frozenset(
+    {"blkid", "btrfs", "dmsetup", "findmnt", "lvs", "mdadm", "pvs", "snapper", "vgs"}
+)
 
 
 class Resume(StrEnum):
@@ -97,8 +99,15 @@ def rule_for(command: Command) -> Rule:
         return _probe("lvs", f"{args[-1]}/{name}")
     if program == "mkfs.btrfs":
         return _probe("blkid", "--match-token", "TYPE=btrfs", args[-1])
-    if program == "systemctl" and args[:2] == ("enable", "--now") and args[-1] == MOUNT_UNIT:
-        return _probe("findmnt", "--mountpoint", MOUNT_POINT)
+    if program == "systemctl" and args[:2] == ("enable", "--now"):
+        if MOUNT_UNIT in args:
+            return _probe("findmnt", "--mountpoint", MOUNT_POINT)
+        return RERUN  # enabling timers again changes nothing
+    if program == "snapper" and args[:2] == ("--config", args[1]):
+        if args[2] == "create-config":
+            return _probe("snapper", "--config", args[1], "get-config")
+        if args[2] == "set-config":
+            return RERUN
     if program == "btrfs":
         if args[:2] == ("subvolume", "create"):
             return _probe("btrfs", "subvolume", "show", args[2])

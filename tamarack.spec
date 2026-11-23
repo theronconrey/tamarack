@@ -53,6 +53,11 @@ Requires:       device-mapper
 Requires:       btrfs-progs
 Requires:       util-linux-core
 Requires:       systemd
+# SMART monitoring (smartd, enabled by Fedora's presets) and the weekly md
+# check (raid-check.timer, from mdadm).
+Requires:       smartmontools
+# Timeline snapshots of the shares (template: data/snapper/tamarack).
+Requires:       snapper
 Recommends:     upower
 # The engine's own SELinux domain, wherever the targeted policy is in use.
 Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
@@ -101,6 +106,8 @@ mv %{buildroot}%{_bindir}/tamarack-meta %{buildroot}%{_libexecdir}/tamarack-meta
 install -Dpm 0644 data/systemd/tamarack-engine.service \
     %{buildroot}%{_unitdir}/tamarack-engine.service
 install -Dpm 0644 data/systemd/srv-tamarack.mount %{buildroot}%{_unitdir}/srv-tamarack.mount
+install -Dpm 0644 data/systemd/tamarack-scrub.service %{buildroot}%{_unitdir}/tamarack-scrub.service
+install -Dpm 0644 data/systemd/tamarack-scrub.timer %{buildroot}%{_unitdir}/tamarack-scrub.timer
 install -Dpm 0644 data/dbus/com.borealislogistics.Tamarack1.conf \
     %{buildroot}%{_datadir}/dbus-1/system.d/com.borealislogistics.Tamarack1.conf
 install -Dpm 0644 data/dbus/com.borealislogistics.Tamarack1.service \
@@ -112,6 +119,8 @@ install -Dpm 0644 data/polkit/com.borealislogistics.tamarack.policy \
 install -Dpm 0644 data/modules-load/tamarack.conf \
     %{buildroot}%{_modulesloaddir}/tamarack.conf
 install -dm 0755 %{buildroot}%{_sysconfdir}/tamarack
+install -Dpm 0644 data/snapper/tamarack \
+    %{buildroot}%{_datadir}/snapper/config-templates/tamarack
 install -Dpm 0644 selinux/tamarack.pp.bz2 \
     %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/tamarack.pp.bz2
 install -Dpm 0644 selinux/tamarack.if \
@@ -163,11 +172,14 @@ fi
 %{_libexecdir}/tamarack-meta
 %{_unitdir}/tamarack-engine.service
 %{_unitdir}/srv-tamarack.mount
+%{_unitdir}/tamarack-scrub.service
+%{_unitdir}/tamarack-scrub.timer
 %{_datadir}/dbus-1/system.d/com.borealislogistics.Tamarack1.conf
 %{_datadir}/dbus-1/system-services/com.borealislogistics.Tamarack1.service
 %{_datadir}/dbus-1/interfaces/com.borealislogistics.Tamarack1.xml
 %{_datadir}/polkit-1/actions/com.borealislogistics.tamarack.policy
 %{_modulesloaddir}/tamarack.conf
+%{_datadir}/snapper/config-templates/tamarack
 %dir %{_sysconfdir}/tamarack
 %ghost %config(noreplace) %{_sysconfdir}/integritytab
 

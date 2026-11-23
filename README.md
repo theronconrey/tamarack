@@ -196,6 +196,7 @@ tamarack engine confirm-backup                # needed before add, replace, rebu
 tamarack engine add /dev/disk/by-id/ata-…     # type the drive to confirm, then
                                               # polkit asks for the admin password
 tamarack engine resume 3 [--done|--rerun]     # after a pause or a power cut
+tamarack engine snapshots --keep 24 7 4 6     # hourly daily weekly monthly; or --off
 ```
 
 It shows the plan and its digest, asks you to type every drive it will

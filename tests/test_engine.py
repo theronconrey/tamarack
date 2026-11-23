@@ -50,9 +50,16 @@ class FakeDrives:
     def __init__(self, drives: dict[str, tuple[int, str]]) -> None:
         self.drives = drives
         self.lookups: list[tuple[str, bool]] = []
+        self.smart: dict[str, tuple[str, str]] = {}
 
     def present(self, devices: list[str]) -> dict[str, str]:
         return {d: self.drives[d][1] for d in devices if d in self.drives}
+
+    def health(self, devices: list[str]) -> dict[str, tuple[str, str]]:
+        return {
+            d: self.smart.get(d, ("ok", "")) if d in self.drives else ("missing", "not attached")
+            for d in devices
+        }
 
     def partition_uuids(self, device: str) -> dict[int, str]:
         if device not in self.drives:
@@ -727,3 +734,138 @@ def test_udisks_finds_tk_meta_partitions() -> None:
     objects = udisks()
     objects["/org/freedesktop/UDisks2/block_devices/sda1"][P]["Name"] = "tk-meta"
     assert find_meta_partitions(objects) == ["/dev/sda1"]
+
+
+# --- health ------------------------------------------------------------------
+
+
+def test_health_without_a_pool(tmp_path: Path) -> None:
+    assert engine(tmp_path).health() == {"status": "none", "degraded_layers": [], "drives": []}
+
+
+def test_health_of_a_good_pool_then_a_failing_and_a_missing_drive(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb", "/dev/sdc"])
+    health = e.health()
+    assert health["status"] == "ok"
+    assert [d["state"] for d in health["drives"]] == ["ok", "ok", "ok"]
+    fake = e.drives  # type: ignore[assignment]
+    fake.smart["/dev/sdb"] = ("failing", "12 reallocated or pending bad sectors")  # type: ignore[attr-defined]
+    del fake.drives["/dev/sdc"]  # type: ignore[attr-defined]
+    health = e.health()
+    assert health["status"] == "warning"
+    assert health["drives"][1] == {
+        "device": "/dev/sdb",
+        "state": "failing",
+        "detail": "12 reallocated or pending bad sectors",
+    }
+    assert health["drives"][2]["state"] == "missing"
+
+
+def test_health_reports_degraded_layers_first(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd"])
+    (Path(e.root) / "sys" / "block" / "md126" / "md" / "degraded").write_text("1\n")
+    health = e.health()
+    assert health["status"] == "degraded" and health["degraded_layers"] == [1]
+
+
+def test_udisks_smart_health() -> None:
+    from tamarack.udisks import ATA, NVME, find_health
+
+    objects = udisks()
+    drive = objects["/org/freedesktop/UDisks2/drives/WDC_1"]
+    assert find_health(objects, ["/dev/sda", "/dev/sdz"]) == {
+        "/dev/sda": ("unknown", "no SMART data"),
+        "/dev/sdz": ("missing", "not attached"),
+    }
+    drive[ATA] = {"SmartSupported": True, "SmartEnabled": True, "SmartFailing": False}
+    assert find_health(objects, ["/dev/sda"])["/dev/sda"] == ("ok", "")
+    drive[ATA]["SmartNumBadSectors"] = 3
+    assert find_health(objects, ["/dev/sda"])["/dev/sda"][0] == "failing"
+    drive[ATA]["SmartFailing"] = True
+    assert find_health(objects, ["/dev/sda"])["/dev/sda"] == (
+        "failing",
+        "SMART says the drive is failing",
+    )
+    del drive[ATA]
+    drive[NVME] = {"SmartCriticalWarning": ["spare", "temperature"]}
+    assert find_health(objects, ["/dev/sda"])["/dev/sda"] == ("failing", "spare, temperature")
+    drive[NVME] = {"SmartCriticalWarning": []}
+    assert find_health(objects, ["/dev/sda"])["/dev/sda"] == ("ok", "")
+
+
+# --- snapshot schedule -------------------------------------------------------
+
+
+def test_snapshot_schedule_defaults_and_changes(tmp_path: Path) -> None:
+    from tamarack.engine import DEFAULT_SCHEDULE
+
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    assert (
+        e.snapshot_schedule
+        == DEFAULT_SCHEDULE
+        == {
+            "hourly": 24,
+            "daily": 7,
+            "weekly": 4,
+            "monthly": 6,
+        }
+    )
+    wanted = {"hourly": 12, "daily": 14, "weekly": 0, "monthly": 3}
+    assert e.authorize_snapshot_schedule(wanted) == "com.borealislogistics.tamarack.configure"
+    assert e.set_snapshot_schedule(wanted) == wanted
+    assert e.snapshot_schedule == wanted
+    assert e.runner.calls[-1] == (  # type: ignore[union-attr]
+        "snapper",
+        "--config",
+        "tamarack",
+        "set-config",
+        "TIMELINE_CREATE=yes",
+        "TIMELINE_LIMIT_HOURLY=12",
+        "TIMELINE_LIMIT_DAILY=14",
+        "TIMELINE_LIMIT_WEEKLY=0",
+        "TIMELINE_LIMIT_MONTHLY=3",
+    )
+    e.set_snapshot_schedule(dict.fromkeys(wanted, 0))
+    assert "TIMELINE_CREATE=no" in e.runner.calls[-1]  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        {"hourly": 1, "daily": 1, "weekly": 1},
+        {"hourly": 1, "daily": 1, "weekly": 1, "monthly": 1, "yearly": 1},
+        {"hourly": -1, "daily": 1, "weekly": 1, "monthly": 1},
+        {"hourly": 1001, "daily": 1, "weekly": 1, "monthly": 1},
+        {"hourly": True, "daily": 1, "weekly": 1, "monthly": 1},
+        {"hourly": "24", "daily": 1, "weekly": 1, "monthly": 1},
+    ],
+)
+def test_bad_snapshot_schedules(tmp_path: Path, schedule: dict[str, Any]) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    with pytest.raises(InvalidArgument):
+        e.authorize_snapshot_schedule(schedule)
+
+
+def test_snapshot_schedule_needs_a_pool_and_a_runner(tmp_path: Path) -> None:
+    good = {"hourly": 1, "daily": 1, "weekly": 1, "monthly": 1}
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    with pytest.raises(NoLayout):
+        run_engine(tmp_path / "a").set_snapshot_schedule(good)
+    with pytest.raises(NotSupported):
+        run_engine(tmp_path / "b", ["/dev/sda"], runner=None).set_snapshot_schedule(good)
+
+
+def test_failed_snapper_keeps_the_old_schedule(tmp_path: Path) -> None:
+    from tamarack.job import Result
+
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+
+    class Failing(FakeRunner):
+        def run(self, argv: tuple[str, ...]) -> Result:
+            return Result(1, "snapper: config 'tamarack' not found\n")
+
+    e.runner = Failing()
+    with pytest.raises(EngineError, match="not found"):
+        e.set_snapshot_schedule({"hourly": 1, "daily": 1, "weekly": 1, "monthly": 1})
+    assert e.snapshot_schedule["hourly"] == 24

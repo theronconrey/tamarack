@@ -20,9 +20,16 @@
     <property name="DriveFailuresTolerated" type="u" access="read"/>
     <property name="UsableBytes" type="t" access="read"/>
     <property name="Degraded" type="b" access="read"/>
+    <!-- JSON: {"status": "none"|"ok"|"warning"|"degraded", "degraded_layers": [N],
+         "drives": [{"device", "state": "ok"|"failing"|"unknown"|"missing",
+         "detail"}]}. Checked every minute; changes emit PropertiesChanged. -->
+    <property name="Health" type="s" access="read"/>
     <property name="OnBattery" type="b" access="read"/>
     <!-- Unix time of the last ConfirmBackup, 0 if never -->
     <property name="LastBackupConfirmed" type="t" access="read"/>
+    <!-- Snapshots kept per period: hourly, daily, weekly, monthly. All zero
+         means timeline snapshots are off. -->
+    <property name="SnapshotSchedule" type="a{su}" access="read"/>
     <!-- The running or paused job, or "/" -->
     <property name="ActiveJob" type="o" access="read"/>
 
@@ -56,12 +63,24 @@
       <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
                   value="com.borealislogistics.tamarack.confirm-backup"/>
     </method>
+    <!-- Keys "hourly", "daily", "weekly", "monthly" (all four); all zero
+         turns timeline snapshots off. Applied with snapper set-config. -->
+    <method name="SetSnapshotSchedule">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.configure"/>
+      <arg name="schedule" type="a{su}" direction="in"/>
+    </method>
 
     <signal name="LayoutChanged">
       <arg name="layout" type="s"/>
     </signal>
     <signal name="ArrayDegraded">
       <arg name="layer" type="u"/>
+    </signal>
+    <!-- A drive in the pool started failing SMART checks or disappeared -->
+    <signal name="DriveFailing">
+      <arg name="device" type="s"/>
+      <arg name="detail" type="s"/>
     </signal>
   </interface>
 

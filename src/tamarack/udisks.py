@@ -24,6 +24,8 @@ FILESYSTEM = "org.freedesktop.UDisks2.Filesystem"
 SWAPSPACE = "org.freedesktop.UDisks2.Swapspace"
 ENCRYPTED = "org.freedesktop.UDisks2.Encrypted"
 PHYSICAL_VOLUME = "org.freedesktop.UDisks2.PhysicalVolume"  # UDisks2 LVM2 module
+ATA = "org.freedesktop.UDisks2.Drive.Ata"
+NVME = "org.freedesktop.UDisks2.NVMe.Controller"
 
 Objects = Mapping[str, Mapping[str, Mapping[str, Any]]]
 
@@ -123,6 +125,35 @@ def find_meta_partitions(objects: Objects) -> list[str]:
     return sorted(found)
 
 
+def find_health(objects: Objects, devices: Iterable[str]) -> dict[str, tuple[str, str]]:
+    """SMART health of each drive as UDisks2 reports it: (state, detail).
+
+    state is "ok", "failing", "unknown" (no SMART data) or "missing".
+    """
+    health: dict[str, tuple[str, str]] = {}
+    for device in devices:
+        matches = [i[BLOCK] for i in objects.values() if BLOCK in i and device in _paths(i[BLOCK])]
+        if not matches:
+            health[device] = ("missing", "not attached")
+            continue
+        drive = objects.get(str(matches[0].get("Drive", "/")), {})
+        ata, nvme = drive.get(ATA), drive.get(NVME)
+        if ata is not None and ata.get("SmartSupported") and ata.get("SmartEnabled"):
+            if ata.get("SmartFailing"):
+                health[device] = ("failing", "SMART says the drive is failing")
+            elif int(ata.get("SmartNumBadSectors", 0)) > 0:
+                bad = int(ata["SmartNumBadSectors"])
+                health[device] = ("failing", f"{bad} reallocated or pending bad sectors")
+            else:
+                health[device] = ("ok", "")
+        elif nvme is not None and "SmartCriticalWarning" in nvme:
+            warnings = list(nvme.get("SmartCriticalWarning", []))
+            health[device] = ("failing", ", ".join(warnings)) if warnings else ("ok", "")
+        else:
+            health[device] = ("unknown", "no SMART data")
+    return health
+
+
 class UDisksDrives:
     """``DriveSource`` backed by UDisks2 on the given GDBus connection."""
 
@@ -155,6 +186,9 @@ class UDisksDrives:
 
     def present(self, devices: list[str]) -> dict[str, str]:
         return find_present(self.objects(), devices)
+
+    def health(self, devices: list[str]) -> dict[str, tuple[str, str]]:
+        return find_health(self.objects(), devices)
 
     def partition_uuids(self, device: str) -> dict[int, str]:
         return find_partition_uuids(self.objects(), device)
