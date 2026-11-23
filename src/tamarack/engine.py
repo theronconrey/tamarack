@@ -7,9 +7,13 @@ uses and holds them for review until they expire. ``tamarack.service``
 exports all of this on the system bus; keeping it separate lets every rule be
 tested without a bus.
 
-This step is read-only: nothing here starts a job or runs a command.
-Executing a plan, confirming a backup, resuming and cancelling answer
-``NotSupported`` until polkit authorization exists (step 5 of the design).
+Executing a plan turns it into a job (``tamarack.job``) run through the
+``Runner`` the engine was given. The caller authorizes first: each
+``authorize_*`` method validates the request and names the polkit action to
+check; the matching action method validates again (time passes during
+authentication) and applies every safety check. An engine built without a
+runner, as the service is until the VM test matrix passes, refuses to
+execute anything.
 """
 
 from __future__ import annotations
@@ -17,6 +21,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -25,12 +31,16 @@ from typing import Any, Protocol, TypeVar
 from . import __version__
 from .commands import build_steps
 from .grow import plan_add_drive
-from .journal import JournalError, load
+from .identity import DriveChanged as IdentityChanged
+from .identity import verify
+from .job import Observer, Report, Resolution, Runner, resume, start
+from .job import cancel as cancel_journal
+from .journal import JobState, JournalError, journal_path, load
 from .layout import Disk, Layout, layout_from_plan
 from .model import Plan, PlanKind
 from .planner import make_plan
-from .replace import plan_replace
-from .review import digest, document
+from .replace import RETIRE_TITLE, plan_replace
+from .review import LEAVE, digest, document, expected_drives
 from .steps import ChangePlan
 
 T = TypeVar("T")
@@ -38,6 +48,15 @@ T = TypeVar("T")
 ERROR_PREFIX = "com.borealislogistics.Tamarack1.Error"
 PLAN_LIFETIME = 30 * 60  # seconds a plan stays executable after it is made
 MAX_PLANS = 16
+BACKUP_MAX_AGE = 7 * 24 * 3600  # a backup older than this is not recent
+POLKIT = "com.borealislogistics.tamarack"
+ACTIONS = {
+    PlanKind.CREATE: f"{POLKIT}.create",
+    PlanKind.ADD: f"{POLKIT}.add-drive",
+    PlanKind.REPLACE: f"{POLKIT}.replace-drive",
+    PlanKind.REBUILD: f"{POLKIT}.replace-drive",
+}
+NEEDS_BACKUP = {PlanKind.ADD, PlanKind.REPLACE, PlanKind.REBUILD}
 LAYOUT_FILE = "layout.json"
 BACKUP_FILE = "backup-confirmed"
 JOBS_SUBDIR = "jobs"
@@ -96,6 +115,38 @@ class NotSupported(EngineError):
     name = "NotSupported"
 
 
+class StalePlan(EngineError):
+    name = "StalePlan"
+
+
+class NotConfirmed(EngineError):
+    name = "NotConfirmed"
+
+
+class Degraded(EngineError):
+    name = "Degraded"
+
+
+class OnBattery(EngineError):
+    name = "OnBattery"
+
+
+class NoUps(EngineError):
+    name = "NoUps"
+
+
+class NoRecentBackup(EngineError):
+    name = "NoRecentBackup"
+
+
+class NoSuchJob(EngineError):
+    name = "NoSuchJob"
+
+
+class NotBetweenSteps(EngineError):
+    name = "NotBetweenSteps"
+
+
 def validate_device_path(path: str) -> str:
     """Accept only plain, normalised paths under /dev."""
     if len(path) > 255 or not _DEVICE_PATH.fullmatch(path) or os.path.normpath(path) != path:
@@ -120,6 +171,86 @@ class DriveSource(Protocol):
         or otherwise in use: the drive is about to be erased.
         """
         ...
+
+    def present(self, devices: list[str]) -> dict[str, str]:
+        """The identity of the drive at each path now; missing paths are left out."""
+        ...
+
+
+@dataclass(frozen=True)
+class ExecuteOptions:
+    confirm_erase: list[str]
+    no_ups: bool = False
+
+
+def parse_execute_options(options: dict[str, Any]) -> ExecuteOptions:
+    unknown = set(options) - {"confirm-erase", "no-ups"}
+    if unknown:
+        raise InvalidArgument(f"unknown options: {', '.join(sorted(unknown))}")
+    confirm = options.get("confirm-erase")
+    if not isinstance(confirm, list) or not all(isinstance(d, str) for d in confirm):
+        raise NotConfirmed("type each drive to be erased in confirm-erase")
+    no_ups = options.get("no-ups", False)
+    if not isinstance(no_ups, bool):
+        raise InvalidArgument("no-ups must be a boolean")
+    return ExecuteOptions(list(confirm), no_ups)
+
+
+def parse_resume_options(options: dict[str, Any]) -> Resolution | None:
+    unknown = set(options) - {"resolution"}
+    if unknown:
+        raise InvalidArgument(f"unknown options: {', '.join(sorted(unknown))}")
+    if "resolution" not in options:
+        return None
+    try:
+        return Resolution(options["resolution"])
+    except ValueError:
+        raise InvalidArgument('resolution must be "done" or "rerun"') from None
+
+
+@dataclass(frozen=True)
+class JobStatus:
+    id: str
+    digest: str
+    state: str  # running, waiting, paused, completed, failed or cancelled
+    step: int
+    step_count: int
+    step_title: str
+    message: str
+
+
+class JobRun:
+    """One run of a job, to be started on a worker thread with ``run``."""
+
+    def __init__(self, engine: Engine, job_id: str, work: Callable[[Observer | None], Report]):
+        self.engine = engine
+        self.job_id = job_id
+        self._work = work
+
+    def run(self, observer: Observer | None = None) -> Report:
+        return self._work(observer)
+
+
+def write_atomically(path: str, text: str) -> None:
+    """Replace ``path`` so a crash leaves either the old file or the new one."""
+    directory = os.path.dirname(path)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".tmp-")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+    dfd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(dfd)
+    finally:
+        os.close(dfd)
 
 
 @dataclass(frozen=True)
@@ -155,6 +286,8 @@ class Engine:
         clock: Callable[[], float] = time.time,
         on_battery: Callable[[], bool] = lambda: False,
         root: str = "/",
+        runner: Runner | None = None,
+        ups_present: Callable[[], bool] = lambda: False,
     ) -> None:
         self.state_dir = state_dir
         self.drives = drives
@@ -165,6 +298,12 @@ class Engine:
         self._next_id = 1
         self._layout: Layout | None = None
         self._layout_error = ""
+        self.runner = runner
+        self._ups_present = ups_present
+        self._running: str | None = None  # job id of the job on a worker thread
+        self._session_jobs: set[str] = set()  # jobs run since start, kept visible
+        self._cancel_requested: set[str] = set()
+        self._lock = threading.Lock()
         self.reload()
 
     # --- state ---------------------------------------------------------------
@@ -223,7 +362,16 @@ class Engine:
 
     @property
     def state(self) -> str:
+        if self._running:
+            return "running"
         return "paused" if self.unfinished_jobs() else "idle"
+
+    @property
+    def active_job(self) -> str:
+        if self._running:
+            return self._running
+        unfinished = self.unfinished_jobs()
+        return unfinished[0] if unfinished else ""
 
     def degraded_layers(self) -> list[int]:
         """Layers whose md array is missing or has missing members (from sysfs)."""
@@ -328,11 +476,249 @@ class Engine:
         )
         return self._store_change(change)
 
+    # --- executing -----------------------------------------------------------
+
+    def authorize_execute(
+        self, plan_id: int, plan_digest: str, options: dict[str, Any]
+    ) -> tuple[str, dict[str, str]]:
+        """Validate an Execute call; return the polkit action and its details."""
+        plan = self._executable(plan_id, plan_digest, parse_execute_options(options))
+        return ACTIONS[plan.kind], {"kind": plan.kind.value, "erases": " ".join(plan.erases)}
+
+    def execute(self, plan_id: int, plan_digest: str, options: dict[str, Any]) -> JobRun:
+        """After authorization: check everything again, then make the job."""
+        opts = parse_execute_options(options)
+        plan = self._executable(plan_id, plan_digest, opts)
+        self._safety(plan, opts)
+        with self._lock:
+            if self._running:
+                raise Busy(f"job {self._running} is running")
+            job_id = self._new_job_id()
+            path = self._journal(job_id)
+            del self._plans[plan_id]
+            self._running = job_id
+            self._session_jobs.add(job_id)
+        doc, runner = plan.document, self._require_runner()
+
+        def work(observer: Observer | None) -> Report:
+            return start(doc, job_id, path, runner, self._gate(job_id, doc), observer=observer)
+
+        return JobRun(self, job_id, work)
+
+    def authorize_resume(self, job_id: str, options: dict[str, Any]) -> str:
+        self._resumable(job_id)
+        parse_resume_options(options)
+        return f"{POLKIT}.resume"
+
+    def resume_job(self, job_id: str, options: dict[str, Any]) -> JobRun:
+        state = self._resumable(job_id)
+        resolution = parse_resume_options(options)
+        if self.on_battery:
+            raise OnBattery("the UPS is on battery; resume when power is back")
+        return self._claim(job_id, state.plan, authorized=True, resolution=resolution)
+
+    def reattach_runs(self) -> list[JobRun]:
+        """At start: re-attach to interrupted ``mdadm --wait`` commands, unauthorized."""
+        if self.runner is None:
+            return []
+        runs = []
+        for job_id in self.unfinished_jobs():
+            try:
+                state = load(self._journal(job_id))
+            except (OSError, JournalError):
+                continue
+            if state.in_doubt and _is_wait(state) and self._running is None:
+                runs.append(self._claim(job_id, state.plan, authorized=False, resolution=None))
+        return runs[:1]  # one job at a time; others wait for Resume
+
+    def authorize_cancel(self, job_id: str) -> str:
+        self._unfinished(job_id)
+        return f"{POLKIT}.cancel"
+
+    def cancel_job(self, job_id: str) -> Report | None:
+        """Cancel between steps. A running job stops at its next step boundary."""
+        self._unfinished(job_id)
+        if self._running == job_id:
+            self._cancel_requested.add(job_id)
+            return None
+        try:
+            return cancel_journal(self._journal(job_id))
+        except JournalError as exc:
+            raise NotBetweenSteps(str(exc)) from exc
+
+    def job_finished(self, job_id: str, report: Report | None) -> Report | None:
+        """Called on the main thread when a JobRun returns (``None`` if it crashed)."""
+        with self._lock:
+            if self._running == job_id:
+                self._running = None
+        if report is not None and report.state == "completed":
+            doc = load(self._journal(job_id)).plan
+            write_atomically(
+                os.path.join(self.state_dir, LAYOUT_FILE),
+                Layout.from_dict(doc["after"]).to_json() + "\n",
+            )
+            self.reload()
+        if job_id in self._cancel_requested and report is not None and report.state == "paused":
+            self._cancel_requested.discard(job_id)
+            return cancel_journal(self._journal(job_id))
+        self._cancel_requested.discard(job_id)
+        return report
+
+    def authorize_confirm_backup(self) -> str:
+        return f"{POLKIT}.confirm-backup"
+
+    def confirm_backup(self) -> int:
+        now = int(self.clock())
+        write_atomically(os.path.join(self.state_dir, BACKUP_FILE), f"{now}\n")
+        return now
+
+    # --- jobs ----------------------------------------------------------------
+
+    def job_ids(self) -> list[str]:
+        return sorted(set(self.unfinished_jobs()) | self._session_jobs, key=int)
+
+    def job_status(self, job_id: str) -> JobStatus:
+        try:
+            state = load(self._journal(job_id))
+        except (OSError, JournalError) as exc:
+            return JobStatus(job_id, "", "paused", 0, 0, "", f"the journal cannot be read: {exc}")
+        count = len(state.steps)
+        step = min(state.step, count)
+        title = state.steps[step - 1]["title"] if step else ""
+        if state.ended:
+            status = state.result
+        elif self._running == job_id:
+            status = "waiting" if state.in_doubt and _is_wait(state) else "running"
+        else:
+            status = "paused"
+        return JobStatus(job_id, state.digest, status, step, count, title, state.message)
+
     # --- helpers -------------------------------------------------------------
+
+    def _require_runner(self) -> Runner:
+        if self.runner is None:
+            raise NotSupported(
+                "this engine has no command runner: executing changes is not enabled yet"
+            )
+        return self.runner
+
+    def _executable(self, plan_id: int, plan_digest: str, opts: ExecuteOptions) -> StoredPlan:
+        self._require_runner()
+        plan = self.plan(plan_id)
+        if plan_digest != plan.digest:
+            raise StalePlan("the plan differs from the one reviewed; review it again")
+        self._ready_to_plan()
+        current = self._layout.to_dict() if self._layout else None
+        if plan.document["before"] != current:
+            raise StalePlan("the layout changed since this plan was made; make a new plan")
+        if sorted(opts.confirm_erase) != sorted(plan.erases):
+            raise NotConfirmed(f"type exactly the drives to be erased: {', '.join(plan.erases)}")
+        return plan
+
+    def _safety(self, plan: StoredPlan, opts: ExecuteOptions) -> None:
+        expected = expected_drives(plan.document)
+        try:
+            verify(expected, self.drives.present([e.device for e in expected]))
+        except IdentityChanged as exc:
+            raise DriveChanged(str(exc)) from exc
+        degraded = set(self.degraded_layers())
+        if degraded - _rebuilt_layers(plan.document):
+            names = ", ".join(str(i) for i in sorted(degraded))
+            raise Degraded(f"layer {names} is degraded: replace the failed drive first")
+        if self.on_battery:
+            raise OnBattery("the UPS is on battery; try again when power is back")
+        if not self._ups_present() and not opts.no_ups:
+            raise NoUps("no UPS is connected; type no-ups to go ahead without one")
+        stale_backup = self.clock() - self.last_backup_confirmed > BACKUP_MAX_AGE
+        if plan.kind in NEEDS_BACKUP and stale_backup:
+            raise NoRecentBackup("confirm a backup from the last 7 days first")
+
+    def _gate(self, job_id: str, doc: dict[str, Any]) -> Callable[[int], str | None]:
+        """Checks before every step; a reason pauses the job."""
+        expected = expected_drives(doc)
+        leaving = {d["device"] for d in doc["drives"] if d["role"] == LEAVE}
+        titles = [step["title"] for step in doc["steps"]]
+        retire = titles.index(RETIRE_TITLE) + 1 if RETIRE_TITLE in titles else 0
+
+        def gate(step: int) -> str | None:
+            if job_id in self._cancel_requested:
+                return "cancel requested"
+            if self.on_battery:
+                return "the UPS is on battery; resume when power is back"
+            # A replaced drive may be pulled once it is retired.
+            need = [e for e in expected if not (retire and step > retire and e.device in leaving)]
+            try:
+                verify(need, self.drives.present([e.device for e in need]))
+            except IdentityChanged as exc:
+                return str(exc)
+            except EngineError as exc:
+                return f"the drives could not be checked: {exc}"
+            return None
+
+        return gate
+
+    def _claim(
+        self,
+        job_id: str,
+        doc: dict[str, Any],
+        authorized: bool,
+        resolution: Resolution | None,
+    ) -> JobRun:
+        runner = self._require_runner()
+        with self._lock:
+            if self._running:
+                raise Busy(f"job {self._running} is running")
+            self._running = job_id
+            self._session_jobs.add(job_id)
+        path, gate = self._journal(job_id), self._gate(job_id, doc)
+
+        def work(observer: Observer | None) -> Report:
+            return resume(
+                path,
+                runner,
+                authorized=authorized,
+                gate=gate,
+                resolution=resolution,
+                observer=observer,
+            )
+
+        return JobRun(self, job_id, work)
+
+    def _unfinished(self, job_id: str) -> None:
+        if not job_id.isdigit() or job_id not in self.unfinished_jobs():
+            raise NoSuchJob(f"no unfinished job {job_id}")
+
+    def _resumable(self, job_id: str) -> JobState:
+        self._require_runner()
+        self._unfinished(job_id)
+        if self._running == job_id:
+            raise Busy(f"job {job_id} is already running")
+        try:
+            return load(self._journal(job_id))
+        except (OSError, JournalError) as exc:
+            raise NoSuchJob(f"job {job_id} cannot be resumed: {exc}") from exc
+
+    def _jobs_dir(self) -> str:
+        directory = os.path.join(self.state_dir, JOBS_SUBDIR)
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        return directory
+
+    def _journal(self, job_id: str) -> str:
+        return journal_path(job_id, self._jobs_dir())
+
+    def _new_job_id(self) -> str:
+        ids = [
+            int(name.removesuffix(".jsonl"))
+            for name in os.listdir(self._jobs_dir())
+            if name.endswith(".jsonl") and name.removesuffix(".jsonl").isdigit()
+        ]
+        return str(max(ids, default=0) + 1)
 
     def _ready_to_plan(self) -> None:
         if self._layout_error:
             raise LayoutUnreadable(self._layout_error)
+        if self._running:
+            raise Busy(f"job {self._running} is running")
         jobs = self.unfinished_jobs()
         if jobs:
             raise Busy(f"job {jobs[0]} has not finished; resume or cancel it first")
@@ -398,6 +784,25 @@ class Engine:
         self._plans[plan.id] = plan
         self._next_id += 1
         return plan
+
+
+def _is_wait(state: JobState) -> bool:
+    argv = state.command(state.step, state.cmd)["argv"]
+    return bool(argv[:2] == ["mdadm", "--wait"])
+
+
+def _rebuilt_layers(doc: dict[str, Any]) -> set[int]:
+    """Layers a rebuild plan repairs: those with a member on the failed drive."""
+    if doc["kind"] != PlanKind.REBUILD.value:
+        return set()
+    failed = {d["device"] for d in doc["drives"] if d["role"] == "failed"}
+    before = doc["before"]
+    indexes = {i for i, d in enumerate(before["drives"]) if d["device"] in failed}
+    return {
+        layer["index"]
+        for layer in before["layers"]
+        if any(m["drive"] in indexes for m in layer["members"])
+    }
 
 
 def render_create_steps(plan: Plan) -> list[tuple[str, str, list[str]]]:

@@ -112,7 +112,8 @@
 
   <!-- /com/borealislogistics/Tamarack1/Jobs/N -->
   <interface name="com.borealislogistics.Tamarack1.Job">
-    <property name="Plan" type="o" access="read">
+    <!-- Digest of the plan this job runs, as reviewed -->
+    <property name="Digest" type="s" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
     </property>
     <!-- "running", "waiting" (mdadm resync/reshape), "paused", "completed",
@@ -126,9 +127,12 @@
     <!-- Why the job paused or failed; empty otherwise -->
     <property name="Message" type="s" access="read"/>
 
+    <!-- options: "resolution" (s), "done" or "rerun", for a command that was
+         cut off and cannot be checked automatically (see Message) -->
     <method name="Resume">
       <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
                   value="com.borealislogistics.tamarack.resume"/>
+      <arg name="options" type="a{sv}" direction="in"/>
     </method>
     <!-- Only between steps; a reshape always finishes -->
     <method name="Cancel">
