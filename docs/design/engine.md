@@ -152,8 +152,14 @@ implementation step, and it changes no output.
 
 Status: done in `tamarack.ops`. `Command` rejects programs outside a fixed
 allow list and arguments that are empty or contain NUL or newline; the dry
-run text is checked byte for byte against `tests/golden/`. `already_done`
-arrives with the journal (step 3), where resume needs it.
+run text is checked byte for byte against `tests/golden/`.
+
+`already_done` became a table instead of a field: `tamarack.recovery` gives
+every command a resume rule (`rerun`, `probe` with a read-only probe
+command, or `ask`) from its argv, in one place that can be reviewed whole.
+Each command's rule is written into the review document, so the digest
+covers it, and the engine refuses a document whose rules differ from the
+table.
 
 ## 7. Step journal and resume
 
@@ -181,6 +187,29 @@ exported as **paused** with the step where it stopped. Resume rules:
 
 Journals are kept after completion (they are the audit trail) and pruned
 after 90 days.
+
+Status (step 3): `tamarack.journal` writes and replays journals and
+`tamarack.job` runs and resumes jobs through a `Runner` interface, tested
+against a fake runner that simulates a power cut during every command of
+every plan kind. Details settled while building it:
+
+- Only one command can be in doubt after a crash: the one with a
+  `cmd-start` and no `cmd-end`. Earlier commands finished; later ones never
+  started.
+- A `probe` that exits 0 counts as the command having taken effect;
+  otherwise the command runs again. An `ask` command pauses the job with
+  the command named, and `Resume` then takes a resolution, `done` or
+  `rerun`, after a person has looked. `Job.Resume` gains an options
+  argument for this in step 5.
+- A command failing (other than one marked `tolerate_failure`) ends the job
+  as failed, with the command, exit status and the tail of its stderr.
+  Failed jobs are not resumed; a person repairs the box and makes a new plan.
+- A torn last line is ignored when reading and cut off before appending.
+  Any other malformed or out-of-order record, a command that differs from
+  the plan, or a plan that no longer matches its digest stops the engine
+  from touching the job.
+- Journal files are created `O_EXCL` with mode 0600, and the directory is
+  fsynced after creation.
 
 ## 8. The service and its sandbox
 
