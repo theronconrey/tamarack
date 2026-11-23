@@ -30,6 +30,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
 
 from . import __version__
+from .boot import INTEGRITYTAB, BootError
+from .boot import lines as boot_lines
+from .boot import members as boot_members
+from .boot import merge as merge_integritytab
 from .commands import build_steps
 from .grow import plan_add_drive
 from .identity import DriveChanged as IdentityChanged
@@ -62,6 +66,10 @@ ACTIONS = {
 NEEDS_BACKUP = {PlanKind.ADD, PlanKind.REPLACE, PlanKind.REBUILD}
 LAYOUT_FILE = "layout.json"
 BACKUP_FILE = "backup-confirmed"
+SCHEDULE_FILE = "snapshot-schedule.json"
+SNAPSHOT_PERIODS = ("hourly", "daily", "weekly", "monthly")
+DEFAULT_SCHEDULE = {"hourly": 24, "daily": 7, "weekly": 4, "monthly": 6}
+MAX_KEPT = 1000
 JOBS_SUBDIR = "jobs"
 
 # Paths UDisks2 and udev create: /dev/sdb, /dev/nvme0n1, /dev/disk/by-id/...
@@ -181,6 +189,10 @@ class DriveSource(Protocol):
 
     def health(self, devices: list[str]) -> dict[str, tuple[str, str]]:
         """SMART health per device: (ok|failing|unknown|missing, detail)."""
+        ...
+
+    def partition_uuids(self, device: str) -> dict[int, str]:
+        """GPT partition number -> partition UUID on the drive at ``device``."""
         ...
 
 
@@ -648,11 +660,61 @@ class Engine:
                 Layout.from_dict(doc["after"]).to_json() + "\n",
             )
             self.reload()
+            self.sync_boot()
         if job_id in self._cancel_requested and report is not None and report.state == "paused":
             self._cancel_requested.discard(job_id)
             return cancel_journal(self._journal(job_id))
         self._cancel_requested.discard(job_id)
         return report
+
+    @property
+    def snapshot_schedule(self) -> dict[str, int]:
+        try:
+            with open(os.path.join(self.state_dir, SCHEDULE_FILE), encoding="utf-8") as f:
+                stored = json.load(f)
+            return {p: int(stored[p]) for p in SNAPSHOT_PERIODS}
+        except (OSError, ValueError, KeyError, TypeError):
+            return dict(DEFAULT_SCHEDULE)
+
+    def authorize_snapshot_schedule(self, schedule: dict[str, Any]) -> str:
+        self._valid_schedule(schedule)
+        return f"{POLKIT}.configure"
+
+    def set_snapshot_schedule(self, schedule: dict[str, Any]) -> dict[str, int]:
+        """Apply a new timeline schedule with snapper, then remember it."""
+        wanted = self._valid_schedule(schedule)
+        runner = self._require_runner()
+        if self._layout is None:
+            raise NoLayout("there is no pool to snapshot yet")
+        if self._running:
+            raise Busy(f"job {self._running} is running")
+        from .commands import SNAPPER_CONFIG
+        from .ops import cmd
+
+        on = any(wanted.values())
+        settings = [f"TIMELINE_CREATE={'yes' if on else 'no'}"] + [
+            f"TIMELINE_LIMIT_{period.upper()}={wanted[period]}" for period in SNAPSHOT_PERIODS
+        ]
+        command = cmd("snapper", "--config", SNAPPER_CONFIG, "set-config", *settings)
+        result = runner.run(command.argv)
+        if result.exit:
+            raise EngineError(f"snapper could not change the schedule: {result.stderr.strip()}")
+        write_atomically(
+            os.path.join(self.state_dir, SCHEDULE_FILE), json.dumps(wanted, sort_keys=True) + "\n"
+        )
+        return wanted
+
+    @staticmethod
+    def _valid_schedule(schedule: dict[str, Any]) -> dict[str, int]:
+        if set(schedule) != set(SNAPSHOT_PERIODS):
+            raise InvalidArgument(f"give all of {', '.join(SNAPSHOT_PERIODS)}")
+        wanted = {}
+        for period in SNAPSHOT_PERIODS:
+            value = schedule[period]
+            if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= MAX_KEPT:
+                raise InvalidArgument(f"{period} must be a whole number from 0 to {MAX_KEPT}")
+            wanted[period] = value
+        return wanted
 
     def authorize_confirm_backup(self) -> str:
         return f"{POLKIT}.confirm-backup"
@@ -661,6 +723,52 @@ class Engine:
         now = int(self.clock())
         write_atomically(os.path.join(self.state_dir, BACKUP_FILE), f"{now}\n")
         return now
+
+    # --- boot ----------------------------------------------------------------
+
+    def sync_boot(self) -> bool:
+        """Bring the Tamarack lines in /etc/integritytab in line with the layout.
+
+        Returns True if the file changed. Never raises: a failure is logged,
+        and the existing file is left as it was.
+        """
+        path = os.path.join(self.root, INTEGRITYTAB.lstrip("/"))
+        try:
+            with open(path, encoding="utf-8") as f:
+                existing = f.read()
+        except FileNotFoundError:
+            existing = ""
+        except OSError as exc:
+            log.error("cannot read %s: %s", path, exc)
+            return False
+        ours: list[str] = []
+        if self._layout is not None:
+            layout = self._layout
+            uuids: dict[tuple[int, int], str] = {}
+            try:
+                for index, disk in enumerate(layout.drives):
+                    if any(d == index for d, _ in boot_members(layout)):
+                        for number, uuid in self.drives.partition_uuids(disk.device).items():
+                            uuids[(index, number)] = uuid
+                ours = boot_lines(layout, uuids)
+            except (EngineError, BootError) as exc:
+                # A missing drive: keep the old lines; the arrays start degraded.
+                log.warning("%s not updated: %s", INTEGRITYTAB, exc)
+                return False
+        wanted = merge_integritytab(existing, ours)
+        if wanted == existing:
+            return False
+        try:
+            # In place: the sandbox makes only this file writable, not /etc.
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(wanted)
+                f.flush()
+                os.fsync(f.fileno())
+        except OSError as exc:
+            log.error("cannot write %s: %s", path, exc)
+            return False
+        log.info("%s now opens %d Tamarack partitions at boot", INTEGRITYTAB, len(ours))
+        return True
 
     # --- jobs ----------------------------------------------------------------
 

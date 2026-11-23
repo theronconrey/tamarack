@@ -226,3 +226,17 @@ def test_scrub_runs_monthly_on_the_volume_and_create_enables_it() -> None:
     assert timer["Timer"]["Persistent"] == "true"
     argvs = [c.argv for step in build_steps(make_plan([4 * 10**12])) for c in step.commands]
     assert ("systemctl", "enable", "--now", MOUNT_UNIT, SCRUB_TIMER) in argvs
+
+
+def test_snapper_template_matches_the_default_schedule() -> None:
+    from tamarack.engine import DEFAULT_SCHEDULE
+
+    values = {}
+    for line in (DATA / "snapper" / "tamarack").read_text().splitlines():
+        if "=" in line and not line.startswith("#"):
+            key, _, value = line.partition("=")
+            values[key] = value.strip('"')
+    assert values["FSTYPE"] == "btrfs"
+    assert values["TIMELINE_CREATE"] == "yes" and values["TIMELINE_CLEANUP"] == "yes"
+    for period, kept in DEFAULT_SCHEDULE.items():
+        assert values[f"TIMELINE_LIMIT_{period.upper()}"] == str(kept)

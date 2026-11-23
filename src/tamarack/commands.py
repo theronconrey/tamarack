@@ -21,6 +21,9 @@ MOUNT_POINT = "/srv/tamarack"
 MOUNT_OPTIONS = "compress=zstd:1,noatime"
 MOUNT_UNIT = "srv-tamarack.mount"  # data/systemd/srv-tamarack.mount
 SCRUB_TIMER = "tamarack-scrub.timer"  # data/systemd/tamarack-scrub.timer
+SNAPPER_CONFIG = "tamarack"  # data/snapper/tamarack is its template
+SHARES = f"{MOUNT_POINT}/shares"
+SNAPPER_TIMERS = ("snapper-timeline.timer", "snapper-cleanup.timer")
 FS_LABEL = "tamarack"
 META_PARTLABEL = "tk-meta"
 
@@ -173,9 +176,14 @@ def build_steps(plan: Plan) -> list[Step]:
                 # systemd mounts it, in the host's namespace and at every boot from
                 # now on: a mount made inside the engine's sandbox would stay there.
                 cmd("systemctl", "enable", "--now", MOUNT_UNIT, SCRUB_TIMER),
-                cmd("btrfs", "subvolume", "create", f"{MOUNT_POINT}/shares"),
-                cmd("btrfs", "subvolume", "create", f"{MOUNT_POINT}/snapshots"),
+                cmd("btrfs", "subvolume", "create", SHARES),
             ),
+        ),
+        Step(
+            "Snapshots of the shares: 24 hourly, 7 daily, 4 weekly, 6 monthly",
+            snapshot_commands(),
+            "snapper keeps them in shares/.snapshots; the schedule can be changed or "
+            "turned off later.",
         ),
         Step(
             f"Write the layout to every {META_PARTLABEL} partition",
@@ -183,6 +191,18 @@ def build_steps(plan: Plan) -> list[Step]:
             "Each drive carries the whole layout, so the box can be read from any of them.",
         ),
     ]
+
+
+def snapshot_commands() -> tuple[Command, ...]:
+    return (
+        cmd(
+            "snapper",
+            *("--config", SNAPPER_CONFIG, "create-config"),
+            *("--template", SNAPPER_CONFIG, "--fstype", "btrfs"),
+            SHARES,
+        ),
+        cmd("systemctl", "enable", "--now", *SNAPPER_TIMERS),
+    )
 
 
 def _metadata(plan: Plan) -> tuple[Command, ...]:

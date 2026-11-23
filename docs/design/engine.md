@@ -137,6 +137,7 @@ Defined in
 | `…tamarack.resume` | `Job.Resume` after an interruption | no / no / `auth_admin` |
 | `…tamarack.cancel` | `Job.Cancel` | no / no / `auth_admin_keep` |
 | `…tamarack.confirm-backup` | `Manager.ConfirmBackup` | no / no / `auth_admin_keep` |
+| `…tamarack.configure` | `Manager.SetSnapshotSchedule` (and later settings) | no / no / `auth_admin_keep` |
 
 Destructive actions use `auth_admin`, not `auth_admin_keep`: every change
 asks for the admin password again. Each check passes polkit the plan's
@@ -208,6 +209,47 @@ makes skipping them a deliberate act.
   `ArrayDegraded` or `DriveFailing` on D-Bus. The first check after start
   reports problems that already exist. `Manager.Health` holds the whole
   picture as JSON for Cockpit and the CLI.
+
+### Snapshots (track 3)
+
+- **snapper** (Fedora's `snapper`) takes timeline snapshots of the `shares`
+  subvolume and prunes them. The engine package ships a template,
+  `/usr/share/snapper/config-templates/tamarack`, with the defaults: 24
+  hourly, 7 daily, 4 weekly, 6 monthly.
+- **A create plan** runs `snapper --config tamarack create-config --template
+  tamarack` on `shares`, then enables snapper's own `snapper-timeline.timer`
+  and `snapper-cleanup.timer`. The separate `snapshots` subvolume from the
+  first design is gone: snapper keeps them in `shares/.snapshots`, which
+  read-only NFS access can expose as "previous versions" later.
+- **`Manager.SetSnapshotSchedule`** (polkit `…tamarack.configure`, admin,
+  remembered for a few minutes) changes the four limits, or turns timeline
+  snapshots off when all are zero, through `snapper set-config`.
+  `Manager.SnapshotSchedule` reports them. From a terminal: `tamarack engine
+  snapshots [--keep H D W M | --off]`.
+- snapper is a D-Bus client of `snapperd`, which does the work in its own
+  SELinux domain; the engine's policy only lets the two talk.
+
+### Opening the pool at boot
+
+Nothing in the kernel reopens dm-integrity mappings after a reboot, so
+without help the arrays, the volume and the mount would not come back.
+systemd's `/etc/integritytab` is the Fedora way: its generator turns each
+line into a unit that opens the mapping early in boot. Then mdadm's udev
+rules assemble the arrays from their superblocks, LVM activates the
+`tamarack` volume group, and `srv-tamarack.mount` mounts it.
+
+- The engine keeps a marked block of lines in `/etc/integritytab`, one per
+  layer partition: `tk-dD-pN PARTUUID=<uuid> - integrity-algorithm=crc32c`.
+  GPT partition UUIDs come from UDisks2 and don't change when a drive moves
+  to another port. Lines outside the block are left alone.
+- It rewrites the block at start and after every completed job. If a pool
+  drive is missing, the file is left as it was, so the remaining
+  partitions still open and the arrays start degraded.
+- The unit may write that one file (`ReadWritePaths=-/etc/integritytab`;
+  the package creates it if needed), labelled `tamarack_integritytab_t`,
+  which systemd's generator may read.
+- Still to prove in the VM: that the arrays come back as `/dev/md/tk-lN`
+  after a reboot, which depends on how mdadm treats the home host.
 
 ## 6. Steps become structured commands
 

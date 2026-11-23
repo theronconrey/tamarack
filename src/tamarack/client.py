@@ -291,6 +291,16 @@ def add_parser(sub: Any) -> None:
     p.add_argument("failed", metavar="FAILED")
     p.add_argument("new", metavar="NEW")
     commands.add_parser("confirm-backup", help="record that a current backup exists")
+    p = commands.add_parser("snapshots", help="show or change how many snapshots are kept")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument(
+        "--keep",
+        nargs=4,
+        type=int,
+        metavar=("HOURLY", "DAILY", "WEEKLY", "MONTHLY"),
+        help="snapshots to keep per period, e.g. --keep 24 7 4 6",
+    )
+    group.add_argument("--off", action="store_true", help="stop taking timeline snapshots")
     p = commands.add_parser("resume", help="resume a paused job")
     p.add_argument("job", metavar="JOB")
     group = p.add_mutually_exclusive_group()
@@ -319,6 +329,22 @@ def run(
         return change(engine, "PlanReplace", "(ss)", (args.old, args.new), args, ask, out)
     if command == "rebuild":
         return change(engine, "PlanRebuild", "(ss)", (args.failed, args.new), args, ask, out)
+    if command == "snapshots":
+        periods = ("hourly", "daily", "weekly", "monthly")
+        if args.keep or args.off:
+            counts = [0, 0, 0, 0] if args.off else args.keep
+            if any(n < 0 for n in counts):
+                raise ClientError("snapshot counts can't be negative")
+            schedule = dict(zip(periods, counts, strict=True))
+            with polkit_agent():
+                engine.call(ROOT, MANAGER, "SetSnapshotSchedule", "(a{su})", schedule)
+        current = engine.get(ROOT, MANAGER, "SnapshotSchedule")
+        if not any(current.values()):
+            print("Snapshots: off", file=out)
+        else:
+            kept = ", ".join(f"{current[p]} {p}" for p in periods)
+            print(f"Snapshots kept: {kept}", file=out)
+        return 0
     if command == "confirm-backup":
         with polkit_agent():
             engine.call(ROOT, MANAGER, "ConfirmBackup")

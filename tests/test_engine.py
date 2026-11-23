@@ -61,6 +61,12 @@ class FakeDrives:
             for d in devices
         }
 
+    def partition_uuids(self, device: str) -> dict[int, str]:
+        if device not in self.drives:
+            raise NoSuchDrive(f"{device}: no such block device")
+        index = sorted(self.drives).index(device)
+        return {n: f"0000000{index}-0000-4000-8000-00000000000{n}" for n in range(1, 10)}
+
     def lookup(self, device: str, unused: bool) -> DriveInfo:
         self.lookups.append((device, unused))
         if device not in self.drives:
@@ -785,3 +791,81 @@ def test_udisks_smart_health() -> None:
     assert find_health(objects, ["/dev/sda"])["/dev/sda"] == ("failing", "spare, temperature")
     drive[NVME] = {"SmartCriticalWarning": []}
     assert find_health(objects, ["/dev/sda"])["/dev/sda"] == ("ok", "")
+
+
+# --- snapshot schedule -------------------------------------------------------
+
+
+def test_snapshot_schedule_defaults_and_changes(tmp_path: Path) -> None:
+    from tamarack.engine import DEFAULT_SCHEDULE
+
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    assert (
+        e.snapshot_schedule
+        == DEFAULT_SCHEDULE
+        == {
+            "hourly": 24,
+            "daily": 7,
+            "weekly": 4,
+            "monthly": 6,
+        }
+    )
+    wanted = {"hourly": 12, "daily": 14, "weekly": 0, "monthly": 3}
+    assert e.authorize_snapshot_schedule(wanted) == "com.borealislogistics.tamarack.configure"
+    assert e.set_snapshot_schedule(wanted) == wanted
+    assert e.snapshot_schedule == wanted
+    assert e.runner.calls[-1] == (  # type: ignore[union-attr]
+        "snapper",
+        "--config",
+        "tamarack",
+        "set-config",
+        "TIMELINE_CREATE=yes",
+        "TIMELINE_LIMIT_HOURLY=12",
+        "TIMELINE_LIMIT_DAILY=14",
+        "TIMELINE_LIMIT_WEEKLY=0",
+        "TIMELINE_LIMIT_MONTHLY=3",
+    )
+    e.set_snapshot_schedule(dict.fromkeys(wanted, 0))
+    assert "TIMELINE_CREATE=no" in e.runner.calls[-1]  # type: ignore[union-attr]
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        {"hourly": 1, "daily": 1, "weekly": 1},
+        {"hourly": 1, "daily": 1, "weekly": 1, "monthly": 1, "yearly": 1},
+        {"hourly": -1, "daily": 1, "weekly": 1, "monthly": 1},
+        {"hourly": 1001, "daily": 1, "weekly": 1, "monthly": 1},
+        {"hourly": True, "daily": 1, "weekly": 1, "monthly": 1},
+        {"hourly": "24", "daily": 1, "weekly": 1, "monthly": 1},
+    ],
+)
+def test_bad_snapshot_schedules(tmp_path: Path, schedule: dict[str, Any]) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    with pytest.raises(InvalidArgument):
+        e.authorize_snapshot_schedule(schedule)
+
+
+def test_snapshot_schedule_needs_a_pool_and_a_runner(tmp_path: Path) -> None:
+    good = {"hourly": 1, "daily": 1, "weekly": 1, "monthly": 1}
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    with pytest.raises(NoLayout):
+        run_engine(tmp_path / "a").set_snapshot_schedule(good)
+    with pytest.raises(NotSupported):
+        run_engine(tmp_path / "b", ["/dev/sda"], runner=None).set_snapshot_schedule(good)
+
+
+def test_failed_snapper_keeps_the_old_schedule(tmp_path: Path) -> None:
+    from tamarack.job import Result
+
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+
+    class Failing(FakeRunner):
+        def run(self, argv: tuple[str, ...]) -> Result:
+            return Result(1, "snapper: config 'tamarack' not found\n")
+
+    e.runner = Failing()
+    with pytest.raises(EngineError, match="not found"):
+        e.set_snapshot_schedule({"hourly": 1, "daily": 1, "weekly": 1, "monthly": 1})
+    assert e.snapshot_schedule["hourly"] == 24

@@ -310,6 +310,17 @@ class Service:
                     return "(o)", (plan_path(stored.id),)
 
                 return READ_ACTION, {}, plan
+            if method == "SetSnapshotSchedule":
+                (schedule,) = args
+                action = e.authorize_snapshot_schedule(schedule)
+
+                def snapshots() -> Reply:
+                    applied = e.set_snapshot_schedule(schedule)
+                    log.info("snapshot schedule set to %s", applied)
+                    self._manager_changed("SnapshotSchedule")
+                    return "", ()
+
+                return action, {}, snapshots
             if method == "ConfirmBackup":
 
                 def confirm() -> Reply:
@@ -501,6 +512,7 @@ class Service:
             "Health": lambda: json.dumps(e.health(), sort_keys=True),
             "OnBattery": lambda: e.on_battery,
             "LastBackupConfirmed": lambda: e.last_backup_confirmed,
+            "SnapshotSchedule": lambda: e.snapshot_schedule,
             "ActiveJob": lambda: job_path(e.active_job) if e.active_job else "/",
         }
 
@@ -615,6 +627,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except NameTaken as exc:
         log.error("%s", exc)
         return 1
+    engine.sync_boot()
     service.start_reattached()
     loop = GLib.MainLoop()
     GLib.timeout_add_seconds(30, service.sync_objects)

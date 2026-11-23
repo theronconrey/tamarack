@@ -442,10 +442,10 @@ def test_execute_runs_the_job_and_records_the_layout(
     assert job == f"{MANAGER_PATH}/Jobs/1"
     h.wait(lambda: any(name == "Finished" for _, name, _ in h.signals))
     assert get(h.client, "State", job, JOB) == "completed"
-    assert get(h.client, "StepCount", job, JOB) == 6
+    assert get(h.client, "StepCount", job, JOB) == 7
     assert runner.calls == expected_commands
     started = [args for path, name, args in h.signals if name == "StepStarted"]
-    assert started[0] == (1, "Partition each drive") and len(started) == 6
+    assert started[0] == (1, "Partition each drive") and len(started) == 7
     assert (job, "Finished", (True, "")) in h.signals
     # The plan was consumed, and the new layout is now the box's layout.
     name, _ = error_of(lambda: get(h.client, "Kind", plan, PLAN))
@@ -580,3 +580,27 @@ def test_health_alerts_when_a_drive_starts_failing(bus: str, tmp_path: Path) -> 
         assert sum(name == "DriveFailing" for _, name, _ in h.signals) == 1
     finally:
         h.stop()
+
+
+def test_snapshot_schedule_over_the_bus(runner_harness: tuple[Harness, FakeRunner]) -> None:
+    h, runner = runner_harness
+    assert get(h.client, "SnapshotSchedule") == {
+        "hourly": 24,
+        "daily": 7,
+        "weekly": 4,
+        "monthly": 6,
+    }
+    devices = ["/dev/sda", "/dev/sdb"]
+    (plan,) = call(h.client, "PlanCreate", GLib.Variant("(as)", (devices,)))
+    (job,) = execute(h, plan, devices)
+    h.wait(lambda: get(h.client, "State", job, JOB) == "completed")
+    schedule = {"hourly": 6, "daily": 7, "weekly": 0, "monthly": 12}
+    call(h.client, "SetSnapshotSchedule", GLib.Variant("(a{su})", (schedule,)))
+    assert get(h.client, "SnapshotSchedule") == schedule
+    assert runner.calls[-1][:4] == ("snapper", "--config", "tamarack", "set-config")
+    assert any(a == "com.borealislogistics.tamarack.configure" for _, a, _ in h.fakes.checks)
+    bad = {"hourly": 6}
+    name, _ = error_of(
+        lambda: call(h.client, "SetSnapshotSchedule", GLib.Variant("(a{su})", (bad,)))
+    )
+    assert name == ERR + "InvalidArgument"
