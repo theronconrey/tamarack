@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=69"]
+requires = ["setuptools>=77"]  # PEP 639 license metadata
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -9,10 +9,13 @@ description = "Tamarack: Drobo-style mixed-drive storage planner for mdadm, dm-i
 readme = "README.md"
 requires-python = ">=3.12"
 license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "mypy"]
+# "test" is what the RPM build installs (%pyproject_buildrequires -x test).
+test = ["pytest"]
+dev = ["tamarack-nas[test]", "ruff", "mypy"]
 
 [project.scripts]
 tamarack = "tamarack.cli:main"
@@ -22,6 +25,8 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Lets a source checkout run tests without installing. The RPM %check
+# overrides this to test the installed package.
 pythonpath = ["src"]
 
 [tool.ruff]
