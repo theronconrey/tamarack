@@ -5,6 +5,7 @@ require:
   - kernel-modules-extra  # scsi_debug
   - audit
   - python3-gobject-base
+  - targetcli  # file-backed drives through LIO (tcm_loop)
 
 /create-grow:
     summary: Create on two drives, grow to four
@@ -33,3 +34,7 @@ require:
 /recover-by-hand:
     summary: Stock tools alone bring the volume back
     test: ./recover-by-hand.sh
+
+/mixed:
+    summary: Mixed sizes, leftover space paired later
+    test: ./mixed.sh
