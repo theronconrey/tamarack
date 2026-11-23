@@ -73,9 +73,9 @@ Requires(post): selinux-policy-%{selinuxtype}
 %{?selinux_requires}
 
 %description selinux
-Confines the Tamarack storage engine to its own SELinux domain,
-tamarack_engine_t. The storage tools it starts run in their own Fedora
-domains (mdadm_t, lvm_t, fsadm_t).
+Confines the Tamarack storage engine to its own SELinux domain. The storage
+tools it starts keep running in the domains Fedora already gives them, so
+the engine is never granted their permissions.
 
 %prep
 %autosetup -p1 -n %{name}-%{version}
@@ -162,7 +162,7 @@ fi
 %files selinux
 %{_datadir}/selinux/packages/%{selinuxtype}/tamarack.pp.bz2
 %{_datadir}/selinux/devel/include/distributed/tamarack.if
-%ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/tamarack
+%ghost %attr(0644,root,root) %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/tamarack
 
 %changelog
 * Sun Nov 22 2026 Theron Conrey <theron@conrey.org> - 0.1.0-1
