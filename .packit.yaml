@@ -24,3 +24,10 @@ jobs:
     branch: main
     targets:
       - fedora-all
+
+  # The VM test matrix (plans/storage.fmf) on Testing Farm, against the
+  # Copr build above. Needs the Packit app, like the builds.
+  - job: tests
+    trigger: pull_request
+    targets:
+      - fedora-latest-stable

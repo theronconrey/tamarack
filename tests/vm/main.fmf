@@ -1,0 +1,15 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+tag: [vm]
+duration: 30m
+require:
+  - kernel-modules-extra  # scsi_debug
+  - audit
+  - python3-gobject-base
+
+/create-grow:
+    summary: Create on two drives, add a third and a fourth, data intact throughout
+    test: ./create-grow.sh
+
+/replace:
+    summary: Swap a drive for a larger one while the data stays online
+    test: ./replace.sh
