@@ -38,7 +38,7 @@ from tamarack.engine import (
 )
 from tamarack.job import Resolution, start
 from tamarack.journal import load
-from tamarack.layout import layout_from_plan
+from tamarack.layout import Layout, layout_from_plan
 from tamarack.planner import make_plan
 from tamarack.review import digest, document
 from tamarack.udisks import find_drive
@@ -624,3 +624,100 @@ def test_jobs_need_to_exist(tmp_path: Path) -> None:
     ):
         with pytest.raises(EngineError):
             attempt()
+
+
+# --- layout records on the drives --------------------------------------------
+
+
+class FakeRecords:
+    def __init__(self, records: dict[str, str | None]) -> None:
+        self.records = records  # partition -> layout JSON, or None if unreadable
+
+    def partitions(self) -> list[str]:
+        return sorted(self.records)
+
+    def read(self, device: str) -> str:
+        text = self.records[device]
+        if text is None:
+            raise ValueError("the layout record is damaged (checksum mismatch)")
+        return text
+
+
+def two_drive_layout() -> Any:
+    plan = make_plan([4 * TB, 4 * TB], ["/dev/sda", "/dev/sdb"], ["wwn:0x1", "wwn:0x2"])
+    return layout_from_plan(plan)
+
+
+def records_engine(tmp_path: Path, records: dict[str, str | None], file: Any = None) -> Engine:
+    if file is not None:
+        (tmp_path / "layout.json").write_text(file.to_json())
+    return Engine(str(tmp_path), FakeDrives(dict(DRIVES)), clock=Clock(), meta=FakeRecords(records))
+
+
+def test_layout_is_taken_from_the_drives_when_the_state_file_is_missing(tmp_path: Path) -> None:
+    layout = two_drive_layout()
+    e = records_engine(tmp_path, {"/dev/sda1": layout.to_json(), "/dev/sdb1": layout.to_json()})
+    assert e.layout == layout
+    assert Layout.from_json((tmp_path / "layout.json").read_text()) == layout
+    with pytest.raises(LayoutExists):
+        e.plan_create(["/dev/sdc"])  # never offered over an existing pool
+
+
+def test_one_damaged_record_does_not_hide_the_others(tmp_path: Path) -> None:
+    layout = two_drive_layout()
+    e = records_engine(tmp_path, {"/dev/sda1": layout.to_json(), "/dev/sdb1": None})
+    assert e.layout == layout
+
+
+def test_drives_that_disagree_block_planning(tmp_path: Path) -> None:
+    layout = two_drive_layout()
+    other = layout_from_plan(make_plan([8 * TB, 8 * TB], ["/dev/sdc", "/dev/sdd"]))
+    e = records_engine(tmp_path, {"/dev/sda1": layout.to_json(), "/dev/sdc1": other.to_json()})
+    with pytest.raises(LayoutUnreadable, match="disagree.*/dev/sda1.*/dev/sdc1"):
+        e.plan_create(["/dev/sdb"])
+
+
+def test_unreadable_records_block_planning(tmp_path: Path) -> None:
+    e = records_engine(tmp_path, {"/dev/sda1": None})
+    with pytest.raises(LayoutUnreadable, match="none can be read"):
+        e.plan_create(["/dev/sdb"])
+
+
+def test_state_file_must_match_the_drives(tmp_path: Path) -> None:
+    layout = two_drive_layout()
+    other = layout_from_plan(make_plan([8 * TB, 8 * TB], ["/dev/sda", "/dev/sdb"]))
+    e = records_engine(tmp_path, {"/dev/sda1": other.to_json()}, file=layout)
+    with pytest.raises(LayoutUnreadable, match="differs"):
+        e.plan_add("/dev/sdc")
+    assert e.layout is None
+
+
+def test_matching_state_file_and_drives(tmp_path: Path) -> None:
+    layout = two_drive_layout()
+    e = records_engine(tmp_path, {"/dev/sda1": layout.to_json()}, file=layout)
+    assert e.layout == layout
+
+
+def test_no_tk_meta_partitions_means_a_fresh_box(tmp_path: Path) -> None:
+    e = records_engine(tmp_path, {})
+    assert e.layout is None
+    e.plan_create(["/dev/sda"])
+
+
+def test_unfinished_job_skips_the_cross_check(tmp_path: Path) -> None:
+    (tmp_path / "jobs").mkdir()
+    (tmp_path / "jobs" / "1.jsonl").write_text("garbage\n")
+    layout = two_drive_layout()
+    other = layout_from_plan(make_plan([8 * TB, 8 * TB], ["/dev/sda", "/dev/sdb"]))
+    e = records_engine(tmp_path, {"/dev/sda1": other.to_json()}, file=layout)
+    assert e.layout == layout  # records may be mid-update; planning is Busy anyway
+    with pytest.raises(Busy):
+        e.plan_add("/dev/sdc")
+
+
+def test_udisks_finds_tk_meta_partitions() -> None:
+    from tamarack.udisks import find_meta_partitions
+
+    objects = udisks()
+    objects["/org/freedesktop/UDisks2/block_devices/sda1"][P]["Name"] = "tk-meta"
+    assert find_meta_partitions(objects) == ["/dev/sda1"]
