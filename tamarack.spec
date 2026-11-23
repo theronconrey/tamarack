@@ -3,6 +3,8 @@
 # Packaged per the Fedora Python Packaging Guidelines (pyproject-rpm-macros).
 # https://docs.fedoraproject.org/en-US/packaging-guidelines/Python/
 
+%global selinuxtype targeted
+
 Name:           tamarack
 Version:        0.1.0
 Release:        1%{?dist}
@@ -21,6 +23,9 @@ BuildRequires:  python3-gobject-base
 BuildRequires:  dbus-daemon
 
 BuildRequires:  systemd-rpm-macros
+# Builds the SELinux policy module (selinux/).
+BuildRequires:  selinux-policy-devel
+BuildRequires:  bzip2
 
 %description
 Tamarack plans Drobo-style storage for mixed-size drives on Fedora, built from
@@ -49,6 +54,8 @@ Requires:       btrfs-progs
 Requires:       util-linux-core
 Requires:       systemd
 Recommends:     upower
+# The engine's own SELinux domain, wherever the targeted policy is in use.
+Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
 %{?systemd_requires}
 
 %description engine
@@ -59,6 +66,17 @@ approved plans step by step with a journal that survives power cuts.
 Execution is off unless the engine configuration file in /etc/tamarack turns
 it on. It is meant for test machines until the VM test matrix passes.
 
+%package selinux
+Summary:        SELinux policy module for the Tamarack storage engine
+Requires:       selinux-policy-%{selinuxtype}
+Requires(post): selinux-policy-%{selinuxtype}
+%{?selinux_requires}
+
+%description selinux
+Confines the Tamarack storage engine to its own SELinux domain. The storage
+tools it starts keep running in the domains Fedora already gives them, so
+the engine is never granted their permissions.
+
 %prep
 %autosetup -p1 -n %{name}-%{version}
 
@@ -67,6 +85,8 @@ it on. It is meant for test machines until the VM test matrix passes.
 
 %build
 %pyproject_wheel
+make -C selinux -f %{_datadir}/selinux/devel/Makefile tamarack.pp
+bzip2 -9 selinux/tamarack.pp
 PYTHONPATH=src argparse-manpage --module tamarack.cli --function build_parser \
     --project-name tamarack --prog tamarack --url %{url} --output tamarack.1
 
@@ -90,6 +110,10 @@ install -Dpm 0644 data/polkit/com.borealislogistics.tamarack.policy \
 install -Dpm 0644 data/modules-load/tamarack.conf \
     %{buildroot}%{_modulesloaddir}/tamarack.conf
 install -dm 0755 %{buildroot}%{_sysconfdir}/tamarack
+install -Dpm 0644 selinux/tamarack.pp.bz2 \
+    %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/tamarack.pp.bz2
+install -Dpm 0644 selinux/tamarack.if \
+    %{buildroot}%{_datadir}/selinux/devel/include/distributed/tamarack.if
 
 %check
 %pyproject_check_import
@@ -104,6 +128,20 @@ install -dm 0755 %{buildroot}%{_sysconfdir}/tamarack
 
 %postun engine
 %systemd_postun_with_restart tamarack-engine.service
+
+%pre selinux
+%selinux_relabel_pre -s %{selinuxtype}
+
+%post selinux
+%selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/tamarack.pp.bz2
+
+%postun selinux
+if [ $1 -eq 0 ]; then
+    %selinux_modules_uninstall -s %{selinuxtype} tamarack
+fi
+
+%posttrans selinux
+%selinux_relabel_post -s %{selinuxtype}
 
 %files -f %{pyproject_files}
 %doc README.md CONTRIBUTING.md
@@ -120,6 +158,11 @@ install -dm 0755 %{buildroot}%{_sysconfdir}/tamarack
 %{_datadir}/polkit-1/actions/com.borealislogistics.tamarack.policy
 %{_modulesloaddir}/tamarack.conf
 %dir %{_sysconfdir}/tamarack
+
+%files selinux
+%{_datadir}/selinux/packages/%{selinuxtype}/tamarack.pp.bz2
+%{_datadir}/selinux/devel/include/distributed/tamarack.if
+%ghost %attr(0644,root,root) %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/tamarack
 
 %changelog
 * Sun Nov 22 2026 Theron Conrey <theron@conrey.org> - 0.1.0-1

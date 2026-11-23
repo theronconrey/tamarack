@@ -1,0 +1,97 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# SELinux policy for the Tamarack storage engine (docs/design/engine.md,
+# section 9). The engine runs in tamarack_engine_t. It does not touch disks
+# itself: each storage tool it starts transitions into that tool's own
+# Fedora domain (mdadm_t, lvm_t, fsadm_t), so the engine is never granted
+# the tools' permissions. Written to run enforcing; the VM test matrix
+# fails on any AVC denial.
+
+policy_module(tamarack, 0.1.0)
+
+########################################
+#
+# Declarations
+#
+
+type tamarack_engine_t;
+type tamarack_engine_exec_t;
+init_daemon_domain(tamarack_engine_t, tamarack_engine_exec_t)
+
+type tamarack_unit_file_t;
+systemd_unit_file(tamarack_unit_file_t)
+
+# /var/lib/tamarack: layout, backup timestamp, job journals.
+type tamarack_var_lib_t;
+files_type(tamarack_var_lib_t)
+
+# /etc/tamarack: the administrator's engine.conf.
+type tamarack_etc_t;
+files_config_file(tamarack_etc_t)
+
+########################################
+#
+# The engine
+#
+
+allow tamarack_engine_t self:fifo_file rw_fifo_file_perms;
+allow tamarack_engine_t self:unix_stream_socket create_stream_socket_perms;
+allow tamarack_engine_t self:process { getsched signal_perms };
+
+manage_dirs_pattern(tamarack_engine_t, tamarack_var_lib_t, tamarack_var_lib_t)
+manage_files_pattern(tamarack_engine_t, tamarack_var_lib_t, tamarack_var_lib_t)
+files_var_lib_filetrans(tamarack_engine_t, tamarack_var_lib_t, dir)
+
+read_files_pattern(tamarack_engine_t, tamarack_etc_t, tamarack_etc_t)
+list_dirs_pattern(tamarack_engine_t, tamarack_etc_t, tamarack_etc_t)
+files_read_etc_files(tamarack_engine_t)
+
+# Python and its libraries.
+corecmd_exec_bin(tamarack_engine_t)
+files_read_usr_files(tamarack_engine_t)
+miscfiles_read_localization(tamarack_engine_t)
+
+# /proc and sysfs: md degraded counts behind /dev/md/tk-lN.
+kernel_read_system_state(tamarack_engine_t)
+dev_read_sysfs(tamarack_engine_t)
+dev_list_all_dev_nodes(tamarack_engine_t)
+dev_getattr_all_blk_files(tamarack_engine_t)
+
+# The system bus: own com.borealislogistics.Tamarack1, talk to polkit,
+# UDisks2, UPower and systemd (systemd-mount).
+dbus_system_bus_client(tamarack_engine_t)
+dbus_connect_system_bus(tamarack_engine_t)
+allow tamarack_engine_t self:dbus send_msg;
+
+optional_policy(`
+	gen_require(`
+		type system_dbusd_t;
+	')
+	allow tamarack_engine_t system_dbusd_t:dbus acquire_svc;
+')
+
+optional_policy(`
+	policykit_dbus_chat(tamarack_engine_t)
+')
+
+optional_policy(`
+	devicekit_dbus_chat_disk(tamarack_engine_t)
+	devicekit_dbus_chat_power(tamarack_engine_t)
+')
+
+optional_policy(`
+	init_dbus_chat(tamarack_engine_t)
+')
+
+# The storage tools run in their own domains.
+optional_policy(`
+	raid_domtrans_mdadm(tamarack_engine_t)
+')
+
+optional_policy(`
+	lvm_domtrans(tamarack_engine_t)
+')
+
+optional_policy(`
+	fstools_domtrans(tamarack_engine_t)
+')
