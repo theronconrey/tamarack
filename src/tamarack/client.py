@@ -263,6 +263,34 @@ class polkit_agent:
             self.process.wait(timeout=5)
 
 
+def share(engine: Engine, args: argparse.Namespace, out: TextIO) -> int:
+    if args.share_command == "set":
+        if args.uid < 0 or args.gid < 0:
+            raise ClientError("uid and gid can't be negative")
+        options = {
+            "clients": engine.variant("as", args.clients),
+            "read-only": engine.variant("b", args.read_only),
+            "squash": engine.variant("s", args.squash),
+            "uid": engine.variant("u", args.uid),
+            "gid": engine.variant("u", args.gid),
+        }
+        with polkit_agent():
+            engine.call(ROOT, MANAGER, "SetShare", "(sa{sv})", args.name, options)
+    elif args.share_command == "remove":
+        with polkit_agent():
+            engine.call(ROOT, MANAGER, "RemoveShare", "(s)", args.name)
+        print(f"{args.name} is no longer shared; its files are still there.", file=out)
+    shares = json.loads(engine.get(ROOT, MANAGER, "Shares"))
+    if not shares:
+        print("No shares.", file=out)
+    for s in shares:
+        access = "read-only" if s["read_only"] else "read-write"
+        print(f"{s['name']}: {s['path']} ({access}) to {', '.join(s['clients'])}", file=out)
+        for note in s["security"]:
+            print(f"  - {note}", file=out)
+    return 0
+
+
 def job_path(job: str) -> str:
     return job if job.startswith("/") else f"{ROOT}/Jobs/{job}"
 
@@ -291,6 +319,25 @@ def add_parser(sub: Any) -> None:
     p.add_argument("failed", metavar="FAILED")
     p.add_argument("new", metavar="NEW")
     commands.add_parser("confirm-backup", help="record that a current backup exists")
+    p = commands.add_parser("share", help="list, set or remove NFS shares")
+    actions = p.add_subparsers(dest="share_command", required=True)
+    actions.add_parser("list", help="every share and who can reach it")
+    s = actions.add_parser("set", help="create or change a share")
+    s.add_argument("name", metavar="NAME")
+    s.add_argument(
+        "--client",
+        dest="clients",
+        action="append",
+        required=True,
+        metavar="CLIENT",
+        help="an address, network (192.168.1.0/24) or host name; repeat for more",
+    )
+    s.add_argument("--read-only", action="store_true", help="clients can't change files")
+    s.add_argument("--squash", choices=("root", "all", "none"), default="root")
+    s.add_argument("--uid", type=int, default=0, help="owner of a new share's folder")
+    s.add_argument("--gid", type=int, default=0, help="group of a new share's folder")
+    r = actions.add_parser("remove", help="stop sharing (the files stay)")
+    r.add_argument("name", metavar="NAME")
     p = commands.add_parser("snapshots", help="show or change how many snapshots are kept")
     group = p.add_mutually_exclusive_group()
     group.add_argument(
@@ -329,6 +376,8 @@ def run(
         return change(engine, "PlanReplace", "(ss)", (args.old, args.new), args, ask, out)
     if command == "rebuild":
         return change(engine, "PlanRebuild", "(ss)", (args.failed, args.new), args, ask, out)
+    if command == "share":
+        return share(engine, args, out)
     if command == "snapshots":
         periods = ("hourly", "daily", "weekly", "monthly")
         if args.keep or args.off:

@@ -20,6 +20,7 @@ ALLOWED_PROGRAMS = frozenset(
     {
         "btrfs",
         "dmsetup",
+        "firewall-cmd",
         "integritysetup",
         "lvcreate",
         "lvextend",

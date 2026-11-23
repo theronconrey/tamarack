@@ -137,6 +137,7 @@ Defined in
 | `…tamarack.resume` | `Job.Resume` after an interruption | no / no / `auth_admin` |
 | `…tamarack.cancel` | `Job.Cancel` | no / no / `auth_admin_keep` |
 | `…tamarack.confirm-backup` | `Manager.ConfirmBackup` | no / no / `auth_admin_keep` |
+| `…tamarack.share` | `Manager.SetShare`, `Manager.RemoveShare` | no / no / `auth_admin_keep` |
 | `…tamarack.configure` | `Manager.SetSnapshotSchedule` (and later settings) | no / no / `auth_admin_keep` |
 
 Destructive actions use `auth_admin`, not `auth_admin_keep`: every change
@@ -228,6 +229,31 @@ makes skipping them a deliberate act.
   snapshots [--keep H D W M | --off]`.
 - snapper is a D-Bus client of `snapperd`, which does the work in its own
   SELinux domain; the engine's policy only lets the two talk.
+
+### NFS shares (track 4)
+
+- **A share is a folder** in the `shares` subvolume (`/srv/tamarack/shares/NAME`),
+  not a subvolume of its own, so snapper's snapshots include it. A new
+  folder gets the owner given (uid, gid) and mode 2775; an existing folder
+  is left as it is. Removing a share stops exporting it and keeps the files.
+- **NFSv4 only.** `/etc/nfs.conf.d/tamarack.conf` turns NFSv3 and UDP off,
+  so only TCP port 2049 is used and no rpcbind or mountd faces the network.
+- **The engine owns the exports file**, `/etc/exports.d/tamarack.exports`,
+  rendered from `/var/lib/tamarack/shares.json`. After writing it, the engine
+  runs `systemctl enable --now` and `systemctl reload` on
+  `nfs-server.service`. If nfs-server refuses the new exports, the old file
+  is put back. The engine then has firewalld add or remove the `nfs` service,
+  permanently and now.
+- **Security is spelled out.** Every share lists its clients (addresses,
+  networks or host names; nothing that could inject export options),
+  read-only or read-write, and squashing (`root`, the default; `all`, to map
+  everyone to the share's owner; or `none`). `Manager.Shares` adds plain
+  statements: that `sec=sys` trusts the user IDs clients send, what
+  squashing means, and a warning for very wide client ranges. Kerberos
+  (`sec=krb5p`) is v2.
+- **API:** `Manager.SetShare(name, options)` and `Manager.RemoveShare(name)`,
+  authorized by the new `…tamarack.share` action. From a terminal: `tamarack
+  engine share list | set NAME --client … | remove NAME`.
 
 ## 6. Steps become structured commands
 

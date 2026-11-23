@@ -30,6 +30,9 @@
     <!-- Snapshots kept per period: hourly, daily, weekly, monthly. All zero
          means timeline snapshots are off. -->
     <property name="SnapshotSchedule" type="a{su}" access="read"/>
+    <!-- JSON list of NFS shares: name, path, clients, read_only, squash, uid,
+         gid, and "security": plain statements of who can do what -->
+    <property name="Shares" type="s" access="read"/>
     <!-- The running or paused job, or "/" -->
     <property name="ActiveJob" type="o" access="read"/>
 
@@ -62,6 +65,22 @@
     <method name="ConfirmBackup">
       <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
                   value="com.borealislogistics.tamarack.confirm-backup"/>
+    </method>
+    <!-- Create or change an NFS share of shares/NAME. options: "clients" (as,
+         required: addresses, networks or host names), "read-only" (b),
+         "squash" (s: "root", "all" or "none"), "uid" and "gid" (u: owner of a
+         new directory and the anonymous user). NFSv4, sec=sys. -->
+    <method name="SetShare">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.share"/>
+      <arg name="name" type="s" direction="in"/>
+      <arg name="options" type="a{sv}" direction="in"/>
+    </method>
+    <!-- Stop exporting a share; its files are kept -->
+    <method name="RemoveShare">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.share"/>
+      <arg name="name" type="s" direction="in"/>
     </method>
     <!-- Keys "hourly", "daily", "weekly", "monthly" (all four); all zero
          turns timeline snapshots off. Applied with snapper set-config. -->

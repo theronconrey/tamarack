@@ -58,6 +58,10 @@ Requires:       systemd
 Requires:       smartmontools
 # Timeline snapshots of the shares (template: data/snapper/tamarack).
 Requires:       snapper
+# NFS shares; firewalld is recommended, not required, so a box without it
+# still serves (the admin then opens port 2049 another way).
+Requires:       nfs-utils
+Recommends:     firewalld
 Recommends:     upower
 # The engine's own SELinux domain, wherever the targeted policy is in use.
 Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
@@ -119,6 +123,7 @@ install -Dpm 0644 data/polkit/com.borealislogistics.tamarack.policy \
 install -Dpm 0644 data/modules-load/tamarack.conf \
     %{buildroot}%{_modulesloaddir}/tamarack.conf
 install -dm 0755 %{buildroot}%{_sysconfdir}/tamarack
+install -Dpm 0644 data/nfs/tamarack.conf %{buildroot}%{_sysconfdir}/nfs.conf.d/tamarack.conf
 install -Dpm 0644 data/snapper/tamarack \
     %{buildroot}%{_datadir}/snapper/config-templates/tamarack
 install -Dpm 0644 selinux/tamarack.pp.bz2 \
@@ -173,6 +178,8 @@ fi
 %{_datadir}/polkit-1/actions/com.borealislogistics.tamarack.policy
 %{_modulesloaddir}/tamarack.conf
 %{_datadir}/snapper/config-templates/tamarack
+%dir %{_sysconfdir}/nfs.conf.d
+%config(noreplace) %{_sysconfdir}/nfs.conf.d/tamarack.conf
 %dir %{_sysconfdir}/tamarack
 
 %files selinux

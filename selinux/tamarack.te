@@ -91,6 +91,27 @@ optional_policy(`
 	init_dbus_chat(tamarack_engine_t)
 ')
 
+# NFS shares: the engine writes /etc/exports.d/tamarack.exports, asks
+# firewalld to open NFS, and creates each share's folder with its owner.
+allow tamarack_engine_t self:capability { chown fowner };
+
+optional_policy(`
+	gen_require(`
+		type exports_t;
+	')
+	manage_files_pattern(tamarack_engine_t, exports_t, exports_t)
+	list_dirs_pattern(tamarack_engine_t, exports_t, exports_t)
+')
+
+optional_policy(`
+	gen_require(`
+		type firewalld_t;
+		class dbus send_msg;
+	')
+	allow tamarack_engine_t firewalld_t:dbus send_msg;
+	allow firewalld_t tamarack_engine_t:dbus send_msg;
+')
+
 # snapper is a D-Bus client of snapperd, which makes and prunes snapshots.
 optional_policy(`
 	gen_require(`

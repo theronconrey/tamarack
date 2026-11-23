@@ -34,7 +34,7 @@ from .commands import build_steps
 from .grow import plan_add_drive
 from .identity import DriveChanged as IdentityChanged
 from .identity import verify
-from .job import Observer, Report, Resolution, Runner, resume, start
+from .job import Observer, Report, Resolution, Result, Runner, resume, start
 from .job import cancel as cancel_journal
 from .journal import JobState, JournalError, journal_path, load
 from .layout import Disk, Layout, layout_from_plan
@@ -43,6 +43,10 @@ from .model import Plan, PlanKind
 from .planner import make_plan
 from .replace import RETIRE_TITLE, plan_replace
 from .review import LEAVE, digest, document, expected_drives
+from .shares import EXPORTS_FILE, Share, ShareError, make_share
+from .shares import dump as dump_shares
+from .shares import exports as render_exports
+from .shares import load as load_shares
 from .steps import ChangePlan
 
 T = TypeVar("T")
@@ -63,6 +67,8 @@ NEEDS_BACKUP = {PlanKind.ADD, PlanKind.REPLACE, PlanKind.REBUILD}
 LAYOUT_FILE = "layout.json"
 BACKUP_FILE = "backup-confirmed"
 SCHEDULE_FILE = "snapshot-schedule.json"
+SHARES_FILE = "shares.json"
+NFS_SERVICE = "nfs-server.service"
 SNAPSHOT_PERIODS = ("hourly", "daily", "weekly", "monthly")
 DEFAULT_SCHEDULE = {"hourly": 24, "daily": 7, "weekly": 4, "monthly": 6}
 MAX_KEPT = 1000
@@ -706,6 +712,109 @@ class Engine:
                 raise InvalidArgument(f"{period} must be a whole number from 0 to {MAX_KEPT}")
             wanted[period] = value
         return wanted
+
+    # --- NFS shares ----------------------------------------------------------
+
+    @property
+    def shares(self) -> list[Share]:
+        try:
+            with open(os.path.join(self.state_dir, SHARES_FILE), encoding="utf-8") as f:
+                return load_shares(f.read())
+        except FileNotFoundError:
+            return []
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            raise EngineError(f"{SHARES_FILE} cannot be read: {exc}") from exc
+
+    def authorize_share(self, name: str, options: dict[str, Any] | None = None) -> str:
+        try:
+            if options is not None:
+                make_share(name, options)
+            elif name not in {s.name for s in self.shares}:
+                raise ShareError(f"there is no share called {name}")
+        except ShareError as exc:
+            raise InvalidArgument(str(exc)) from exc
+        return f"{POLKIT}.share"
+
+    def set_share(self, name: str, options: dict[str, Any]) -> Share:
+        """Create or change a share. Its directory is created, never removed."""
+        try:
+            share = make_share(name, options)
+        except ShareError as exc:
+            raise InvalidArgument(str(exc)) from exc
+        self._ready_for_shares()
+        directory = self._host_path(share.path)
+        if not os.path.isdir(directory):
+            os.mkdir(directory, 0o2775)
+            os.chown(directory, share.uid, share.gid)
+            os.chmod(directory, 0o2775)  # setgid: new files keep the share's group
+        others = [s for s in self.shares if s.name != name]
+        self._apply_shares([*others, share])
+        return share
+
+    def remove_share(self, name: str) -> None:
+        """Stop exporting a share. Its files stay where they are."""
+        self.authorize_share(name)
+        self._ready_for_shares()
+        self._apply_shares([s for s in self.shares if s.name != name])
+
+    def _ready_for_shares(self) -> None:
+        self._require_runner()
+        if self._layout is None:
+            raise NoLayout("there is no pool to share yet")
+        if self._running:
+            raise Busy(f"job {self._running} is running")
+
+    def _host_path(self, path: str) -> str:
+        return os.path.join(self.root, path.lstrip("/"))
+
+    def _apply_shares(self, shares: list[Share]) -> None:
+        """Write the exports file, have nfs-server and firewalld follow, then save.
+
+        If nfs-server refuses the new exports, the old file is put back.
+        """
+        from .ops import cmd
+
+        runner = self._require_runner()
+        exports_path = self._host_path(EXPORTS_FILE)
+        try:
+            with open(exports_path, encoding="utf-8") as f:
+                previous: str | None = f.read()
+        except FileNotFoundError:
+            previous = None
+        write_atomically(exports_path, render_exports(shares))
+
+        def run(*argv: str) -> Result:
+            result = runner.run(cmd(*argv).argv)
+            if result.exit:
+                log.warning("%s exited %d: %s", " ".join(argv), result.exit, result.stderr.strip())
+            return result
+
+        if shares:
+            steps = [
+                ("systemctl", "enable", "--now", NFS_SERVICE),
+                ("systemctl", "reload", NFS_SERVICE),
+            ]
+        else:
+            steps = [("systemctl", "reload", NFS_SERVICE)]
+        for argv in steps:
+            result = run(*argv)
+            if result.exit:
+                if previous is None:
+                    os.unlink(exports_path)
+                else:
+                    write_atomically(exports_path, previous)
+                run("systemctl", "reload", NFS_SERVICE)
+                raise EngineError(f"nfs-server refused the new exports: {result.stderr.strip()}")
+        # Open or close NFS (port 2049 only: the package makes the server
+        # NFSv4-only) in firewalld, now and after reboots.
+        change = "--add-service=nfs" if shares else "--remove-service=nfs"
+        for argv in (("firewall-cmd", "--permanent", change), ("firewall-cmd", change)):
+            try:
+                run(*argv)
+            except OSError as exc:
+                log.warning("firewalld is not available (%s); open NFS yourself", exc)
+                break
+        write_atomically(os.path.join(self.state_dir, SHARES_FILE), dump_shares(shares))
 
     def authorize_confirm_backup(self) -> str:
         return f"{POLKIT}.confirm-backup"

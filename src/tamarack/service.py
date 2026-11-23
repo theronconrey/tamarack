@@ -310,6 +310,28 @@ class Service:
                     return "(o)", (plan_path(stored.id),)
 
                 return READ_ACTION, {}, plan
+            if method == "SetShare":
+                name, options = args
+                action = e.authorize_share(name, options)
+
+                def set_share() -> Reply:
+                    share = e.set_share(name, options)
+                    log.info("share %s now exported to %s", share.name, ", ".join(share.clients))
+                    self._manager_changed("Shares")
+                    return "", ()
+
+                return action, {"share": name}, set_share
+            if method == "RemoveShare":
+                (name,) = args
+                action = e.authorize_share(name)
+
+                def remove_share() -> Reply:
+                    e.remove_share(name)
+                    log.info("share %s no longer exported", name)
+                    self._manager_changed("Shares")
+                    return "", ()
+
+                return action, {"share": name}, remove_share
             if method == "SetSnapshotSchedule":
                 (schedule,) = args
                 action = e.authorize_snapshot_schedule(schedule)
@@ -513,6 +535,7 @@ class Service:
             "OnBattery": lambda: e.on_battery,
             "LastBackupConfirmed": lambda: e.last_backup_confirmed,
             "SnapshotSchedule": lambda: e.snapshot_schedule,
+            "Shares": lambda: json.dumps([s.to_dict() for s in e.shares], sort_keys=True),
             "ActiveJob": lambda: job_path(e.active_job) if e.active_job else "/",
         }
 
