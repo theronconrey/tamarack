@@ -6,12 +6,11 @@ with an optional note. ``expand`` works out how a drive with free space joins
 existing layers and pairs leftover space into new layers; the grow and replace
 planners both use it so the two never disagree about layout.
 
-Everything here produces text. Nothing runs.
+Everything here produces data and text. Nothing runs.
 """
 
 from __future__ import annotations
 
-import shlex
 from dataclasses import dataclass, field
 
 from .commands import (
@@ -27,6 +26,7 @@ from .commands import (
 )
 from .layout import Layout, LayoutLayer, Member
 from .model import Level, Protection
+from .ops import Command, Step, cmd, render_steps
 from .planner import END_RESERVE, META_PARTITION, START_RESERVE, bucket_tolerance
 from .policy import level_for, protection_for
 from .units import GiB, MiB, align_down, format_size
@@ -37,13 +37,6 @@ PartSpec = tuple[int, int, int]
 
 class UnsupportedChange(ValueError):
     """The requested change is valid in principle but not implemented yet."""
-
-
-@dataclass(frozen=True)
-class Step:
-    title: str
-    commands: tuple[str, ...]
-    note: str = ""
 
 
 @dataclass
@@ -195,24 +188,32 @@ def health_check(layout: Layout, skip: set[int] | None = None) -> Step:
     indexes = [layer.index for layer in layout.layers if not (skip and layer.index in skip)]
     return Step(
         "Check the other layers are healthy" if skip else "Check every layer is healthy",
-        tuple(f"mdadm --detail --test {md_device(i)}" for i in indexes),
+        tuple(cmd("mdadm", "--detail", "--test", md_device(i)) for i in indexes),
         "Stops here if an array is degraded: a second problem must be fixed first.",
     )
 
 
 def partition_drive(device: str, parts: list[PartSpec], wipe: bool) -> Step:
-    dev = shlex.quote(device)
-    commands = []
+    commands: list[Command] = []
     if wipe:
         commands += [
-            f"sgdisk --zap-all {dev}",
-            f"sgdisk -n 1:0:+16M -t 1:{LINUX_FS_TYPE} -c 1:{META_PARTLABEL} {dev}",
+            cmd("sgdisk", "--zap-all", device),
+            cmd(
+                "sgdisk",
+                *("-n", "1:0:+16M", "-t", f"1:{LINUX_FS_TYPE}", "-c", f"1:{META_PARTLABEL}"),
+                device,
+            ),
         ]
     commands += [
-        f"sgdisk -n {n}:0:+{size // MiB}M -t {n}:{LINUX_RAID_TYPE} -c {n}:tk-l{layer} {dev}"
+        cmd(
+            "sgdisk",
+            *("-n", f"{n}:0:+{size // MiB}M", "-t", f"{n}:{LINUX_RAID_TYPE}"),
+            *("-c", f"{n}:tk-l{layer}"),
+            device,
+        )
         for n, size, layer in parts
     ]
-    commands.append(f"partprobe {dev}")
+    commands.append(cmd("partprobe", device))
     if wipe:
         return Step(f"Partition {device}", tuple(commands))
     return Step(
@@ -222,15 +223,15 @@ def partition_drive(device: str, parts: list[PartSpec], wipe: bool) -> Step:
     )
 
 
-def integrity_open(device: str, drive: int, numbers: list[int], suffix: str = "") -> list[str]:
-    commands: list[str] = []
+def integrity_open(device: str, drive: int, numbers: list[int], suffix: str = "") -> list[Command]:
+    commands: list[Command] = []
     for n in numbers:
-        path = shlex.quote(partition_path(device, n))
-        commands.append(f"integritysetup format --batch-mode --integrity crc32c {path}")
+        path = partition_path(device, n)
+        name = f"{integrity_device_name(drive, n)}{suffix}"
         commands.append(
-            f"integritysetup open --integrity crc32c {path} "
-            f"{integrity_device_name(drive, n)}{suffix}"
+            cmd("integritysetup", "format", "--batch-mode", "--integrity", "crc32c", path)
         )
+        commands.append(cmd("integritysetup", "open", "--integrity", "crc32c", path, name))
     return commands
 
 
@@ -242,12 +243,12 @@ def widen_step(before: LayoutLayer, after: LayoutLayer) -> Step:
         return Step(
             f"Layer {before.index}: mirror -> single parity across {width} drives",
             (
-                f"mdadm --grow {md} --bitmap=none",
-                f"mdadm --grow {md} --level=5",
-                f"mdadm {md} --add {added}",
-                f"mdadm --grow {md} --raid-devices={width}",
-                f"mdadm --wait {md}",
-                f"mdadm --grow {md} --consistency-policy=ppl",
+                cmd("mdadm", "--grow", md, "--bitmap=none"),
+                cmd("mdadm", "--grow", md, "--level=5"),
+                cmd("mdadm", md, "--add", added),
+                cmd("mdadm", "--grow", md, f"--raid-devices={width}"),
+                cmd("mdadm", "--wait", md),
+                cmd("mdadm", "--grow", md, "--consistency-policy=ppl"),
             ),
             "A two-drive mirror converts to single parity in place, then reshapes onto "
             "the drive. The data stays online and protected throughout; mdadm resumes "
@@ -256,27 +257,35 @@ def widen_step(before: LayoutLayer, after: LayoutLayer) -> Step:
     return Step(
         f"Layer {before.index}: widen single parity to {width} drives",
         (
-            f"mdadm --grow {md} --consistency-policy=resync",
-            f"mdadm {md} --add {added}",
-            f"mdadm --grow {md} --raid-devices={width}",
-            f"mdadm --wait {md}",
-            f"mdadm --grow {md} --consistency-policy=ppl",
+            cmd("mdadm", "--grow", md, "--consistency-policy=resync"),
+            cmd("mdadm", md, "--add", added),
+            cmd("mdadm", "--grow", md, f"--raid-devices={width}"),
+            cmd("mdadm", "--wait", md),
+            cmd("mdadm", "--grow", md, "--consistency-policy=ppl"),
         ),
         "PPL is paused for the reshape and switched back on afterwards. The data stays "
         "online and protected; mdadm resumes from its checkpoint after a power cut.",
     )
 
 
+def create_array(md: str, level: Level, members: list[str]) -> Command:
+    """``mdadm --create`` with Tamarack's write-safety option for the level."""
+    safety = "--consistency-policy=ppl" if level is Level.RAID5 else "--bitmap=internal"
+    return cmd(
+        "mdadm",
+        *("--create", md, "--run", "--metadata=1.2"),
+        f"--level={level.value.removeprefix('raid')}",
+        f"--raid-devices={len(members)}",
+        safety,
+        *members,
+    )
+
+
 def create_layer_step(layer: LayoutLayer) -> Step:
-    members = " ".join(member_path(m) for m in layer.members)
-    level = layer.level.value.removeprefix("raid")
-    safety = "--consistency-policy=ppl" if layer.level is Level.RAID5 else "--bitmap=internal"
+    members = [member_path(m) for m in layer.members]
     return Step(
         f"Create layer {layer.index} from leftover space",
-        (
-            f"mdadm --create {md_device(layer.index)} --run --metadata=1.2 --level={level} "
-            f"--raid-devices={layer.member_count} {safety} {members}",
-        ),
+        (create_array(md_device(layer.index), layer.level, members),),
     )
 
 
@@ -303,12 +312,12 @@ def expansion_steps(layout: Layout, exp: Expansion, own_drive: int) -> list[Step
 
 
 def grow_volume(grown: list[str], created: list[str]) -> Step:
-    commands = [f"pvresize {md}" for md in grown]
+    commands = [cmd("pvresize", md) for md in grown]
     for md in created:
-        commands += [f"pvcreate {md}", f"vgextend {VG_NAME} {md}"]
+        commands += [cmd("pvcreate", md), cmd("vgextend", VG_NAME, md)]
     commands += [
-        f"lvextend --extents +100%FREE {VG_NAME}/{LV_NAME}",
-        f"btrfs filesystem resize max {MOUNT_POINT}",
+        cmd("lvextend", "--extents", "+100%FREE", f"{VG_NAME}/{LV_NAME}"),
+        cmd("btrfs", "filesystem", "resize", "max", MOUNT_POINT),
     ]
     return Step("Grow the volume and file system", tuple(commands))
 
@@ -334,13 +343,5 @@ def leftover_warnings(layout: Layout) -> list[str]:
 
 
 def render(plan: ChangePlan) -> list[str]:
-    lines = ["# tamarack dry run: nothing below has been executed."]
-    if plan.erases:
-        lines.append(f"# DESTRUCTIVE for {plan.erases}: it will be erased.")
-    lines.append("set -euo pipefail")
-    for number, step in enumerate(plan.steps, start=1):
-        lines += ["", f"# {number}. {step.title}"]
-        if step.note:
-            lines.append(f"#    {step.note}")
-        lines += list(step.commands)
-    return lines
+    warnings = [f"# DESTRUCTIVE for {plan.erases}: it will be erased."] if plan.erases else []
+    return render_steps(warnings, plan.steps)

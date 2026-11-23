@@ -1,0 +1,55 @@
+# tamarack dry run: nothing below has been executed.
+# DESTRUCTIVE: these commands erase every listed drive.
+set -euo pipefail
+
+# 1. Partition each drive
+sgdisk --zap-all /dev/sda
+sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sda
+sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sda
+partprobe /dev/sda
+sgdisk --zap-all /dev/sdb
+sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdb
+sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdb
+partprobe /dev/sdb
+sgdisk --zap-all /dev/sdc
+sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdc
+sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdc
+sgdisk -n 3:0:+3814697M -t 3:fd00 -c 3:tk-l2 /dev/sdc
+partprobe /dev/sdc
+sgdisk --zap-all /dev/sdd
+sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdd
+sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdd
+sgdisk -n 3:0:+3814697M -t 3:fd00 -c 3:tk-l2 /dev/sdd
+partprobe /dev/sdd
+
+# 2. dm-integrity on every layer partition (journal mode is integritysetup's default; bitmap mode stays off)
+integritysetup format --batch-mode --integrity crc32c /dev/sda2
+integritysetup open --integrity crc32c /dev/sda2 tk-d1-p2
+integritysetup format --batch-mode --integrity crc32c /dev/sdb2
+integritysetup open --integrity crc32c /dev/sdb2 tk-d2-p2
+integritysetup format --batch-mode --integrity crc32c /dev/sdc2
+integritysetup open --integrity crc32c /dev/sdc2 tk-d3-p2
+integritysetup format --batch-mode --integrity crc32c /dev/sdd2
+integritysetup open --integrity crc32c /dev/sdd2 tk-d4-p2
+integritysetup format --batch-mode --integrity crc32c /dev/sdc3
+integritysetup open --integrity crc32c /dev/sdc3 tk-d3-p3
+integritysetup format --batch-mode --integrity crc32c /dev/sdd3
+integritysetup open --integrity crc32c /dev/sdd3 tk-d4-p3
+
+# 3. One md array per layer
+mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --level=5 --raid-devices=4 --consistency-policy=ppl /dev/mapper/tk-d1-p2 /dev/mapper/tk-d2-p2 /dev/mapper/tk-d3-p2 /dev/mapper/tk-d4-p2
+mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d3-p3 /dev/mapper/tk-d4-p3
+
+# 4. LVM joins the layers into one volume
+pvcreate /dev/md/tk-l1 /dev/md/tk-l2
+vgcreate tamarack /dev/md/tk-l1 /dev/md/tk-l2
+lvcreate --yes --extents 100%FREE --name data tamarack
+
+# 5. Btrfs on top
+mkfs.btrfs --label tamarack --metadata dup /dev/tamarack/data
+mkdir -p /srv/tamarack
+mount -o compress=zstd:1,noatime /dev/tamarack/data /srv/tamarack
+btrfs subvolume create /srv/tamarack/shares
+btrfs subvolume create /srv/tamarack/snapshots
+
+# 6. Layout metadata to the tk-meta partitions (not implemented yet)
