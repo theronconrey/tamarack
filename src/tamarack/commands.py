@@ -17,6 +17,7 @@ from .units import MiB
 VG_NAME = "tamarack"
 LV_NAME = "data"
 MOUNT_POINT = "/srv/tamarack"
+MOUNT_OPTIONS = "compress=zstd:1,noatime"
 FS_LABEL = "tamarack"
 META_PARTLABEL = "tk-meta"
 LINUX_RAID_TYPE = "fd00"
@@ -161,8 +162,9 @@ def build_steps(plan: Plan) -> list[Step]:
             "Btrfs on top",
             (
                 cmd("mkfs.btrfs", "--label", FS_LABEL, "--metadata", "dup", lv),
-                cmd("mkdir", "-p", MOUNT_POINT),
-                cmd("mount", "-o", "compress=zstd:1,noatime", lv, MOUNT_POINT),
+                # systemd-mount asks systemd to mount it in the host's namespace:
+                # a mount made inside the engine's sandbox would stay there.
+                cmd("systemd-mount", f"--options={MOUNT_OPTIONS}", lv, MOUNT_POINT),
                 cmd("btrfs", "subvolume", "create", f"{MOUNT_POINT}/shares"),
                 cmd("btrfs", "subvolume", "create", f"{MOUNT_POINT}/snapshots"),
             ),

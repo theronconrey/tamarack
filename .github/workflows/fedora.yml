@@ -72,3 +72,10 @@ jobs:
           tamarack plan 4TB 4TB 8TB 8TB
           tamarack grow /dev/sda=4TB --add /dev/sdb=4TB
           rpm -q --qf '%{LICENSE}\n' tamarack
+          # The engine package: files in place, unit valid, sandbox reported.
+          /usr/libexec/tamarack-engine --help
+          test ! -e /etc/tamarack/engine.conf  # execution stays off by default
+          # --man=no: the container installs without documentation.
+          systemd-analyze verify --man=no /usr/lib/systemd/system/tamarack-engine.service
+          systemd-analyze security --offline=true --no-pager \
+            /usr/lib/systemd/system/tamarack-engine.service || true
