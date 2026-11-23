@@ -118,13 +118,17 @@ optional_policy(`
 # systemctl enable --now srv-tamarack.mount, after creating a pool.
 # systemctl runs in the engine's domain, so systemd checks the engine:
 # enabling reloads systemd, and each unit needs its own start/enable.
+# 'systemctl --now' queues its jobs with one call for all units
+# (EnqueueUnitJobMany), which systemd checks as start/stop on init_t
+# itself rather than on each unit. That is broader than the per-unit
+# rules below; to be narrowed if systemd checks those jobs per unit.
 optional_policy(`
 	gen_require(`
 		type init_t;
-		class system { reload status };
+		class system { reload status start stop };
 	')
 	systemd_exec_systemctl(tamarack_engine_t)
-	allow tamarack_engine_t init_t:system { reload status };
+	allow tamarack_engine_t init_t:system { reload status start stop };
 ')
 
 # Tamarack's own units: the volume mount and the scrub timer and service.
