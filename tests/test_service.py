@@ -138,11 +138,24 @@ POLKIT_XML = """<node><interface name="org.freedesktop.PolicyKit1.Authority">
 B, D = "org.freedesktop.UDisks2.Block", "org.freedesktop.UDisks2.Drive"
 
 
-def fake_objects(drives: dict[str, tuple[int, str]]) -> dict[str, Any]:
+ATA = "org.freedesktop.UDisks2.Drive.Ata"
+
+
+def fake_objects(
+    drives: dict[str, tuple[int, str]], failing: set[str] | None = None
+) -> dict[str, Any]:
     objects: dict[str, Any] = {}
     for n, (device, (size, wwn)) in enumerate(sorted(drives.items())):
         drive = f"/org/freedesktop/UDisks2/drives/d{n}"
-        objects[drive] = {D: {"WWN": GLib.Variant("s", wwn), "Serial": GLib.Variant("s", "")}}
+        smart = {
+            "SmartSupported": GLib.Variant("b", True),
+            "SmartEnabled": GLib.Variant("b", True),
+            "SmartFailing": GLib.Variant("b", device in (failing or set())),
+        }
+        objects[drive] = {
+            D: {"WWN": GLib.Variant("s", wwn), "Serial": GLib.Variant("s", "")},
+            ATA: smart,
+        }
         objects[f"/org/freedesktop/UDisks2/block_devices/b{n}"] = {
             B: {
                 "Device": GLib.Variant("ay", device.encode() + b"\0"),
@@ -162,6 +175,7 @@ class Fakes:
     def __init__(self, drives: dict[str, tuple[int, str]]) -> None:
         self.drives = drives
         self.denied: set[str] = set()
+        self.failing: set[str] = set()
         self.checks: list[tuple[str, str, dict[str, str]]] = []  # sender, action, details
 
     def serve(self, address: str) -> Any:
@@ -170,7 +184,8 @@ class Fakes:
         def udisks(
             conn: Any, sender: str, path: str, iface: str, method: str, params: Any, inv: Any
         ) -> None:
-            inv.return_value(GLib.Variant("(a{oa{sa{sv}}})", (fake_objects(self.drives),)))
+            objects = fake_objects(self.drives, self.failing)
+            inv.return_value(GLib.Variant("(a{oa{sa{sv}}})", (objects,)))
 
         def polkit(
             conn: Any, sender: str, path: str, iface: str, method: str, params: Any, inv: Any
@@ -559,5 +574,37 @@ def test_cancel_a_paused_job(bus: str, tmp_path: Path) -> None:
         assert get(h.client, "State", job, JOB) == "cancelled"
         assert get(h.client, "State") == "idle"
         assert get(h.client, "Layout") == ""
+    finally:
+        h.stop()
+
+
+def test_health_alerts_when_a_drive_starts_failing(bus: str, tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    plan = make_plan(
+        [4 * TB, 4 * TB],
+        ["/dev/sda", "/dev/sdb"],
+        ["wwn:0x5000000000000001", "wwn:0x5000000000000002"],
+    )
+    (state / "layout.json").write_text(layout_from_plan(plan).to_json())
+    h = Harness(bus, state)
+    try:
+        h.service.check_health()  # the baseline: no alerts
+        health = json.loads(get(h.client, "Health"))
+        assert [d["state"] for d in health["drives"]] == ["ok", "ok"]
+        h.fakes.failing.add("/dev/sdb")
+        h.service.check_health()
+        h.wait(lambda: any(name == "DriveFailing" for _, name, _ in h.signals))
+        assert (
+            MANAGER_PATH,
+            "DriveFailing",
+            ("/dev/sdb", "failing: SMART says the drive is failing"),
+        ) in h.signals
+        # (No md arrays exist on the test machine, so the status itself is
+        # "degraded"; what matters here is the drive's own state.)
+        assert json.loads(get(h.client, "Health"))["drives"][1]["state"] == "failing"
+        h.service.check_health()  # no change: no second alert
+        h.wait(lambda: True)
+        assert sum(name == "DriveFailing" for _, name, _ in h.signals) == 1
     finally:
         h.stop()
