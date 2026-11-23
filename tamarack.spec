@@ -52,12 +52,12 @@ Recommends:     upower
 %{?systemd_requires}
 
 %description engine
-The privileged half of Tamarack: a sandboxed systemd service on the system
-bus that plans changes, has polkit authorize each one, and runs approved
-plans step by step with a journal that survives power cuts.
+The privileged half of Tamarack: a tightly confined systemd service on the
+system bus that plans changes, has polkit authorize each one, and runs
+approved plans step by step with a journal that survives power cuts.
 
-Execution is off unless /etc/tamarack/engine.conf turns it on. It is meant
-for test machines until the VM test matrix passes.
+Execution is off unless the engine configuration file in /etc/tamarack turns
+it on. It is meant for test machines until the VM test matrix passes.
 
 %prep
 %autosetup -p1 -n %{name}-%{version}
