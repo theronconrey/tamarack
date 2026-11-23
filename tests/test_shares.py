@@ -77,8 +77,7 @@ def test_exports_file() -> None:
         "/srv/tamarack/shares/backup 10.0.0.5/32(rw,sync,no_subtree_check,sec=sys,"
         "all_squash,anonuid=1000,anongid=1000)",
         "/srv/tamarack/shares/media 192.168.1.0/24(ro,sync,no_subtree_check,sec=sys,"
-        "root_squash,anonuid=0,anongid=0) media-vm(ro,sync,no_subtree_check,sec=sys,"
-        "root_squash,anonuid=0,anongid=0)",
+        "root_squash) media-vm(ro,sync,no_subtree_check,sec=sys,root_squash)",
     ]
 
 

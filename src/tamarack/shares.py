@@ -44,7 +44,7 @@ class Share:
     clients: tuple[str, ...]
     read_only: bool = False
     squash: str = "root"  # root (root_squash), all (all_squash), none (no_root_squash)
-    uid: int = 0  # owner of the directory, and anonymous user for squashed access
+    uid: int = 0  # owner of a new folder; with squash "all", every client user
     gid: int = 0
 
     @property
@@ -56,7 +56,7 @@ class Share:
         notes = [SEC_SYS_NOTE]
         notes.append("read-only for every client" if self.read_only else "clients can change files")
         if self.squash == "root":
-            notes.append("root on a client is treated as an anonymous user")
+            notes.append("root on a client is treated as the anonymous user nobody")
         elif self.squash == "all":
             notes.append(f"every client user is treated as uid {self.uid}, gid {self.gid}")
         else:
@@ -132,9 +132,11 @@ def exports(shares: list[Share]) -> str:
             "no_subtree_check",
             "sec=sys",
             {"root": "root_squash", "all": "all_squash", "none": "no_root_squash"}[share.squash],
-            f"anonuid={share.uid}",
-            f"anongid={share.gid}",
         ]
+        if share.squash == "all":
+            # Everyone becomes the share's owner. Otherwise squashed root is
+            # NFS's own anonymous user (nobody), never the owner or root.
+            options += [f"anonuid={share.uid}", f"anongid={share.gid}"]
         opts = ",".join(options)
         lines.append(f"{share.path} " + " ".join(f"{c}({opts})" for c in share.clients))
     return "\n".join(lines) + "\n"

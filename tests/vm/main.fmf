@@ -5,6 +5,7 @@ require:
   - kernel-modules-extra  # scsi_debug
   - audit
   - python3-gobject-base
+  - nfs-utils  # the NFS client side of the nfs test
 
 /create-grow:
     summary: Create on two drives, grow to four
@@ -33,3 +34,7 @@ require:
 /recover-by-hand:
     summary: Stock tools alone bring the volume back
     test: ./recover-by-hand.sh
+
+/nfs:
+    summary: Shares over NFSv4, squashing, read-only
+    test: ./nfs.sh
