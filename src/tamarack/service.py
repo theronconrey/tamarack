@@ -627,6 +627,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except NameTaken as exc:
         log.error("%s", exc)
         return 1
+    engine.sync_boot()
     service.start_reattached()
     loop = GLib.MainLoop()
     GLib.timeout_add_seconds(30, service.sync_objects)

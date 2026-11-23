@@ -30,6 +30,10 @@ from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
 
 from . import __version__
+from .boot import INTEGRITYTAB, BootError
+from .boot import lines as boot_lines
+from .boot import members as boot_members
+from .boot import merge as merge_integritytab
 from .commands import build_steps
 from .grow import plan_add_drive
 from .identity import DriveChanged as IdentityChanged
@@ -185,6 +189,10 @@ class DriveSource(Protocol):
 
     def health(self, devices: list[str]) -> dict[str, tuple[str, str]]:
         """SMART health per device: (ok|failing|unknown|missing, detail)."""
+        ...
+
+    def partition_uuids(self, device: str) -> dict[int, str]:
+        """GPT partition number -> partition UUID on the drive at ``device``."""
         ...
 
 
@@ -652,6 +660,7 @@ class Engine:
                 Layout.from_dict(doc["after"]).to_json() + "\n",
             )
             self.reload()
+            self.sync_boot()
         if job_id in self._cancel_requested and report is not None and report.state == "paused":
             self._cancel_requested.discard(job_id)
             return cancel_journal(self._journal(job_id))
@@ -714,6 +723,52 @@ class Engine:
         now = int(self.clock())
         write_atomically(os.path.join(self.state_dir, BACKUP_FILE), f"{now}\n")
         return now
+
+    # --- boot ----------------------------------------------------------------
+
+    def sync_boot(self) -> bool:
+        """Bring the Tamarack lines in /etc/integritytab in line with the layout.
+
+        Returns True if the file changed. Never raises: a failure is logged,
+        and the existing file is left as it was.
+        """
+        path = os.path.join(self.root, INTEGRITYTAB.lstrip("/"))
+        try:
+            with open(path, encoding="utf-8") as f:
+                existing = f.read()
+        except FileNotFoundError:
+            existing = ""
+        except OSError as exc:
+            log.error("cannot read %s: %s", path, exc)
+            return False
+        ours: list[str] = []
+        if self._layout is not None:
+            layout = self._layout
+            uuids: dict[tuple[int, int], str] = {}
+            try:
+                for index, disk in enumerate(layout.drives):
+                    if any(d == index for d, _ in boot_members(layout)):
+                        for number, uuid in self.drives.partition_uuids(disk.device).items():
+                            uuids[(index, number)] = uuid
+                ours = boot_lines(layout, uuids)
+            except (EngineError, BootError) as exc:
+                # A missing drive: keep the old lines; the arrays start degraded.
+                log.warning("%s not updated: %s", INTEGRITYTAB, exc)
+                return False
+        wanted = merge_integritytab(existing, ours)
+        if wanted == existing:
+            return False
+        try:
+            # In place: the sandbox makes only this file writable, not /etc.
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(wanted)
+                f.flush()
+                os.fsync(f.fileno())
+        except OSError as exc:
+            log.error("cannot write %s: %s", path, exc)
+            return False
+        log.info("%s now opens %d Tamarack partitions at boot", INTEGRITYTAB, len(ours))
+        return True
 
     # --- jobs ----------------------------------------------------------------
 
