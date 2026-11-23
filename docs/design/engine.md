@@ -383,10 +383,23 @@ Added since: a single drive grown to two, and a drive that disappears
 mid-use (deleted from the SCSI layer) rebuilt onto a spare while the data
 stays readable.
 
-Still to write: mixed sizes (`scsi_debug` gives every drive one size),
-mounting again after a reboot (RAM drives don't survive one; it needs
-file-backed drives), power cut mid-reshape, silent corruption, and recovery
-on a stock Fedora VM.
+Added since then:
+- **Silent corruption.** Four MiB of garbage is written under dm-integrity
+  on one drive. The kernel must log the checksum failures, md must repair
+  from the other drives, and the data and a scrub must come back clean.
+- **Engine killed mid-reshape.** The reshape is slowed so it is still
+  running, then `SIGKILL` hits the engine. On restart the engine must
+  re-attach to the reshape by itself, pause, and finish on `Resume`. This
+  is the engine's half of a power cut; the kernel's half is md's own
+  checkpointing.
+- **Recovery by hand.** With the engine stopped and everything torn down,
+  `integritysetup`, `mdadm`, `vgchange` and `mount` alone bring the data
+  back. The steps are written up for people in
+  [docs/recovery.md](../recovery.md).
+
+Still to write: mixed sizes (`scsi_debug` gives every drive one size), and
+a real power cut and reboot (RAM drives don't survive one, so both need
+file-backed drives).
 
 ## 11. Implementation order
 

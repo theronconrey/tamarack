@@ -161,7 +161,9 @@ Per layer, under the hood:
 
 Everything on disk is standard mdadm, LVM and Btrfs. If this software
 disappears, any Linux system can open the drives with `integritysetup open`,
-`mdadm --assemble --scan`, `vgchange -ay` and `mount`.
+`mdadm --assemble --scan`, `vgchange -ay` and `mount`. The steps are in
+[docs/recovery.md](docs/recovery.md), and a VM test does exactly that on every
+pull request.
 
 ## Design
 
