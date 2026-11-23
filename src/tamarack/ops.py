@@ -29,6 +29,7 @@ ALLOWED_PROGRAMS = frozenset(
         "pvcreate",
         "pvresize",
         "sgdisk",
+        "snapper",
         "systemctl",
         "tamarack-meta",
         "vgcreate",
