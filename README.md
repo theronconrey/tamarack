@@ -187,6 +187,21 @@ works with it in four steps:
 Every drive also carries the layout on its `tk-meta` partition; the engine
 reads it back on start and refuses to plan if the drives disagree.
 
+From a terminal, `tamarack engine` is that client:
+
+```sh
+tamarack engine status                        # the pool, its health, any job
+tamarack engine add /dev/disk/by-id/ata-… --dry-run --commands   # review only
+tamarack engine confirm-backup                # needed before add, replace, rebuild
+tamarack engine add /dev/disk/by-id/ata-…     # type the drive to confirm, then
+                                              # polkit asks for the admin password
+tamarack engine resume 3 [--done|--rerun]     # after a pause or a power cut
+```
+
+It shows the plan and its digest, asks you to type every drive it will
+erase, and follows the job step by step. A text polkit agent is started for
+the password prompt when you run it from a terminal, as `systemctl` does.
+
 The design, with the reasoning and the status of each part:
 [docs/design/engine.md](docs/design/engine.md). The interface:
 [`src/tamarack/com.borealislogistics.Tamarack1.xml`](src/tamarack/com.borealislogistics.Tamarack1.xml).
