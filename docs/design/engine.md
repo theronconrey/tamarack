@@ -230,6 +230,28 @@ makes skipping them a deliberate act.
 - snapper is a D-Bus client of `snapperd`, which does the work in its own
   SELinux domain; the engine's policy only lets the two talk.
 
+### Opening the pool at boot
+
+Nothing in the kernel reopens dm-integrity mappings after a reboot, so
+without help the arrays, the volume and the mount would not come back.
+systemd's `/etc/integritytab` is the Fedora way: its generator turns each
+line into a unit that opens the mapping early in boot. Then mdadm's udev
+rules assemble the arrays from their superblocks, LVM activates the
+`tamarack` volume group, and `srv-tamarack.mount` mounts it.
+
+- The engine keeps a marked block of lines in `/etc/integritytab`, one per
+  layer partition: `tk-dD-pN PARTUUID=<uuid> - integrity-algorithm=crc32c`.
+  GPT partition UUIDs come from UDisks2 and don't change when a drive moves
+  to another port. Lines outside the block are left alone.
+- It rewrites the block at start and after every completed job. If a pool
+  drive is missing, the file is left as it was, so the remaining
+  partitions still open and the arrays start degraded.
+- The unit may write that one file (`ReadWritePaths=-/etc/integritytab`;
+  the package creates it if needed), labelled `tamarack_integritytab_t`,
+  which systemd's generator may read.
+- Still to prove in the VM: that the arrays come back as `/dev/md/tk-lN`
+  after a reboot, which depends on how mdadm treats the home host.
+
 ### NFS shares (track 4)
 
 - **A share is a folder** in the `shares` subvolume (`/srv/tamarack/shares/NAME`),

@@ -138,6 +138,13 @@ install -Dpm 0644 selinux/tamarack.if \
 
 %post engine
 %systemd_post tamarack-engine.service
+# The engine keeps its lines in /etc/integritytab (the sandbox only lets it
+# write that one file, so the file has to exist).
+if [ ! -e %{_sysconfdir}/integritytab ]; then
+    touch %{_sysconfdir}/integritytab
+    chmod 0644 %{_sysconfdir}/integritytab
+fi
+command -v restorecon >/dev/null && restorecon %{_sysconfdir}/integritytab || :
 
 %preun engine
 %systemd_preun tamarack-engine.service
@@ -181,6 +188,7 @@ fi
 %dir %{_sysconfdir}/nfs.conf.d
 %config(noreplace) %{_sysconfdir}/nfs.conf.d/tamarack.conf
 %dir %{_sysconfdir}/tamarack
+%ghost %config(noreplace) %{_sysconfdir}/integritytab
 
 %files selinux
 %{_datadir}/selinux/packages/%{selinuxtype}/tamarack.pp.bz2
