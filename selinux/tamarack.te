@@ -85,7 +85,7 @@ optional_policy(`
 
 # The storage tools run in their own domains.
 optional_policy(`
-	mdadm_domtrans(tamarack_engine_t)
+	raid_domtrans_mdadm(tamarack_engine_t)
 ')
 
 optional_policy(`
