@@ -187,6 +187,20 @@ Fedora container: code checks, RPM build, rpmlint, and an install of the built
 package. Packit Copr builds for every supported Fedora release are configured
 in [`.packit.yaml`](.packit.yaml).
 
+Two packages come out of it:
+
+- `tamarack`: the planner and the `tamarack` command. Needs nothing but Python.
+- `tamarack-engine`: the sandboxed system service, its D-Bus and polkit
+  policy, and the storage tools it runs. It plans and reviews out of the box
+  but **does not execute** anything unless `/etc/tamarack/engine.conf` says:
+
+  ```ini
+  [execution]
+  enabled = yes
+  ```
+
+  Until the VM test matrix passes, only turn that on in a throwaway VM.
+
 ## License
 
 GPL-3.0-or-later; see [LICENSE](LICENSE).
