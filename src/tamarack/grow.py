@@ -15,21 +15,20 @@ Not yet: growing into two-drive protection (5+ drives).
 
 Nothing is shrunk. Widening is an mdadm reshape: it runs in the background
 with the data online and protected, and resumes from mdadm's checkpoint after
-a power cut. Like the planner, this module only produces text.
+a power cut. Like the planner, this module only produces data and text.
 """
 
 from __future__ import annotations
 
-import shlex
-
 from .commands import md_device
 from .layout import Disk, Layout, LayoutLayer, Member
 from .model import Level, Protection
+from .ops import Step, cmd
 from .policy import protection_for
 from .steps import (
     ChangePlan,
-    Step,
     UnsupportedChange,
+    create_array,
     expand,
     expansion_steps,
     grow_volume,
@@ -95,7 +94,7 @@ def _single_to_mirror(layout: Layout, new_size: int, new_device: str) -> ChangeP
             LayoutLayer(layer.index + 1, Level.RAID1, half, (a_second, b_second)),
         ],
     )
-    a, a3 = shlex.quote(old.device), member_path(a_second)
+    a, a3 = old.device, member_path(a_second)
     b2, b3 = member_path(b_first), member_path(b_second)
     steps = [
         health_check(layout),
@@ -104,10 +103,10 @@ def _single_to_mirror(layout: Layout, new_size: int, new_device: str) -> ChangeP
         Step(
             "Move one copy onto the new drive",
             (
-                f"mdadm {l1} --add {b2}",
-                f"mdadm {l1} --replace {a3} --with {b2}",
-                f"mdadm --wait {l1}",
-                f"mdadm {l1} --remove {a3}",
+                cmd("mdadm", l1, "--add", b2),
+                cmd("mdadm", l1, "--replace", a3, "--with", b2),
+                cmd("mdadm", "--wait", l1),
+                cmd("mdadm", l1, "--remove", a3),
             ),
             "The old copy stays active until the new one is complete, so protection "
             "never drops during the move.",
@@ -115,17 +114,18 @@ def _single_to_mirror(layout: Layout, new_size: int, new_device: str) -> ChangeP
         Step(
             f"Free the second half of {old.device}",
             (
-                f"mdadm --zero-superblock {a3}",
-                f"sgdisk -c {a_first.partition}:tk-l{layer.index} "
-                f"-c {a_second.partition}:tk-l{layer.index + 1} {a}",
+                cmd("mdadm", "--zero-superblock", a3),
+                cmd(
+                    "sgdisk",
+                    *("-c", f"{a_first.partition}:tk-l{layer.index}"),
+                    *("-c", f"{a_second.partition}:tk-l{layer.index + 1}"),
+                    a,
+                ),
             ),
         ),
         Step(
             "Mirror the freed halves as a new layer",
-            (
-                f"mdadm --create {l2} --run --metadata=1.2 --level=1 --raid-devices=2 "
-                f"--bitmap=internal {a3} {b3}",
-            ),
+            (create_array(l2, Level.RAID1, [a3, b3]),),
         ),
         grow_volume(grown=[], created=[l2]),
         metadata_step(),

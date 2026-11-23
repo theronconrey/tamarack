@@ -1,0 +1,36 @@
+# tamarack dry run: nothing below has been executed.
+# DESTRUCTIVE: these commands erase every listed drive.
+set -euo pipefail
+
+# 1. Partition each drive
+sgdisk --zap-all '/dev/disk/by-id/ata-WDC odd'
+sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta '/dev/disk/by-id/ata-WDC odd'
+sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 '/dev/disk/by-id/ata-WDC odd'
+partprobe '/dev/disk/by-id/ata-WDC odd'
+sgdisk --zap-all /dev/nvme0n1
+sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/nvme0n1
+sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/nvme0n1
+partprobe /dev/nvme0n1
+
+# 2. dm-integrity on every layer partition (journal mode is integritysetup's default; bitmap mode stays off)
+integritysetup format --batch-mode --integrity crc32c '/dev/disk/by-id/ata-WDC odd-part2'
+integritysetup open --integrity crc32c '/dev/disk/by-id/ata-WDC odd-part2' tk-d1-p2
+integritysetup format --batch-mode --integrity crc32c /dev/nvme0n1p2
+integritysetup open --integrity crc32c /dev/nvme0n1p2 tk-d2-p2
+
+# 3. One md array per layer
+mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d1-p2 /dev/mapper/tk-d2-p2
+
+# 4. LVM joins the layers into one volume
+pvcreate /dev/md/tk-l1
+vgcreate tamarack /dev/md/tk-l1
+lvcreate --yes --extents 100%FREE --name data tamarack
+
+# 5. Btrfs on top
+mkfs.btrfs --label tamarack --metadata dup /dev/tamarack/data
+mkdir -p /srv/tamarack
+mount -o compress=zstd:1,noatime /dev/tamarack/data /srv/tamarack
+btrfs subvolume create /srv/tamarack/shares
+btrfs subvolume create /srv/tamarack/snapshots
+
+# 6. Layout metadata to the tk-meta partitions (not implemented yet)
