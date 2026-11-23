@@ -3,7 +3,8 @@
 # SELinux policy for the Tamarack storage engine (docs/design/engine.md,
 # section 9). The engine runs in tamarack_engine_t. It does not touch disks
 # itself: each storage tool it starts transitions into that tool's own
-# Fedora domain (mdadm_t, lvm_t, fsadm_t), so the engine is never granted
+# Fedora domain (mdadm_t, lvm_t, fsadm_t; integritysetup is labelled
+# lvm_exec_t in tamarack.fc), so the engine is never granted
 # the tools' permissions. Written to run enforcing; the VM test matrix
 # fails on any AVC denial.
 
@@ -180,6 +181,9 @@ corecmd_exec_bin(tamarack_meta_t)
 files_read_usr_files(tamarack_meta_t)
 files_read_etc_files(tamarack_meta_t)
 miscfiles_read_localization(tamarack_meta_t)
+# Python's start-up looks up the user and the OpenSSL configuration.
+auth_read_passwd(tamarack_meta_t)
+miscfiles_read_generic_certs(tamarack_meta_t)
 kernel_read_system_state(tamarack_meta_t)
 dev_read_sysfs(tamarack_meta_t)
 dev_list_all_dev_nodes(tamarack_meta_t)

@@ -428,6 +428,12 @@ What the first enforcing VM runs taught us:
   but not `sgdisk` or `btrfs` (`bin_t`). Partitioning therefore moved from
   `sgdisk` to `parted`, so the engine never needs raw disk access;
   `integritysetup` is its own Fedora package and is now required.
+- Fedora's policy labels `cryptsetup` `lvm_exec_t` but leaves
+  `integritysetup` as `bin_t`, so it ran in the engine's own domain and was
+  denied the raw partitions. The module labels `integritysetup` `lvm_exec_t`
+  too, so it runs in `lvm_t` like `cryptsetup`; this belongs in
+  selinux-policy upstream and should move there.
+- `tamarack-meta` (Python) reads `/etc/passwd` and `/etc/pki` at start-up.
 
 ## 10. Testing on (virtual) disks
 
