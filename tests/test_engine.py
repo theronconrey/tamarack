@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
@@ -13,19 +14,30 @@ from fake_runner import FakeRunner
 from tamarack.engine import (
     PLAN_LIFETIME,
     Busy,
+    Degraded,
     DriveChanged,
     DriveInfo,
     Engine,
+    EngineError,
     InvalidArgument,
     LayoutExists,
     LayoutUnreadable,
     NoLayout,
+    NoRecentBackup,
     NoSuchDrive,
     NoSuchPlan,
+    NotBetweenSteps,
+    NotConfirmed,
+    NotSupported,
+    NoUps,
+    OnBattery,
+    StalePlan,
     TooManyPlans,
+    parse_resume_options,
     validate_device_path,
 )
-from tamarack.job import start
+from tamarack.job import Resolution, start
+from tamarack.journal import load
 from tamarack.layout import layout_from_plan
 from tamarack.planner import make_plan
 from tamarack.review import digest, document
@@ -38,6 +50,9 @@ class FakeDrives:
     def __init__(self, drives: dict[str, tuple[int, str]]) -> None:
         self.drives = drives
         self.lookups: list[tuple[str, bool]] = []
+
+    def present(self, devices: list[str]) -> dict[str, str]:
+        return {d: self.drives[d][1] for d in devices if d in self.drives}
 
     def lookup(self, device: str, unused: bool) -> DriveInfo:
         self.lookups.append((device, unused))
@@ -340,3 +355,272 @@ def test_udisks_other_uses(iface: str, props: dict[str, Any], message: str) -> N
     sda.setdefault(iface, {}).update(props)
     with pytest.raises(InvalidArgument, match=message):
         find_drive(objects, "/dev/sda", unused=True)
+
+
+# --- executing ---------------------------------------------------------------
+
+CONFIRM_ALL = {"no-ups": True}
+
+
+def healthy_sysfs(root: Path, layers: int) -> None:
+    for layer in range(1, layers + 1):
+        md = f"md{127 - layer}"
+        (root / "dev" / "md").mkdir(parents=True, exist_ok=True)
+        os.symlink(f"../{md}", root / "dev" / "md" / f"tk-l{layer}")
+        (root / "dev" / md).touch()
+        (root / "sys" / "block" / md / "md").mkdir(parents=True)
+        (root / "sys" / "block" / md / "md" / "degraded").write_text("0\n")
+
+
+def run_engine(tmp_path: Path, layout_of: list[str] | None = None, **kw: Any) -> Engine:
+    state = tmp_path / "state"
+    state.mkdir()
+    root = tmp_path / "root"
+    root.mkdir()
+    kw.setdefault("runner", FakeRunner())
+    e = engine(state, layout_of, root=str(root), **kw)
+    if e.layout:
+        healthy_sysfs(root, len(e.layout.layers))
+    return e
+
+
+def opts(plan: Any, **extra: Any) -> dict[str, Any]:
+    return {"confirm-erase": list(plan.erases), **CONFIRM_ALL, **extra}
+
+
+def test_execute_needs_a_runner(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, runner=None)
+    plan = e.plan_create(["/dev/sda"])
+    with pytest.raises(NotSupported):
+        e.authorize_execute(plan.id, plan.digest, opts(plan))
+
+
+def test_execute_a_create_plan(tmp_path: Path) -> None:
+    e = run_engine(tmp_path)
+    plan = e.plan_create(["/dev/sda", "/dev/sdb"])
+    action, details = e.authorize_execute(plan.id, plan.digest, opts(plan))
+    assert action == "com.borealislogistics.tamarack.create"
+    assert details == {"kind": "create", "erases": "/dev/sda /dev/sdb"}
+    run = e.execute(plan.id, plan.digest, opts(plan))
+    assert run.job_id == "1" and e.state == "running"
+    with pytest.raises(Busy):
+        e.plan_create(["/dev/sdc"])
+    report = run.run()
+    assert report.state == "completed"
+    assert e.job_finished("1", report) == report
+    assert e.state == "idle" and e.layout is not None
+    assert [d.device for d in e.layout.drives] == ["/dev/sda", "/dev/sdb"]
+    assert e.plan_ids() == []  # the plan was used up
+    assert e.job_status("1").state == "completed"
+    assert e.job_ids() == ["1"]
+
+
+@pytest.mark.parametrize(
+    ("change", "error"),
+    [
+        (lambda e, p: ("sha256:other", opts(p)), StalePlan),
+        (lambda e, p: (p.digest, {"confirm-erase": ["/dev/sda"], "no-ups": True}), NotConfirmed),
+        (lambda e, p: (p.digest, {"no-ups": True}), NotConfirmed),
+        (lambda e, p: (p.digest, opts(p, surprise=1)), InvalidArgument),
+        (lambda e, p: (p.digest, {"confirm-erase": list(p.erases)}), NoUps),
+    ],
+)
+def test_execute_refusals(tmp_path: Path, change: Any, error: type[Exception]) -> None:
+    e = run_engine(tmp_path)
+    plan = e.plan_create(["/dev/sda", "/dev/sdb"])
+    plan_digest, options = change(e, plan)
+    with pytest.raises(error):
+        e.execute(plan.id, plan_digest, options)
+    assert e.runner.calls == []  # type: ignore[union-attr]
+
+
+def test_layout_changed_since_planning(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    plan = e.plan_add("/dev/sdc")
+    other = make_plan([4 * TB, 4 * TB], ["/dev/sda", "/dev/sdb"], ["wwn:0x1", "wwn:0x2"])
+    changed = layout_from_plan(other).to_dict()
+    changed["layers"][0]["slice_bytes"] -= 1 << 20
+    (Path(e.state_dir) / "layout.json").write_text(json.dumps(changed))
+    e.reload()
+    with pytest.raises(StalePlan, match="layout changed"):
+        e.execute(plan.id, plan.digest, opts(plan))
+
+
+def test_drive_swapped_after_planning(tmp_path: Path) -> None:
+    e = run_engine(tmp_path)
+    plan = e.plan_create(["/dev/sda", "/dev/sdb"])
+    e.drives.drives["/dev/sdb"] = (4 * TB, "wwn:0xbeef")  # type: ignore[attr-defined]
+    with pytest.raises(DriveChanged, match="/dev/sdb"):
+        e.execute(plan.id, plan.digest, opts(plan))
+
+
+def test_on_battery_refuses_execute(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, on_battery=lambda: True)
+    plan = e.plan_create(["/dev/sda"])
+    with pytest.raises(OnBattery):
+        e.execute(plan.id, plan.digest, opts(plan))
+
+
+def test_a_ups_makes_no_ups_unnecessary(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, ups_present=lambda: True)
+    plan = e.plan_create(["/dev/sda"])
+    e.execute(plan.id, plan.digest, {"confirm-erase": ["/dev/sda"]})
+
+
+def test_changes_need_a_recent_backup(tmp_path: Path) -> None:
+    clock = Clock()
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"], clock=clock)
+    plan = e.plan_add("/dev/sdc")
+    action, _ = e.authorize_execute(plan.id, plan.digest, opts(plan))
+    assert action == "com.borealislogistics.tamarack.add-drive"
+    with pytest.raises(NoRecentBackup):
+        e.execute(plan.id, plan.digest, opts(plan))
+    e.confirm_backup()
+    clock.now += 7 * 24 * 3600 + 1
+    plan = e.plan_add("/dev/sdc")
+    with pytest.raises(NoRecentBackup):
+        e.execute(plan.id, plan.digest, opts(plan))
+    e.confirm_backup()
+    assert e.execute(plan.id, plan.digest, opts(plan)).job_id == "1"
+    assert stat_mode(Path(e.state_dir) / "backup-confirmed") == 0o644
+
+
+def stat_mode(path: Path) -> int:
+    return path.stat().st_mode & 0o777
+
+
+def test_degraded_arrays_block_everything_but_their_rebuild(tmp_path: Path) -> None:
+    # 4+4+8+8 TB: layer 1 spans all four drives, layer 2 only the 8 TB pair.
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd"])
+    e.confirm_backup()
+    sysfs = Path(e.root) / "sys" / "block"
+    (sysfs / "md126" / "md" / "degraded").write_text("1\n")  # layer 1
+    drives = e.drives.drives  # type: ignore[attr-defined]
+    drives["/dev/sde"] = (8 * TB, "wwn:0xe")
+    upgrade = e.plan_replace("/dev/sda", "/dev/sde")
+    with pytest.raises(Degraded, match="layer 1"):
+        e.execute(upgrade.id, upgrade.digest, opts(upgrade))
+    del drives["/dev/sdb"]
+    rebuild = e.plan_rebuild("/dev/sdb", "/dev/sde")
+    (sysfs / "md125" / "md" / "degraded").write_text("1\n")  # layer 2: not on sdb
+    with pytest.raises(Degraded):
+        e.execute(rebuild.id, rebuild.digest, opts(rebuild))
+    (sysfs / "md125" / "md" / "degraded").write_text("0\n")
+    assert e.execute(rebuild.id, rebuild.digest, opts(rebuild)).job_id == "1"
+
+
+def test_gate_pauses_for_battery_and_resume_finishes(tmp_path: Path) -> None:
+    battery = {"on": False}
+    runner = FakeRunner(cut=lambda i, a: (i == 2 and battery.update(on=True)) or False)
+    e = run_engine(tmp_path, runner=runner, on_battery=lambda: battery["on"])
+    plan = e.plan_create(["/dev/sda", "/dev/sdb"])
+    report = e.execute(plan.id, plan.digest, opts(plan)).run()
+    assert report.state == "paused" and "battery" in report.message
+    e.job_finished("1", report)
+    assert e.state == "paused" and e.active_job == "1"
+    assert e.job_status("1").state == "paused"
+    with pytest.raises(Busy):
+        e.plan_create(["/dev/sdc"])
+    battery["on"] = True
+    with pytest.raises(OnBattery):
+        e.resume_job("1", {})
+    battery["on"] = False
+    runner.cut = None
+    assert e.authorize_resume("1", {}) == "com.borealislogistics.tamarack.resume"
+    report = e.resume_job("1", {}).run()
+    assert report.state == "completed"
+    e.job_finished("1", report)
+    assert e.layout is not None
+
+
+def test_cancel_running_job_stops_at_next_step(tmp_path: Path) -> None:
+    holder: dict[str, Any] = {}
+    runner = FakeRunner(cut=lambda i, a: i == 0 and holder["e"].cancel_job("1") is not None)
+    e = run_engine(tmp_path, runner=runner)
+    holder["e"] = e
+    plan = e.plan_create(["/dev/sda", "/dev/sdb"])
+    report = e.execute(plan.id, plan.digest, opts(plan)).run()
+    assert report.state == "paused" and report.message == "cancel requested"
+    final = e.job_finished("1", report)
+    assert final is not None and final.state == "cancelled"
+    assert e.layout is None and e.state == "idle"
+
+
+def test_cancel_inside_a_step_is_refused(tmp_path: Path) -> None:
+    from fake_runner import PowerCut
+
+    e = run_engine(tmp_path, runner=FakeRunner(cut=lambda i, a: i == 1))
+    plan = e.plan_create(["/dev/sda"])
+    run = e.execute(plan.id, plan.digest, opts(plan))
+    with pytest.raises(PowerCut):
+        run.run()
+    e.job_finished("1", None)
+    with pytest.raises(NotBetweenSteps):
+        e.cancel_job("1")
+    assert e.authorize_cancel("1") == "com.borealislogistics.tamarack.cancel"
+
+
+def test_reattach_only_picks_up_an_interrupted_wait(tmp_path: Path) -> None:
+    from fake_runner import PowerCut
+
+    e = run_engine(tmp_path, ["/dev/sda"])
+    e.confirm_backup()
+    plan = e.plan_add("/dev/sdb")
+    commands = [tuple(c["argv"]) for s in plan.document["steps"] for c in s["commands"]]
+    wait = next(i for i, a in enumerate(commands) if a[:2] == ("mdadm", "--wait"))
+    e.runner = FakeRunner(cut=lambda i, a: i == wait)
+    with pytest.raises(PowerCut):
+        e.execute(plan.id, plan.digest, opts(plan)).run()
+    e.job_finished("1", None)
+    assert load(str(Path(e.state_dir) / "jobs" / "1.jsonl")).in_doubt
+    e.runner = FakeRunner()
+    (run,) = e.reattach_runs()
+    assert e.job_status("1").state == "waiting"
+    report = run.run()
+    assert report.state == "paused" and e.runner.calls == [commands[wait]]  # type: ignore[attr-defined]
+    e.job_finished("1", report)
+    assert e.reattach_runs() == []
+
+
+def test_a_retired_drive_may_be_pulled(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd"])
+    e.confirm_backup()
+    e.drives.drives["/dev/sde"] = (8 * TB, "wwn:0xe")  # type: ignore[attr-defined]
+    plan = e.plan_replace("/dev/sda", "/dev/sde")
+    titles = [s["title"] for s in plan.document["steps"]]
+    retire = titles.index("Retire the old drive")
+    after_retire = sum(len(s["commands"]) for s in plan.document["steps"][: retire + 1])
+    drives = e.drives.drives  # type: ignore[attr-defined]
+    e.runner = FakeRunner(
+        cut=lambda i, a: i == after_retire - 1 and drives.pop("/dev/sda") and False
+    )
+    report = e.execute(plan.id, plan.digest, opts(plan)).run()
+    assert report.state == "completed", report.message
+
+
+def test_a_missing_drive_pauses_the_job(tmp_path: Path) -> None:
+    e = run_engine(tmp_path)
+    plan = e.plan_create(["/dev/sda", "/dev/sdb"])
+    drives = e.drives.drives  # type: ignore[attr-defined]
+    e.runner = FakeRunner(cut=lambda i, a: i == 0 and drives.pop("/dev/sdb") and False)
+    report = e.execute(plan.id, plan.digest, opts(plan)).run()
+    assert report.state == "paused" and "/dev/sdb is missing" in report.message
+
+
+def test_resume_options() -> None:
+    assert parse_resume_options({}) is None
+    assert parse_resume_options({"resolution": "done"}) is Resolution.DONE
+    for bad in ({"resolution": "maybe"}, {"other": 1}):
+        with pytest.raises(InvalidArgument):
+            parse_resume_options(bad)
+
+
+def test_jobs_need_to_exist(tmp_path: Path) -> None:
+    e = run_engine(tmp_path)
+    for attempt in (
+        lambda: e.authorize_cancel("9"),
+        lambda: e.authorize_resume("9", {}),
+        lambda: e.cancel_job("../1"),
+    ):
+        with pytest.raises(EngineError):
+            attempt()
