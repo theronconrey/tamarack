@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// What the Overview says, worked out from the engine's D-Bus properties.
+// What the page says, worked out from the engine's D-Bus properties.
 // Pure functions, no DOM and no Cockpit: tests/cockpit/test_status.js runs
 // them under node. The page (tamarack.js) only draws what these return.
 //
@@ -46,6 +46,11 @@ function read(props) {
         onBattery: !!props.OnBattery,
         lastBackup: Number(props.LastBackupConfirmed || 0),
         schedule: props.SnapshotSchedule || {},
+        details: parse(props.Drives, []),
+        upgrades: parse(props.Upgrades, {}),
+        history: parse(props.JobHistory, []),
+        shares: parse(props.Shares, []),
+        hostName: props.HostName || "",
     };
 }
 
@@ -206,7 +211,191 @@ function care(model, now) {
     ];
 }
 
-const api = { formatSize, read, drives, capacity, banner, care };
+// --- the Drives tab -------------------------------------------------------
+
+function plural(n, word) {
+    return n + " " + word + (n === 1 ? "" : "s");
+}
+
+// How long a drive has been powered on, in words.
+function age(hours) {
+    if (hours === null || hours === undefined) return "";
+    const days = hours / 24;
+    if (days < 30) return "less than a month of use";
+    const months = Math.floor(days / 30.44);
+    if (months < 24) return plural(months, "month") + " of use";
+    return "about " + plural(Math.round(months / 12), "year") + " of use";
+}
+
+// Hard drives are uncomfortable above about 55 °C, SSDs above about 70 °C.
+function temperature(celsius, kind) {
+    if (celsius === null || celsius === undefined) return { text: "", hot: false };
+    const hot = celsius >= (kind === "ssd" ? 70 : 55);
+    return { text: celsius + " °C" + (hot ? ", running hot" : ""), hot };
+}
+
+function allocatedOn(layout, index) {
+    let bytes = 0;
+    for (const layer of layout.layers) {
+        for (const m of layer.members) if (m.drive === index) bytes += layer.slice_bytes;
+    }
+    return bytes;
+}
+
+// One card per drive: the Overview's row plus what UDisks2 knows and what
+// the drive holds.
+function driveCards(model) {
+    if (!model.layout) return [];
+    const byDevice = {};
+    for (const d of model.details || []) byDevice[d.device] = d;
+    return drives(model).map((row, i) => {
+        const info = byDevice[row.device] || {};
+        const size = model.layout.drives[i].size;
+        const used = allocatedOn(model.layout, i);
+        const spare = size - used;
+        const heat = temperature(info.temperature_c, info.kind);
+        return {
+            ...row,
+            model: info.model || "",
+            serial: info.serial || "",
+            kind: { hdd: "Hard drive", ssd: "SSD" }[info.kind] || "",
+            temperature: heat.text,
+            hot: heat.hot,
+            age: age(info.power_on_hours),
+            holds: "Holds " + formatSize(used) + " of your pool",
+            waiting: spare > size * 0.01 ? formatSize(spare) + " waiting for a partner drive" : "",
+        };
+    });
+}
+
+// The upgrade advisor: the best single change, then the others, each with
+// the space it adds. The engine works the numbers out with its planners.
+function upgradeAdvice(model) {
+    const up = model.upgrades;
+    if (!model.layout || !up || up.usable === undefined) return null;
+    const labels = {};
+    for (const r of drives(model)) labels[r.device] = r;
+    const options = [];
+    for (const r of up.replace || []) {
+        const row = labels[r.device];
+        if (!row) continue;
+        options.push({
+            text: "Replace " + row.label + " (" + row.size + ") with a drive of " + formatSize(r.size),
+            gain: r.usable_after - up.usable,
+        });
+    }
+    if (up.add) {
+        options.push({
+            text: "Add a drive of " + formatSize(up.add.size) + ", if there is a free bay",
+            gain: up.add.usable_after - up.usable,
+        });
+    }
+    options.sort((a, b) => b.gain - a.gain);
+    for (const o of options) o.gainText = "+" + formatSize(o.gain) + " for your files";
+    if (!options.length) {
+        return {
+            best: null,
+            others: [],
+            text: "Every drive is the same size, so one larger drive adds no space by itself: " +
+                "its extra space waits until a second larger drive joins it.",
+        };
+    }
+    return {
+        best: options[0],
+        others: options.slice(1),
+        text: "A larger drive than this adds no more by itself; the extra waits for a partner.",
+    };
+}
+
+// --- the Shares tab -------------------------------------------------------
+
+// The engine's notes as sentences; a leading option name (sec=sys) keeps its case.
+function sentence(text) {
+    if (!text) return "";
+    const first = /^\w+=/.test(text) ? text.charAt(0) : text.charAt(0).toUpperCase();
+    return first + text.slice(1) + ".";
+}
+
+function shareCards(model) {
+    const host = model.hostName || "this machine";
+    return (model.shares || []).map(s => {
+        const security = s.security || [];
+        return {
+            name: s.name,
+            address: host + ":" + s.path,
+            access: s.read_only ? "Read only" : "Can change files",
+            who: (s.clients || []).join(", "),
+            ways: [{ label: "Linux computers", detail: "Connect over NFS from the addresses listed" }],
+            trust: security.map(sentence),
+            tone: security.some(t => t.indexOf("wide range") >= 0) ? "warning" : "ok",
+        };
+    });
+}
+
+// --- the Activity tab -----------------------------------------------------
+
+const JOB_TITLES = {
+    create: "Set up the pool",
+    add: "Added a drive",
+    replace: "Replaced a drive",
+    rebuild: "Rebuilt onto a new drive",
+};
+
+const RESULTS = {
+    completed: ["Done", "ok"],
+    failed: ["Stopped with an error", "danger"],
+    cancelled: ["Cancelled", "neutral"],
+    running: ["Working", "working"],
+    waiting: ["Working", "working"],
+    paused: ["Waiting for you", "warning"],
+    unreadable: ["Its record can't be read", "danger"],
+};
+
+// "5 minutes ago", "3 hours ago", "yesterday", "12 days ago".
+function ago(iso, now) {
+    const then = Date.parse(iso) / 1000;
+    if (!iso || Number.isNaN(then)) return "";
+    const seconds = Math.max(0, now - then);
+    if (seconds < 60) return "just now";
+    if (seconds < 3600) return plural(Math.floor(seconds / 60), "minute") + " ago";
+    if (seconds < 86400) return plural(Math.floor(seconds / 3600), "hour") + " ago";
+    const days = Math.floor(seconds / 86400);
+    return days === 1 ? "yesterday" : days + " days ago";
+}
+
+function activity(model, now) {
+    const entries = (model.history || []).map(h => {
+        const [resultText, tone] = RESULTS[h.result] || ["Unknown", "neutral"];
+        const lines = [];
+        if (!h.ended && h.steps) lines.push("Step " + h.step + " of " + h.steps);
+        if (h.result === "completed" && h.usable_after && h.usable_after !== h.usable_before) {
+            lines.push(h.usable_before
+                ? "Space for your files: " + formatSize(h.usable_before) + " → " + formatSize(h.usable_after)
+                : "Space for your files: " + formatSize(h.usable_after));
+        }
+        if (h.message) lines.push(h.message);
+        return {
+            id: h.id,
+            title: JOB_TITLES[h.kind] || "A storage change",
+            when: ago(h.ended || h.started, now),
+            exact: h.ended || h.started || "",
+            resultText,
+            tone,
+            lines,
+        };
+    });
+    return {
+        waiting: entries.filter(e => e.tone === "warning"),
+        entries,
+        alerts: "Alerts (a drive wearing out, failing or missing) are written to the " +
+            "system log as they happen. Email alerts come later.",
+    };
+}
+
+const api = {
+    formatSize, read, drives, capacity, banner, care,
+    age, temperature, driveCards, upgradeAdvice, shareCards, ago, activity,
+};
 if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
 } else {
