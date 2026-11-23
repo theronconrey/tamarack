@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Packit builds the RPM in Copr for every pull request, on every supported
+# Fedora release. Active once the Packit GitHub app is installed on the repo:
+# https://packit.dev/docs/guide
+
+specfile_path: tamarack.spec
+upstream_package_name: tamarack
+downstream_package_name: tamarack
+upstream_tag_template: v{version}
+
+files_to_sync:
+  - tamarack.spec
+  - .packit.yaml
+
+jobs:
+  - job: copr_build
+    trigger: pull_request
+    targets:
+      - fedora-all
+
+  - job: copr_build
+    trigger: commit
+    branch: main
+    targets:
+      - fedora-all
