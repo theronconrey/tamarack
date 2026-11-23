@@ -218,7 +218,8 @@ TRANSITION_NOISE='denied +\{ (siginh|rlimitinh|noatsecure) \}'
 # selinux-policy; any other denial still fails the test.
 #  - snapperd asks systemd to reload when a config is created.
 #  - mdadm checks /dev/kmsg, which these VMs label init_var_run_t.
-FEDORA_POLICY_GAPS='scontext=system_u:system_r:snapperd_t:s0 tcontext=system_u:system_r:init_t:s0 tclass=system|denied +\{ getattr \} for .*comm="mdadm" path="/dev/kmsg"'
+#  - rpcbind binds an unreserved UDP port when nfs-server starts.
+FEDORA_POLICY_GAPS='scontext=system_u:system_r:snapperd_t:s0 tcontext=system_u:system_r:init_t:s0 tclass=system|denied +\{ getattr \} for .*comm="mdadm" path="/dev/kmsg"|denied +\{ name_bind \} for .*comm="rpcbind" .*tcontext=system_u:object_r:unreserved_port_t:s0 tclass=udp_socket'
 
 # Every layer keeps md's partial parity log once nothing is reshaping.
 check_ppl() {
