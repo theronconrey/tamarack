@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import threading
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ if os.environ.get("TAMARACK_REQUIRE_DBUS_TESTS"):
 else:
     gi = pytest.importorskip("gi", exc_type=ImportError)
 gi.require_version("Gio", "2.0")
+from fake_runner import FakeRunner  # noqa: E402
 from gi.repository import Gio, GLib  # noqa: E402
 
 from tamarack.engine import Engine  # noqa: E402
@@ -31,10 +33,14 @@ from tamarack.planner import make_plan  # noqa: E402
 from tamarack.review import digest, document  # noqa: E402
 from tamarack.service import (  # noqa: E402
     BUS_NAME,
+    JOB,
     MANAGER,
     MANAGER_PATH,
     PLAN,
+    READ_ACTION,
     NameTaken,
+    PolkitAuthority,
+    ReadOnlyAuthority,
     Service,
     interface_xml,
 )
@@ -116,11 +122,18 @@ class Loop:
         self.thread.join(10)
 
 
-# --- a fake UDisks2 ----------------------------------------------------------
+# --- fake UDisks2 and polkit ------------------------------------------------
 
 UDISKS_XML = """<node><interface name="org.freedesktop.DBus.ObjectManager">
 <method name="GetManagedObjects"><arg type="a{oa{sa{sv}}}" direction="out"/></method>
 </interface></node>"""
+
+POLKIT_XML = """<node><interface name="org.freedesktop.PolicyKit1.Authority">
+<method name="CheckAuthorization">
+  <arg type="(sa{sv})" direction="in"/><arg type="s" direction="in"/>
+  <arg type="a{ss}" direction="in"/><arg type="u" direction="in"/>
+  <arg type="s" direction="in"/><arg type="(bba{ss})" direction="out"/>
+</method></interface></node>"""
 
 B, D = "org.freedesktop.UDisks2.Block", "org.freedesktop.UDisks2.Drive"
 
@@ -143,29 +156,50 @@ def fake_objects(drives: dict[str, tuple[int, str]]) -> dict[str, Any]:
     return objects
 
 
-def serve_udisks(address: str, drives: dict[str, tuple[int, str]]) -> Any:
-    connection = connect(address)
-    info = Gio.DBusNodeInfo.new_for_xml(UDISKS_XML).interfaces[0]
+class Fakes:
+    """UDisks2 and polkit, served from one connection on their own thread."""
 
-    def call(
-        conn: Any, sender: str, path: str, iface: str, method: str, params: Any, inv: Any
-    ) -> None:
-        inv.return_value(GLib.Variant("(a{oa{sa{sv}}})", (fake_objects(drives),)))
+    def __init__(self, drives: dict[str, tuple[int, str]]) -> None:
+        self.drives = drives
+        self.denied: set[str] = set()
+        self.checks: list[tuple[str, str, dict[str, str]]] = []  # sender, action, details
 
-    connection.register_object("/org/freedesktop/UDisks2", info, call, None, None)
-    reply = connection.call_sync(
-        "org.freedesktop.DBus",
-        "/org/freedesktop/DBus",
-        "org.freedesktop.DBus",
-        "RequestName",
-        GLib.Variant("(su)", ("org.freedesktop.UDisks2", 4)),
-        None,
-        0,
-        -1,
-        None,
-    )
-    assert reply.unpack()[0] == 1
-    return connection
+    def serve(self, address: str) -> Any:
+        connection = connect(address)
+
+        def udisks(
+            conn: Any, sender: str, path: str, iface: str, method: str, params: Any, inv: Any
+        ) -> None:
+            inv.return_value(GLib.Variant("(a{oa{sa{sv}}})", (fake_objects(self.drives),)))
+
+        def polkit(
+            conn: Any, sender: str, path: str, iface: str, method: str, params: Any, inv: Any
+        ) -> None:
+            subject, action, details, flags, _cancel = params.unpack()
+            self.checks.append((subject[1]["name"], action, details))
+            allowed = action not in self.denied
+            inv.return_value(GLib.Variant("((bba{ss}))", ((allowed, False, {}),)))
+
+        for xml, path, handler in (
+            (UDISKS_XML, "/org/freedesktop/UDisks2", udisks),
+            (POLKIT_XML, "/org/freedesktop/PolicyKit1/Authority", polkit),
+        ):
+            info = Gio.DBusNodeInfo.new_for_xml(xml).interfaces[0]
+            connection.register_object(path, info, handler, None, None)
+        for name in ("org.freedesktop.UDisks2", "org.freedesktop.PolicyKit1"):
+            reply = connection.call_sync(
+                "org.freedesktop.DBus",
+                "/org/freedesktop/DBus",
+                "org.freedesktop.DBus",
+                "RequestName",
+                GLib.Variant("(su)", (name, 4)),
+                None,
+                0,
+                -1,
+                None,
+            )
+            assert reply.unpack()[0] == 1
+        return connection
 
 
 DRIVES = {
@@ -175,24 +209,64 @@ DRIVES = {
 }
 
 
+class Harness:
+    def __init__(self, bus: str, state: Path, runner: Any = None, **engine_kw: Any) -> None:
+        self.fakes = Fakes(dict(DRIVES))
+        self.fake_loop = Loop(lambda: self.fakes.serve(bus))
+        self.state = state
+
+        def setup() -> Service:
+            connection = connect(bus)
+            engine = Engine(
+                str(state), UDisksDrives(connection, timeout_ms=5000), runner=runner, **engine_kw
+            )
+            service = Service(engine, connection, PolkitAuthority(connection))
+            service.request_name()
+            return service
+
+        self.engine_loop = Loop(setup)
+        self.service: Service = self.engine_loop.result
+        self.client = connect(bus)
+        self.signals: list[tuple[str, str, Any]] = []
+        self.client.signal_subscribe(
+            BUS_NAME,
+            None,
+            None,
+            None,
+            None,
+            Gio.DBusSignalFlags.NONE,
+            lambda c, sender, path, iface, name, params: self.signals.append(
+                (path, name, params.unpack())
+            ),
+        )
+
+    def stop(self) -> None:
+        self.engine_loop.stop()
+        self.service.wait_for_jobs()
+        self.fake_loop.stop()
+
+    def wait(self, predicate: Callable[[], bool], timeout: float = 10.0) -> None:
+        context = GLib.MainContext.default()
+        deadline = time.monotonic() + timeout
+        while not predicate():
+            while context.iteration(False):
+                pass
+            assert time.monotonic() < deadline, "timed out"
+            time.sleep(0.01)
+
+
 @pytest.fixture
-def engine_bus(bus: str, tmp_path: Path) -> Iterator[tuple[Any, Path]]:
-    udisks = Loop(lambda: serve_udisks(bus, DRIVES))
+def harness(bus: str, tmp_path: Path) -> Iterator[Harness]:
     state = tmp_path / "state"
     state.mkdir()
+    h = Harness(bus, state)
+    yield h
+    h.stop()
 
-    def setup() -> Service:
-        connection = connect(bus)
-        engine = Engine(str(state), UDisksDrives(connection, timeout_ms=5000))
-        service = Service(engine, connection)
-        service.request_name()
-        return service
 
-    engine = Loop(setup)
-    client = connect(bus)
-    yield client, state
-    engine.stop()
-    udisks.stop()
+@pytest.fixture
+def engine_bus(harness: Harness) -> tuple[Any, Path]:
+    return harness.client, harness.state
 
 
 def call(
@@ -225,7 +299,7 @@ def error_of(fn: Callable[[], Any]) -> tuple[str, str]:
     return name, info.value.message
 
 
-# --- tests -------------------------------------------------------------------
+# --- reading and planning ----------------------------------------------------
 
 
 def test_manager_properties(engine_bus: tuple[Any, Path]) -> None:
@@ -247,8 +321,8 @@ def test_introspection_matches_the_shipped_xml(engine_bus: tuple[Any, Path]) -> 
     assert [p.name for p in served.properties] == [p.name for p in shipped.properties]
 
 
-def test_create_plan_over_the_bus(engine_bus: tuple[Any, Path]) -> None:
-    client, _ = engine_bus
+def test_create_plan_over_the_bus(harness: Harness) -> None:
+    client = harness.client
     devices = ["/dev/sda", "/dev/sdb", "/dev/sdc"]
     (path,) = call(client, "PlanCreate", GLib.Variant("(as)", (devices,)))
     assert path == f"{MANAGER_PATH}/Plans/1"
@@ -264,6 +338,8 @@ def test_create_plan_over_the_bus(engine_bus: tuple[Any, Path]) -> None:
     assert steps[0][0] == "Partition each drive" and steps[0][2][0] == "sgdisk --zap-all /dev/sda"
     assert json.loads(get(client, "Summary", path, PLAN))["kind"] == "create"
     assert get(client, "ExpiresAt", path, PLAN) > 0
+    # Planning is authorized as "read", for the caller who asked.
+    assert harness.fakes.checks == [(client.get_unique_name(), READ_ACTION, {})]
 
 
 def test_planning_errors_have_names(engine_bus: tuple[Any, Path]) -> None:
@@ -278,16 +354,28 @@ def test_planning_errors_have_names(engine_bus: tuple[Any, Path]) -> None:
     assert name == ERR + "NoLayout"
 
 
-def test_execute_and_confirm_backup_are_not_enabled(engine_bus: tuple[Any, Path]) -> None:
-    client, _ = engine_bus
-    (path,) = call(client, "PlanCreate", GLib.Variant("(as)", (["/dev/sda"],)))
-    digest_ = get(client, "Digest", path, PLAN)
+def test_polkit_can_deny_reading(harness: Harness) -> None:
+    harness.fakes.denied.add(READ_ACTION)
     name, _ = error_of(
-        lambda: call(client, "Execute", GLib.Variant("(sa{sv})", (digest_, {})), path, PLAN)
+        lambda: call(harness.client, "PlanCreate", GLib.Variant("(as)", (["/dev/sda"],)))
+    )
+    assert name == "org.freedesktop.DBus.Error.AccessDenied"
+    assert harness.service.engine.plan_ids() == []
+
+
+def test_without_a_runner_nothing_executes(harness: Harness) -> None:
+    client = harness.client
+    (path,) = call(client, "PlanCreate", GLib.Variant("(as)", (["/dev/sda"],)))
+    plan_digest = get(client, "Digest", path, PLAN)
+    options = {"confirm-erase": GLib.Variant("as", ["/dev/sda"])}
+    name, _ = error_of(
+        lambda: call(
+            client, "Execute", GLib.Variant("(sa{sv})", (plan_digest, options)), path, PLAN
+        )
     )
     assert name == ERR + "NotSupported"
-    name, _ = error_of(lambda: call(client, "ConfirmBackup"))
-    assert name == ERR + "NotSupported"
+    # Refused before polkit was even asked.
+    assert [action for _, action, _ in harness.fakes.checks] == [READ_ACTION]
 
 
 def test_discard_removes_the_plan_object(engine_bus: tuple[Any, Path]) -> None:
@@ -299,7 +387,6 @@ def test_discard_removes_the_plan_object(engine_bus: tuple[Any, Path]) -> None:
 
 
 def test_add_plan_with_a_layout(bus: str, tmp_path: Path) -> None:
-    udisks = Loop(lambda: serve_udisks(bus, DRIVES))
     state = tmp_path / "state"
     state.mkdir()
     plan = make_plan(
@@ -308,16 +395,9 @@ def test_add_plan_with_a_layout(bus: str, tmp_path: Path) -> None:
         ["wwn:0x5000000000000001", "wwn:0x5000000000000002"],
     )
     (state / "layout.json").write_text(layout_from_plan(plan).to_json())
-
-    def setup() -> Service:
-        connection = connect(bus)
-        service = Service(Engine(str(state), UDisksDrives(connection)), connection)
-        service.request_name()
-        return service
-
-    engine = Loop(setup)
+    h = Harness(bus, state)
     try:
-        client = connect(bus)
+        client = h.client
         assert get(client, "DriveFailuresTolerated") == 1
         (path,) = call(client, "PlanAdd", GLib.Variant("(s)", ("/dev/sdc",)))
         assert get(client, "Kind", path, PLAN) == "add"
@@ -327,13 +407,157 @@ def test_add_plan_with_a_layout(bus: str, tmp_path: Path) -> None:
         )
         assert name == ERR + "LayoutExists"
     finally:
-        engine.stop()
-        udisks.stop()
+        h.stop()
 
 
-def test_a_second_engine_refuses_to_start(engine_bus: tuple[Any, Path], bus: str) -> None:
+def test_a_second_engine_refuses_to_start(harness: Harness, bus: str) -> None:
     connection = connect(bus)
-    service = Service(Engine("/nonexistent", UDisksDrives(connection)), connection)
+    service = Service(
+        Engine("/nonexistent", UDisksDrives(connection)), connection, ReadOnlyAuthority()
+    )
     with pytest.raises(NameTaken):
         service.request_name()
     service.close()
+
+
+# --- executing, with a fake runner -------------------------------------------
+
+
+@pytest.fixture
+def runner_harness(bus: str, tmp_path: Path) -> Iterator[tuple[Harness, FakeRunner]]:
+    state = tmp_path / "state"
+    state.mkdir()
+    runner = FakeRunner()
+    h = Harness(bus, state, runner=runner)
+    yield h, runner
+    h.stop()
+
+
+def execute(h: Harness, path: str, erase: list[str], **extra: Any) -> Any:
+    plan_digest = get(h.client, "Digest", path, PLAN)
+    options = {"confirm-erase": GLib.Variant("as", erase), "no-ups": GLib.Variant("b", True)}
+    options.update(extra)
+    return call(h.client, "Execute", GLib.Variant("(sa{sv})", (plan_digest, options)), path, PLAN)
+
+
+def test_execute_runs_the_job_and_records_the_layout(
+    runner_harness: tuple[Harness, FakeRunner],
+) -> None:
+    h, runner = runner_harness
+    devices = ["/dev/sda", "/dev/sdb"]
+    (plan,) = call(h.client, "PlanCreate", GLib.Variant("(as)", (devices,)))
+    expected_commands = [
+        tuple(c["argv"])
+        for step in h.service.engine.plan(1).document["steps"]
+        for c in step["commands"]
+    ]
+    (job,) = execute(h, plan, devices)
+    assert job == f"{MANAGER_PATH}/Jobs/1"
+    h.wait(lambda: any(name == "Finished" for _, name, _ in h.signals))
+    assert get(h.client, "State", job, JOB) == "completed"
+    assert get(h.client, "StepCount", job, JOB) == 6
+    assert runner.calls == expected_commands
+    started = [args for path, name, args in h.signals if name == "StepStarted"]
+    assert started[0] == (1, "Partition each drive") and len(started) == 6
+    assert (job, "Finished", (True, "")) in h.signals
+    # The plan was consumed, and the new layout is now the box's layout.
+    name, _ = error_of(lambda: get(h.client, "Kind", plan, PLAN))
+    assert name.startswith("org.freedesktop.DBus.Error.")
+    assert json.loads(get(h.client, "Layout"))["format"] == "tamarack-layout"
+    assert get(h.client, "DriveFailuresTolerated") == 1
+    assert get(h.client, "State") == "idle"
+    # Execute was authorized with the create action, naming the drives.
+    assert (
+        h.client.get_unique_name(),
+        "com.borealislogistics.tamarack.create",
+        {"kind": "create", "erases": "/dev/sda /dev/sdb"},
+    ) in h.fakes.checks
+
+
+def test_execute_refusals(runner_harness: tuple[Harness, FakeRunner]) -> None:
+    h, runner = runner_harness
+    (plan,) = call(h.client, "PlanCreate", GLib.Variant("(as)", (["/dev/sda"],)))
+    options = GLib.Variant(
+        "(sa{sv})", ("sha256:nope", {"confirm-erase": GLib.Variant("as", ["/dev/sda"])})
+    )
+    name, _ = error_of(lambda: call(h.client, "Execute", options, plan, PLAN))
+    assert name == ERR + "StalePlan"
+    name, _ = error_of(lambda: execute(h, plan, ["/dev/sdb"]))
+    assert name == ERR + "NotConfirmed"
+    name, _ = error_of(
+        lambda: execute(h, plan, ["/dev/sda"], **{"no-ups": GLib.Variant("b", False)})
+    )
+    assert name == ERR + "NoUps"
+    h.fakes.denied.add("com.borealislogistics.tamarack.create")
+    name, _ = error_of(lambda: execute(h, plan, ["/dev/sda"]))
+    assert name == "org.freedesktop.DBus.Error.AccessDenied"
+    assert runner.calls == []
+
+
+def test_a_swapped_drive_is_caught_at_execute(runner_harness: tuple[Harness, FakeRunner]) -> None:
+    h, runner = runner_harness
+    (plan,) = call(h.client, "PlanCreate", GLib.Variant("(as)", (["/dev/sda"],)))
+    h.fakes.drives["/dev/sda"] = (4 * TB, "0x50000000000000ff")
+    name, message = error_of(lambda: execute(h, plan, ["/dev/sda"]))
+    assert name == ERR + "DriveChanged" and "/dev/sda" in message
+    assert runner.calls == []
+
+
+def test_pause_resume_and_confirm_backup(bus: str, tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    battery = {"on": False}
+    runner = FakeRunner()
+    h = Harness(bus, state, runner=runner, on_battery=lambda: battery["on"])
+    try:
+        (plan,) = call(h.client, "PlanCreate", GLib.Variant("(as)", (["/dev/sda", "/dev/sdb"],)))
+        first_step = len(h.service.engine.plan(1).document["steps"][0]["commands"])
+        total = sum(len(st["commands"]) for st in h.service.engine.plan(1).document["steps"])
+
+        def cut_power(index: int, argv: tuple[str, ...]) -> bool:
+            if index == first_step - 1:
+                battery["on"] = True  # the UPS takes over during step 1
+            return False
+
+        runner.cut = cut_power
+        (job,) = execute(h, plan, ["/dev/sda", "/dev/sdb"])
+        h.wait(lambda: get(h.client, "State", job, JOB) == "paused")
+        assert "battery" in get(h.client, "Message", job, JOB)
+        assert get(h.client, "Step", job, JOB) == 2
+        assert get(h.client, "State") == "paused" and get(h.client, "ActiveJob") == job
+        name, _ = error_of(
+            lambda: call(h.client, "Resume", GLib.Variant("(a{sv})", ({},)), job, JOB)
+        )
+        assert name == ERR + "OnBattery"
+
+        battery["on"] = False
+        call(h.client, "Resume", GLib.Variant("(a{sv})", ({},)), job, JOB)
+        h.wait(lambda: get(h.client, "State", job, JOB) == "completed")
+        assert len(runner.calls) == total  # nothing ran twice
+
+        call(h.client, "ConfirmBackup")
+        assert get(h.client, "LastBackupConfirmed") > 0
+        assert any(
+            a == "com.borealislogistics.tamarack.confirm-backup" for _, a, _ in h.fakes.checks
+        )
+    finally:
+        h.stop()
+
+
+def test_cancel_a_paused_job(bus: str, tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    battery = {"on": False}
+    runner = FakeRunner(cut=lambda i, a: battery.update(on=True) or False)
+    h = Harness(bus, state, runner=runner, on_battery=lambda: battery["on"])
+    try:
+        (plan,) = call(h.client, "PlanCreate", GLib.Variant("(as)", (["/dev/sda"],)))
+        (job,) = execute(h, plan, ["/dev/sda"])
+        h.wait(lambda: get(h.client, "State", job, JOB) == "paused")
+        call(h.client, "Cancel", None, job, JOB)
+        h.wait(lambda: (job, "Finished", (False, "cancelled")) in h.signals)
+        assert get(h.client, "State", job, JOB) == "cancelled"
+        assert get(h.client, "State") == "idle"
+        assert get(h.client, "Layout") == ""
+    finally:
+        h.stop()

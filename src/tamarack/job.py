@@ -54,6 +54,8 @@ class Report:
 # Called before each step with its number; returns a reason to pause, or None.
 Gate = Callable[[int], str | None]
 Clock = Callable[[], str]
+# Called with each record once it is durable, and the job's state after it.
+Observer = Callable[[dict[str, Any], JobState], None]
 
 
 def utc_now() -> str:
@@ -79,12 +81,16 @@ def start(
     runner: Runner,
     gate: Gate | None = None,
     now: Clock = utc_now,
+    observer: Observer | None = None,
 ) -> Report:
     """Run a reviewed plan from its first step."""
     validate_document(doc)
     first = {"t": "job", "id": job_id, "digest": digest(doc), "plan": doc, "started": now()}
     with JournalWriter.create(path, first) as writer:
-        job = _Job(replay([first]), writer, runner, gate, now)
+        state = replay([first])
+        if observer is not None:
+            observer(first, state)
+        job = _Job(state, writer, runner, gate, now, observer)
         return job.run()
 
 
@@ -96,6 +102,7 @@ def resume(
     gate: Gate | None = None,
     resolution: Resolution | None = None,
     now: Clock = utc_now,
+    observer: Observer | None = None,
 ) -> Report:
     """Continue a job from its journal.
 
@@ -110,7 +117,7 @@ def resume(
         raise JournalError(f"job {state.job_id}: plan does not match its digest")
     validate_document(state.plan)
     with JournalWriter.reopen(path) as writer:
-        job = _Job(state, writer, runner, gate, now)
+        job = _Job(state, writer, runner, gate, now, observer)
         if state.failed:
             return job.end("failed", state.message)
         if not authorized:
@@ -125,7 +132,7 @@ def resume(
         return job.run()
 
 
-def cancel(path: str, now: Clock = utc_now) -> Report:
+def cancel(path: str, now: Clock = utc_now, observer: Observer | None = None) -> Report:
     """End a paused job between steps. Refused inside a step."""
     state = load(path)
     if state.ended:
@@ -133,7 +140,8 @@ def cancel(path: str, now: Clock = utc_now) -> Report:
     if state.step_open or state.in_doubt:
         raise JournalError("a job can only be cancelled between steps")
     with JournalWriter.reopen(path) as writer:
-        return _Job(state, writer, _NoRunner(), None, now).end("cancelled", "cancelled")
+        job = _Job(state, writer, _NoRunner(), None, now, observer)
+        return job.end("cancelled", "cancelled")
 
 
 class _NoRunner:
@@ -149,6 +157,7 @@ class _Job:
         runner: Runner,
         gate: Gate | None,
         now: Clock,
+        observer: Observer | None = None,
     ) -> None:
         self.state, self.writer, self.runner, self.gate, self.now = (
             state,
@@ -157,11 +166,14 @@ class _Job:
             gate,
             now,
         )
+        self.observer = observer
 
     def write(self, record: dict[str, Any]) -> None:
         """Make the record durable, then advance the state by it."""
         self.writer.append(record)
         apply(self.state, record)
+        if self.observer is not None:
+            self.observer(record, self.state)
 
     def command(self, step: int, cmd: int) -> Command:
         c = self.state.command(step, cmd)

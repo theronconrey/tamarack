@@ -117,8 +117,8 @@ and in the RPM's `%check`.
   `OnBattery` comes from UPower and is false when UPower is not running.
 - At most 16 plans wait at once; each expires 30 minutes after it is made
   and its object is removed.
-- `Execute` and `ConfirmBackup` answer `NotSupported`, and no Job objects
-  are exported, until step 5.
+- `Execute` and `ConfirmBackup` answered `NotSupported`, and no Job
+  objects were exported, until step 5.
 
 ## 4. polkit actions
 
@@ -149,13 +149,39 @@ asks for the admin password again. Each check passes polkit the plan's
 | Digest mismatch, plan expired, layout changed | plan store | `…Error.StalePlan` |
 | `confirm-erase` differs from `Erases` | request | `…Error.NotConfirmed` |
 | A drive is missing or its identity changed | UDisks2 | `…Error.DriveChanged` |
-| An array is degraded (except the layer a rebuild plan is fixing) | mdadm | `…Error.Degraded` |
+| An array is degraded (except the layer a rebuild plan is fixing) | sysfs `md/degraded` | `…Error.Degraded` |
 | A UPS is on battery | UPower `OnBattery` | `…Error.OnBattery` |
 | No UPS, and `options["no-ups"]` was not typed | UPower | `…Error.NoUps` |
-| No backup confirmed in the last 7 days (reshapes and rebuilds) | `ConfirmBackup` timestamp | `…Error.NoRecentBackup` |
+| No backup confirmed in the last 7 days (add, replace and rebuild plans) | `ConfirmBackup` timestamp | `…Error.NoRecentBackup` |
 
-The battery and degraded checks run again before each step; if one fails
-mid-job, the job **pauses** between steps rather than failing.
+Before each step the job checks again that the UPS is not on battery and
+that every drive it needs is present with the recorded identity; if not, it
+**pauses** between steps rather than failing. A drive being replaced is
+needed only until the "Retire the old drive" step, after which it may be
+pulled. Degraded arrays are not re-checked between steps: each plan's own
+health-check step stops it first, and rebuilds and reshapes degrade arrays
+on purpose.
+
+### Status (step 5)
+
+Every method call is authorized by polkit, asynchronously, with the action
+from its `PolkitAction` annotation; `Execute` uses the action for the
+plan's kind and passes the kind and erased drives as details. The request
+is validated before polkit is asked and again after (authentication can
+take minutes), and the safety checks above run only after. A plan is used
+up when it executes. The job runs on a worker thread; its records come back
+to the main loop as `PropertiesChanged`, `StepStarted`, `StepFinished` and
+`Finished`. When a job completes, its "after" layout replaces
+`layout.json`. `Cancel` on a running job takes effect at the next step
+boundary.
+
+At start the engine exports a Job object for every unfinished journal and
+re-attaches, without authorization, to one interrupted `mdadm --wait`.
+
+The service is still started **without a command runner**, so `Execute`
+and `Resume` answer `NotSupported` before polkit is asked. All of the above
+is exercised with the fake runner, on a private bus with fake polkit and
+UDisks2.
 
 `ConfirmBackup()` records "the admin says a current backup exists" with a
 timestamp in `/var/lib/tamarack`. Tamarack can't verify backups; the check
@@ -226,8 +252,8 @@ every plan kind. Details settled while building it:
 - A `probe` that exits 0 counts as the command having taken effect;
   otherwise the command runs again. An `ask` command pauses the job with
   the command named, and `Resume` then takes a resolution, `done` or
-  `rerun`, after a person has looked. `Job.Resume` gains an options
-  argument for this in step 5.
+  `rerun`, after a person has looked. `Job.Resume` took an options
+  argument (`resolution`) for this in step 5.
 - A command failing (other than one marked `tolerate_failure`) ends the job
   as failed, with the command, exit status and the tail of its stderr.
   Failed jobs are not resumed; a person repairs the box and makes a new plan.

@@ -43,6 +43,7 @@ from .steps import (
 from .units import format_size
 
 NEW_SUFFIX = "-new"
+RETIRE_TITLE = "Retire the old drive"
 
 
 def plan_replace(
@@ -161,7 +162,7 @@ def _retire_old(drive: int, partitions: list[int]) -> Step:
         commands.append(cmd("integritysetup", "close", name))
         commands.append(cmd("dmsetup", "rename", f"{name}{NEW_SUFFIX}", name))
     return Step(
-        "Retire the old drive",
+        RETIRE_TITLE,
         tuple(commands),
         "Closes the old drive's mappings and gives the new ones their permanent names. "
         "The old drive can be removed after this step.",
