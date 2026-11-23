@@ -7,6 +7,8 @@ tamarack plan 4TB 8TB --json
 tamarack grow /dev/sda=4TB --add /dev/sdb=4TB --commands
 tamarack plan /dev/sda=4TB /dev/sdb=4TB --layout > layout.json
 tamarack grow --from layout.json --add /dev/sdc=4TB --layout-out next.json
+tamarack replace --from next.json --old /dev/sda --with /dev/sdd=8TB
+tamarack replace --from next.json --old /dev/sdb --with /dev/sdb=4TB --failed
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from .grow import GrowPlan, plan_add_drive, render_grow
 from .layout import Layout, layout_from_plan
 from .model import Level, Plan, Protection
 from .planner import make_plan
+from .replace import plan_replace
 from .units import format_size, parse_size
 
 _PROTECTION_TEXT = {
@@ -131,6 +134,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--commands", action="store_true", help="print the commands that would do it (dry run)"
     )
     grow.add_argument("--layout-out", metavar="FILE", help="write the resulting layout file here")
+    replace = sub.add_parser(
+        "replace", help="plan swapping a drive, for an upgrade or a failure (never writes)"
+    )
+    replace.add_argument(
+        "drives",
+        nargs="*",
+        metavar="DRIVE",
+        help="drives of a layout Tamarack created fresh, as DEVICE=SIZE (or use --from)",
+    )
+    replace.add_argument("--from", dest="layout_file", metavar="FILE", help="current layout file")
+    replace.add_argument("--old", required=True, metavar="DEVICE", help="the drive to replace")
+    replace.add_argument(
+        "--with", dest="new", required=True, metavar="DRIVE", help="the new drive, DEVICE=SIZE"
+    )
+    replace.add_argument(
+        "--failed", action="store_true", help="the old drive has failed (rebuild instead of copy)"
+    )
+    replace.add_argument(
+        "--commands", action="store_true", help="print the commands that would do it (dry run)"
+    )
+    replace.add_argument(
+        "--layout-out", metavar="FILE", help="write the resulting layout file here"
+    )
     return parser
 
 
@@ -140,10 +166,10 @@ def _failures_text(n: int) -> str:
     return f"survives {n} drive failure{'s' if n != 1 else ''}"
 
 
-def format_grow(plan: GrowPlan) -> str:
+def format_grow(plan: GrowPlan, headline: str = "") -> str:
     before = plan.before
     out = [
-        f"Adding {plan.new_device} to {', '.join(d.device for d in before.drives)}",
+        headline or f"Adding {plan.erases} to {', '.join(d.device for d in before.drives)}",
         "",
         f"Before: {_failures_text(before.drive_failures_tolerated)}, "
         f"{format_size(plan.usable_before)} usable",
@@ -188,23 +214,40 @@ def _current_layout(args: argparse.Namespace) -> Layout:
     return layout_from_plan(make_plan([s for _, s in parsed], [d for d, _ in parsed]))
 
 
+def _write_layout(path: str | None, plan: GrowPlan) -> None:
+    if not path:
+        return
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(plan.after.to_json() + "\n")
+    except OSError as exc:
+        raise ValueError(f"cannot write {path}: {exc.strerror}") from exc
+
+
 def _main_grow(args: argparse.Namespace) -> str:
     current = _current_layout(args)
     new_device, new_size = parse_drive(args.add, len(current.drives) + 1)
     plan = plan_add_drive(current, new_size, new_device)
-    if args.layout_out:
-        try:
-            with open(args.layout_out, "w", encoding="utf-8") as f:
-                f.write(plan.after.to_json() + "\n")
-        except OSError as exc:
-            raise ValueError(f"cannot write {args.layout_out}: {exc.strerror}") from exc
+    _write_layout(args.layout_out, plan)
     return "\n".join(render_grow(plan)) if args.commands else format_grow(plan)
+
+
+def _main_replace(args: argparse.Namespace) -> str:
+    current = _current_layout(args)
+    new_device, new_size = parse_drive(args.new, len(current.drives) + 1)
+    plan = plan_replace(current, args.old, new_size, new_device, failed=args.failed)
+    _write_layout(args.layout_out, plan)
+    if args.commands:
+        return "\n".join(render_grow(plan))
+    verb = "Rebuilding failed" if args.failed else "Replacing"
+    return format_grow(plan, f"{verb} {args.old} with {new_device}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        output = _main_grow(args) if args.command == "grow" else _main_plan(args)
+        handler = {"grow": _main_grow, "replace": _main_replace}.get(args.command, _main_plan)
+        output = handler(args)
     except ValueError as exc:
         print(f"tamarack: {exc}", file=sys.stderr)
         return 2
