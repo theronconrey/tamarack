@@ -23,6 +23,10 @@ tamarack = "tamarack.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# The D-Bus interface definition: the engine loads it at runtime.
+tamarack = ["*.xml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Lets a source checkout run tests without installing. The RPM %check
@@ -41,3 +45,8 @@ ignore = ["SIM108"]  # keep commented if/else branches readable
 strict = true
 mypy_path = "src"
 packages = ["tamarack"]
+
+[[tool.mypy.overrides]]
+# PyGObject ships no type information in Fedora.
+module = ["gi", "gi.*"]
+ignore_missing_imports = true

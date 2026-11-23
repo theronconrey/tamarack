@@ -28,12 +28,16 @@ jobs:
         run: >
           dnf -y install glibc-langpack-en git-core rpm-build rpmdevtools rpmlint
           python3-devel pyproject-rpm-macros python3-pytest python3-mypy ruff
+          python3-gobject-base dbus-daemon
 
       - uses: actions/checkout@v4
 
       - name: Code checks
+        env:
+          # The D-Bus tests must run here, not skip.
+          TAMARACK_REQUIRE_DBUS_TESTS: "1"
         run: |
-          python3 -m pytest
+          python3 -m pytest -rs
           ruff check .
           ruff format --check .
           mypy
