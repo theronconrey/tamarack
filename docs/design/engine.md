@@ -191,6 +191,24 @@ UDisks2. Since step 6 the real runner is given to the engine only when
 timestamp in `/var/lib/tamarack`. Tamarack can't verify backups; the check
 makes skipping them a deliberate act.
 
+### Health (track 2)
+
+- **Scrub.** `tamarack-scrub.timer` runs `btrfs scrub` on the volume once a
+  month (`tamarack-scrub.service`, sandboxed, idle I/O priority). A create
+  plan enables it together with the mount unit.
+- **md check.** Fedora's own `raid-check.timer` (from mdadm, enabled by
+  default) checks every md array weekly, ours included.
+- **SMART.** `smartd` (from smartmontools, enabled by Fedora's presets)
+  watches the drives and runs their self-tests. The engine reads each pool
+  drive's SMART state from UDisks2: ATA `SmartFailing` and bad-sector
+  counts, NVMe critical warnings.
+- **Alerts.** Every minute the engine compares the pool's health with the
+  last check. A newly degraded layer, or a drive newly failing or missing,
+  is logged to the journal with an `ALERT:` prefix and emitted as
+  `ArrayDegraded` or `DriveFailing` on D-Bus. The first check after start
+  reports problems that already exist. `Manager.Health` holds the whole
+  picture as JSON for Cockpit and the CLI.
+
 ## 6. Steps become structured commands
 
 Today a `Step` holds shell strings for display. The engine needs more:

@@ -20,6 +20,10 @@
     <property name="DriveFailuresTolerated" type="u" access="read"/>
     <property name="UsableBytes" type="t" access="read"/>
     <property name="Degraded" type="b" access="read"/>
+    <!-- JSON: {"status": "none"|"ok"|"warning"|"degraded", "degraded_layers": [N],
+         "drives": [{"device", "state": "ok"|"failing"|"unknown"|"missing",
+         "detail"}]}. Checked every minute; changes emit PropertiesChanged. -->
+    <property name="Health" type="s" access="read"/>
     <property name="OnBattery" type="b" access="read"/>
     <!-- Unix time of the last ConfirmBackup, 0 if never -->
     <property name="LastBackupConfirmed" type="t" access="read"/>
@@ -62,6 +66,11 @@
     </signal>
     <signal name="ArrayDegraded">
       <arg name="layer" type="u"/>
+    </signal>
+    <!-- A drive in the pool started failing SMART checks or disappeared -->
+    <signal name="DriveFailing">
+      <arg name="device" type="s"/>
+      <arg name="detail" type="s"/>
     </signal>
   </interface>
 

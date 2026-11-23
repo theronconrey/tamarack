@@ -115,8 +115,12 @@ def show_status(engine: Engine, out: TextIO) -> None:
             print(f"  {d['device']:<40} {_size(d['size']):>10}", file=out)
     else:
         print("Pool: none yet", file=out)
-    if m["Degraded"]:
-        print("WARNING: an array is degraded; replace the failed drive", file=out)
+    health = json.loads(m["Health"]) if m.get("Health") else {}
+    for layer in health.get("degraded_layers", []):
+        print(f"WARNING: layer {layer} is degraded; replace the failed drive", file=out)
+    for drive in health.get("drives", []):
+        if drive["state"] in ("failing", "missing"):
+            print(f"WARNING: {drive['device']} is {drive['state']}: {drive['detail']}", file=out)
     if m["OnBattery"]:
         print("WARNING: the UPS is on battery", file=out)
     when = m["LastBackupConfirmed"]

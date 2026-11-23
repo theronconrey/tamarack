@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Monthly scrub of the Tamarack volume. Not enabled by the package: the
+# engine enables it, with srv-tamarack.mount, when it creates a pool.
+
+[Unit]
+Description=Monthly scrub of the Tamarack volume
+Documentation=https://github.com/theronconrey/tamarack
+
+[Timer]
+OnCalendar=monthly
+RandomizedDelaySec=1d
+Persistent=true
+
+[Install]
+WantedBy=timers.target
