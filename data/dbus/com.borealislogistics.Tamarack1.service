@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# D-Bus activation: installed to /usr/share/dbus-1/system-services/.
+# D-Bus hands activation to systemd, which starts the sandboxed unit.
+
+[D-BUS Service]
+Name=com.borealislogistics.Tamarack1
+Exec=/bin/false
+User=root
+SystemdService=tamarack-engine.service

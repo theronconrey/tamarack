@@ -1,0 +1,239 @@
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+
+# Tamarack storage engine: design
+
+Status: **proposed** (design review; no code in this change runs commands).
+
+The planners (`plan`, `grow`, `replace`) decide *what* to do and print it.
+The engine is the only part of Tamarack that will ever *do* it: change
+partitions, dm-integrity mappings, md arrays, LVM and Btrfs. This document
+fixes its shape before any of that code exists, following CONTRIBUTING.md:
+written for Fedora, least privilege, SELinux enforcing, nothing destructive
+without polkit authorization and a dry run the user has seen.
+
+## 1. Goals and non-goals
+
+**Goals**
+
+- Execute a plan the user has reviewed, exactly as reviewed.
+- Survive interruption: a reboot or power cut mid-change resumes safely.
+- Refuse unsafe changes (degraded arrays, on battery, no recent backup).
+- Give the web UI and CLI the same API, authorized by polkit.
+- Run confined: systemd sandboxing plus its own SELinux domain.
+
+**Non-goals for v1**
+
+- Network-facing APIs (Cockpit is the remote path; the REST gateway is v2).
+- Running anything without a plan (no free-form commands over D-Bus).
+- Two-drive protection layouts (5+ drives), which the planners don't
+  produce yet.
+
+## 2. Components
+
+| Component | Runs as | Talks to | Notes |
+| --- | --- | --- | --- |
+| `tamarack-engine.service` | root, sandboxed, `tamarack_engine_t` | D-Bus system bus, UDisks2, UPower, block devices | The only privileged part. D-Bus activated. |
+| `tamarack` CLI | the calling user | engine over D-Bus | Planning stays local; execution goes through the engine. |
+| Cockpit plugin | the Cockpit session user | engine over D-Bus | Cockpit handles login, TLS, sessions. |
+| `tamarack-metrics.service` (later) | `DynamicUser=` | engine over D-Bus (read only) | Prometheus endpoint. |
+| polkit | system | engine asks it | Decides every privileged call. |
+
+## 3. D-Bus API
+
+Bus name **`com.borealislogistics.Tamarack1`** on the system bus: the
+reversed domain borealislogistics.com, which the project's owner controls, as
+the D-Bus specification recommends. The trailing `1` is the API version and
+changes only on incompatible changes. Object paths and polkit action IDs use
+the same prefix (`/com/borealislogistics/Tamarack1`,
+`com.borealislogistics.tamarack.*`). The full interface is in
+[`data/dbus/com.borealislogistics.Tamarack1.xml`](../../data/dbus/com.borealislogistics.Tamarack1.xml).
+
+Objects:
+
+| Path | Interface | What it is |
+| --- | --- | --- |
+| `/com/borealislogistics/Tamarack1` | `…Tamarack1.Manager` | The box: layout, health, plan factory |
+| `/com/borealislogistics/Tamarack1/Plans/N` | `…Tamarack1.Plan` | One reviewed-but-not-run change |
+| `/com/borealislogistics/Tamarack1/Jobs/N` | `…Tamarack1.Job` | One change being run |
+
+### Flow: plan, review, execute
+
+1. A client calls `Manager.PlanAdd(device)` (or `PlanCreate`, `PlanReplace`,
+   `PlanRebuild`). The engine resolves the device through UDisks2, runs the
+   same planner code the CLI uses, and exports a **Plan** object. Planning is
+   read-only and needs only the `read` action.
+2. The client shows the user the plan's `Summary`, `Steps` and `Warnings`,
+   and the `Erases` list.
+3. The user confirms by **typing the devices to be erased**, as the project
+   plan requires. The client calls `Plan.Execute(digest, options)` with the
+   plan's `Digest` and the typed list in `options["confirm-erase"]`.
+4. polkit checks the action for that kind of plan (section 4). If allowed and
+   every safety check passes (section 5), the engine creates a **Job** and
+   starts the first step.
+
+**The digest binds review to execution.** `Digest` is SHA-256 over the plan's
+canonical JSON: the layout before and after, every step and every command,
+and the identities of the drives involved. `Execute` refuses if the digest
+the client sends differs, if the plan has expired (30 minutes), or if the
+layout changed since the plan was made. What runs is byte-for-byte what was
+shown.
+
+### Drive identity
+
+Device names like `/dev/sdb` can change between boots. Plans record each
+drive's **WWN or serial** (from UDisks2) alongside its path. Before every
+step the engine re-resolves identities to paths and refuses if a drive is
+missing or a path now points at a different drive. Commands use
+`/dev/disk/by-id/` paths, which the planners already support.
+
+## 4. polkit actions
+
+Defined in
+[`data/polkit/com.borealislogistics.tamarack.policy`](../../data/polkit/com.borealislogistics.tamarack.policy).
+
+| Action | Used by | Default (any / inactive / active) |
+| --- | --- | --- |
+| `…tamarack.read` | properties, `Plan*` methods | yes / yes / yes |
+| `…tamarack.create` | `Execute` of a create plan (erases all listed drives) | no / no / `auth_admin` |
+| `…tamarack.add-drive` | `Execute` of an add plan | no / no / `auth_admin` |
+| `…tamarack.replace-drive` | `Execute` of a replace or rebuild plan | no / no / `auth_admin` |
+| `…tamarack.resume` | `Job.Resume` after an interruption | no / no / `auth_admin` |
+| `…tamarack.cancel` | `Job.Cancel` | no / no / `auth_admin_keep` |
+| `…tamarack.confirm-backup` | `Manager.ConfirmBackup` | no / no / `auth_admin_keep` |
+
+Destructive actions use `auth_admin`, not `auth_admin_keep`: every change
+asks for the admin password again. Each check passes polkit the plan's
+`Erases` list as a detail, so the authentication dialog names the drives.
+
+## 5. Safety checks at Execute (and before every step)
+
+`Execute` refuses, with a specific error, when:
+
+| Check | Source | Error |
+| --- | --- | --- |
+| Another job is running | engine lock | `…Error.Busy` |
+| Digest mismatch, plan expired, layout changed | plan store | `…Error.StalePlan` |
+| `confirm-erase` differs from `Erases` | request | `…Error.NotConfirmed` |
+| A drive is missing or its identity changed | UDisks2 | `…Error.DriveChanged` |
+| An array is degraded (except the layer a rebuild plan is fixing) | mdadm | `…Error.Degraded` |
+| A UPS is on battery | UPower `OnBattery` | `…Error.OnBattery` |
+| No UPS, and `options["no-ups"]` was not typed | UPower | `…Error.NoUps` |
+| No backup confirmed in the last 7 days (reshapes and rebuilds) | `ConfirmBackup` timestamp | `…Error.NoRecentBackup` |
+
+The battery and degraded checks run again before each step; if one fails
+mid-job, the job **pauses** between steps rather than failing.
+
+`ConfirmBackup()` records "the admin says a current backup exists" with a
+timestamp in `/var/lib/tamarack`. Tamarack can't verify backups; the check
+makes skipping them a deliberate act.
+
+## 6. Steps become structured commands
+
+Today a `Step` holds shell strings for display. The engine needs more:
+
+```python
+@dataclass(frozen=True)
+class Command:
+    argv: tuple[str, ...]  # run with subprocess.run(argv), never a shell
+    tolerate_failure: bool = False  # replaces "|| :" in rendered output
+    already_done: Check | None = None  # how to tell this ran before an interruption
+```
+
+`render()` keeps producing the same shell text for review (the digest covers
+that text). The engine runs `argv` lists only. This is the first
+implementation step, and it changes no output.
+
+## 7. Step journal and resume
+
+Each job writes an append-only journal at
+`/var/lib/tamarack/jobs/<job-id>.jsonl`, one JSON object per line, flushed and
+`fsync`ed before the next action:
+
+```json
+{"t":"job","id":"7","digest":"…","plan":{…},"started":"2026-11-22T21:04:11Z"}
+{"t":"step-start","step":3}
+{"t":"cmd-start","step":3,"cmd":0,"argv":["mdadm","/dev/md/tk-l1","--add","/dev/mapper/tk-d3-p2"]}
+{"t":"cmd-end","step":3,"cmd":0,"exit":0,"stderr_tail":""}
+{"t":"step-end","step":3}
+{"t":"job-end","result":"completed"}
+```
+
+On start, the engine reads every journal without a `job-end`. Such a job is
+exported as **paused** with the step where it stopped. Resume rules:
+
+| Interrupted at | What happens |
+| --- | --- |
+| Between steps | Waits for `Job.Resume` (admin), then continues with the next step. |
+| Inside a `mdadm --wait` | The kernel resumes the resync or reshape by itself; the engine re-attaches and keeps reporting progress, no authorization needed. |
+| Inside any other command | Waits for `Job.Resume`. Each remaining command's `already_done` check decides whether it reran; a command with no check is never rerun automatically, and the job reports which one needs a human. |
+
+Journals are kept after completion (they are the audit trail) and pruned
+after 90 days.
+
+## 8. The service and its sandbox
+
+[`data/systemd/tamarack-engine.service`](../../data/systemd/tamarack-engine.service):
+
+- `Type=dbus` with `BusName=`, started on demand by D-Bus activation and at
+  boot (to pick up interrupted jobs).
+- `StateDirectory=tamarack` creates `/var/lib/tamarack` at runtime.
+- `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`,
+  `PrivateNetwork=yes` (the engine needs no network), `NoNewPrivileges=yes`,
+  `RestrictAddressFamilies=AF_UNIX AF_NETLINK`, `LockPersonality=yes`,
+  `MemoryDenyWriteExecute=yes`, `RestrictRealtime=yes`,
+  `SystemCallArchitectures=native`, `SystemCallFilter=@system-service @raw-io`.
+- `DevicePolicy=closed` with `DeviceAllow=` only for block devices,
+  `/dev/mapper/control` and `/dev/md*`.
+- `ProtectKernelModules=yes`: dm-integrity, raid1 and raid456 are loaded at
+  boot from `/usr/lib/modules-load.d/tamarack.conf` instead.
+- Relaxed, each with a comment in the unit: `ProtectKernelTunables=no`
+  (mdadm writes md sysfs attributes), `PrivateDevices=no` (raw block
+  access), a capability set limited to `CAP_SYS_ADMIN CAP_SYS_RAWIO
+  CAP_MKNOD CAP_DAC_OVERRIDE CAP_CHOWN`.
+
+`systemd-analyze security tamarack-engine.service` runs in CI once the unit
+ships, and every remaining exposure is either fixed or explained.
+
+## 9. SELinux
+
+The engine runs in its own domain, `tamarack_engine_t`, from the
+`tamarack-selinux` subpackage. When it runs a tool, it transitions into that
+tool's existing Fedora domain (`mdadm_t`, `lvm_t`, `fsadm_t` and so on) rather
+than being granted the tool's permissions itself. Its own files are
+`tamarack_engine_exec_t` and `tamarack_var_lib_t`. The VM tests run
+**enforcing** and fail on any AVC denial.
+
+## 10. Testing on (virtual) disks
+
+tmt plans, run by Packit and Fedora CI on Testing Farm VMs with extra
+virtual disks:
+
+- the matrix from the project plan: create, add, swap for larger, failed
+  drive, single drive, mixed sizes;
+- power cut mid-reshape (kill the VM) and resume;
+- silent corruption: flip bytes on one member, read, confirm md repairs it
+  and the scrub is clean;
+- recovery elsewhere: assemble the disks on a stock Fedora VM by hand;
+- every test with SELinux enforcing and a checksum manifest of test data.
+
+Nothing destructive is enabled outside these VMs until the matrix passes.
+
+## 11. Implementation order
+
+1. `Command` with `argv` (section 6), no behaviour change.
+2. Plan digest and drive identities in the planners.
+3. Journal writer and reader, with resume logic, unit-tested against a fake
+   command runner.
+4. Engine service on D-Bus with read-only methods and planning.
+5. polkit checks and `Execute` against the fake runner.
+6. Real runner, systemd unit, modules-load file, SELinux module, packaged in
+   the RPM.
+7. tmt VM matrix. Destructive execution stays disabled until it passes.
+
+## 12. Open questions
+
+- Plan expiry of 30 minutes and backup freshness of 7 days: right defaults?
+- Should `Job.Cancel` be allowed mid-reshape? (Proposed: no; cancel only
+  between steps, and reshapes always finish.)
+- tmt on Testing Farm with several extra disks per VM: confirm the
+  provisioning options before relying on them.

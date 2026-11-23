@@ -1,0 +1,151 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-BUS Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+
+     Tamarack storage engine D-Bus API, version 1 (design draft).
+     See docs/design/engine.md. Every method carries the polkit action that
+     authorizes it in the com.borealislogistics.Tamarack1.PolkitAction
+     annotation; tests check these match the polkit policy file.
+-->
+<node>
+  <!-- /com/borealislogistics/Tamarack1 -->
+  <interface name="com.borealislogistics.Tamarack1.Manager">
+    <property name="Version" type="s" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+    <!-- "idle", "running" (a job is active) or "paused" (a job awaits Resume) -->
+    <property name="State" type="s" access="read"/>
+    <!-- Current layout file, as JSON (tamarack-layout format) -->
+    <property name="Layout" type="s" access="read"/>
+    <property name="DriveFailuresTolerated" type="u" access="read"/>
+    <property name="UsableBytes" type="t" access="read"/>
+    <property name="Degraded" type="b" access="read"/>
+    <property name="OnBattery" type="b" access="read"/>
+    <!-- Unix time of the last ConfirmBackup, 0 if never -->
+    <property name="LastBackupConfirmed" type="t" access="read"/>
+    <!-- The running or paused job, or "/" -->
+    <property name="ActiveJob" type="o" access="read"/>
+
+    <method name="PlanCreate">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.read"/>
+      <arg name="devices" type="as" direction="in"/>
+      <arg name="plan" type="o" direction="out"/>
+    </method>
+    <method name="PlanAdd">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.read"/>
+      <arg name="device" type="s" direction="in"/>
+      <arg name="plan" type="o" direction="out"/>
+    </method>
+    <method name="PlanReplace">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.read"/>
+      <arg name="old_device" type="s" direction="in"/>
+      <arg name="new_device" type="s" direction="in"/>
+      <arg name="plan" type="o" direction="out"/>
+    </method>
+    <method name="PlanRebuild">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.read"/>
+      <arg name="failed_device" type="s" direction="in"/>
+      <arg name="new_device" type="s" direction="in"/>
+      <arg name="plan" type="o" direction="out"/>
+    </method>
+    <method name="ConfirmBackup">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.confirm-backup"/>
+    </method>
+
+    <signal name="LayoutChanged">
+      <arg name="layout" type="s"/>
+    </signal>
+    <signal name="ArrayDegraded">
+      <arg name="layer" type="u"/>
+    </signal>
+  </interface>
+
+  <!-- /com/borealislogistics/Tamarack1/Plans/N -->
+  <interface name="com.borealislogistics.Tamarack1.Plan">
+    <!-- "create", "add", "replace" or "rebuild" -->
+    <property name="Kind" type="s" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+    <!-- SHA-256 over the canonical plan JSON; Execute must echo it -->
+    <property name="Digest" type="s" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+    <!-- Before/after protection and capacity, as JSON -->
+    <property name="Summary" type="s" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+    <!-- (title, note, commands) per step, exactly as rendered for review -->
+    <property name="Steps" type="a(ssas)" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+    <property name="Warnings" type="as" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+    <!-- Devices this plan wipes; the user must type them to confirm -->
+    <property name="Erases" type="as" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+    <property name="ExpiresAt" type="t" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+
+    <!-- options: "confirm-erase" (as, required), "no-ups" (b) -->
+    <method name="Execute">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.create
+                         com.borealislogistics.tamarack.add-drive
+                         com.borealislogistics.tamarack.replace-drive"/>
+      <arg name="digest" type="s" direction="in"/>
+      <arg name="options" type="a{sv}" direction="in"/>
+      <arg name="job" type="o" direction="out"/>
+    </method>
+    <method name="Discard">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.read"/>
+    </method>
+  </interface>
+
+  <!-- /com/borealislogistics/Tamarack1/Jobs/N -->
+  <interface name="com.borealislogistics.Tamarack1.Job">
+    <property name="Plan" type="o" access="read">
+      <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
+    </property>
+    <!-- "running", "waiting" (mdadm resync/reshape), "paused", "completed",
+         "failed" or "cancelled" -->
+    <property name="State" type="s" access="read"/>
+    <property name="Step" type="u" access="read"/>
+    <property name="StepCount" type="u" access="read"/>
+    <property name="StepTitle" type="s" access="read"/>
+    <!-- 0.0 to 1.0 for the current resync or reshape -->
+    <property name="Progress" type="d" access="read"/>
+    <!-- Why the job paused or failed; empty otherwise -->
+    <property name="Message" type="s" access="read"/>
+
+    <method name="Resume">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.resume"/>
+    </method>
+    <!-- Only between steps; a reshape always finishes -->
+    <method name="Cancel">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.cancel"/>
+    </method>
+
+    <signal name="StepStarted">
+      <arg name="step" type="u"/>
+      <arg name="title" type="s"/>
+    </signal>
+    <signal name="StepFinished">
+      <arg name="step" type="u"/>
+    </signal>
+    <signal name="Finished">
+      <arg name="success" type="b"/>
+      <arg name="message" type="s"/>
+    </signal>
+  </interface>
+</node>
