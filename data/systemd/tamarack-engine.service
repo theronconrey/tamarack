@@ -29,6 +29,8 @@ ReadWritePaths=-/run/mdadm -/run/lvm -/run/lock/lvm -/run/cryptsetup
 ReadWritePaths=-/etc/lvm/archive -/etc/lvm/backup -/etc/lvm/devices
 # The engine keeps its lines in /etc/integritytab, so the pool opens at boot.
 ReadWritePaths=-/etc/integritytab
+# The engine writes /etc/exports.d/tamarack.exports for NFS shares.
+ReadWritePaths=-/etc/exports.d
 RuntimeDirectory=mdadm lvm lock/lvm cryptsetup
 RuntimeDirectoryPreserve=yes
 ProtectHome=yes
