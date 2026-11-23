@@ -10,6 +10,9 @@ Description=Tamarack VM test drives (LIO)
 DefaultDependencies=no
 Requires=sys-kernel-config.mount
 After=sys-kernel-config.mount systemd-modules-load.service
+# The drives' backing files live under /var/tmp, and /var can be its own
+# mount (it is on Fedora's cloud images): wait for it, and for /etc/target.
+RequiresMountsFor=/var/tmp/tamarack-drives /etc/target
 Before=integritysetup-pre.target cryptsetup-pre.target sysinit.target
 Wants=integritysetup-pre.target
 
@@ -18,6 +21,9 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStartPre=/usr/sbin/modprobe tcm_loop
 ExecStart=/usr/bin/targetctl restore
+# targetctl "succeeds" even when it skips every backstore: fail unless the
+# first test drive's LUN really exists.
+ExecStartPost=/usr/bin/test -e /sys/kernel/config/target/loopback/naa.5001405000000001/tpgt_1/lun/lun_0
 
 [Install]
 WantedBy=sysinit.target

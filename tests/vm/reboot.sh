@@ -19,7 +19,7 @@ boot_report() {
         srv-tamarack.mount >&2 2>&1 || :
     systemctl --no-pager list-units --failed >&2 || :
     journalctl -b --no-pager -o short-precise -u "$EARLY_DRIVES" -u target.service \
-        -u 'systemd-integritysetup@*' -u srv-tamarack.mount | tail -80 >&2 || :
+        -u 'systemd-integritysetup@*' -u srv-tamarack.mount -u var.mount | tail -80 >&2 || :
     journalctl -b --no-pager -o short-precise -k | grep -Ei 'sd[a-z]|tcm_loop|md[0-9]|integrity' \
         | tail -60 >&2 || :
 }
