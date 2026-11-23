@@ -37,10 +37,12 @@ integritysetup format --batch-mode --integrity crc32c /dev/sdd3
 integritysetup open --integrity crc32c /dev/sdd3 tk-d4-p3
 
 # 3. One md array per layer
-mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --level=5 --raid-devices=4 --consistency-policy=ppl /dev/mapper/tk-d1-p2 /dev/mapper/tk-d2-p2 /dev/mapper/tk-d3-p2 /dev/mapper/tk-d4-p2
-mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d3-p3 /dev/mapper/tk-d4-p3
+mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=4 --consistency-policy=ppl /dev/mapper/tk-d1-p2 /dev/mapper/tk-d2-p2 /dev/mapper/tk-d3-p2 /dev/mapper/tk-d4-p2
+mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --data-offset=128M --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d3-p3 /dev/mapper/tk-d4-p3
 
 # 4. LVM joins the layers into one volume
+wipefs --all /dev/md/tk-l1
+wipefs --all /dev/md/tk-l2
 pvcreate /dev/md/tk-l1 /dev/md/tk-l2
 vgcreate tamarack /dev/md/tk-l1 /dev/md/tk-l2
 lvcreate --yes --extents 100%FREE --name data tamarack
@@ -49,6 +51,7 @@ lvcreate --yes --extents 100%FREE --name data tamarack
 mkfs.btrfs --label tamarack --metadata dup /dev/tamarack/data
 systemctl enable --now srv-tamarack.mount tamarack-scrub.timer
 btrfs subvolume create /srv/tamarack/shares
+restorecon /srv/tamarack/shares
 
 # 6. Snapshots of the shares: 24 hourly, 7 daily, 4 weekly, 6 monthly
 #    snapper keeps them in shares/.snapshots; the schedule can be changed or turned off later.

@@ -108,6 +108,10 @@ def rule_for(command: Command) -> Rule:
             return _probe("snapper", "--config", args[1], "get-config")
         if args[2] == "set-config":
             return RERUN
+    if program == "wipefs":
+        return RERUN  # only ever run on a new array, before pvcreate
+    if program == "restorecon":
+        return RERUN  # labelling again changes nothing
     if program == "btrfs":
         if args[:2] == ("subvolume", "create"):
             return _probe("btrfs", "subvolume", "show", args[2])

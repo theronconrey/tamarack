@@ -484,6 +484,15 @@ What the first enforcing VM runs taught us:
   is still syncing, and a new array starts with a full resync. Every health
   check now runs `mdadm --wait` first; `--wait` exits 1 when there was
   nothing to wait for, so its failure is tolerated everywhere.
+- btrfs leaves a new subvolume's root unlabelled, so the engine could not
+  make share folders in `shares`; the create plan now runs `restorecon` on
+  it, and snapperd may relabel `.snapshots`.
+- Every array is created with `--data-offset=128M`. On small members mdadm
+  reserves much less, and after a mirror was reshaped into parity there was
+  no room left to add RAID5's partial parity log.
+- A new array reuses space an older one had, at the same data offset, so
+  the old PV label showed through and `pvcreate` found a duplicate PV ID.
+  `wipefs --all` now runs on every new array before `pvcreate`.
 - snapper's timers carry the generic `systemd_unit_file_t` label; the engine
   may ask for their status, not start or enable other generic units.
 

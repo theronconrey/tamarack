@@ -32,9 +32,10 @@ mdadm --zero-superblock /dev/mapper/tk-d1-p3
 parted --script /dev/sda name 2 tk-l1 name 3 tk-l2
 
 # 6. Mirror the freed halves as a new layer
-mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d1-p3 /dev/mapper/tk-d2-p3
+mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --data-offset=128M --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d1-p3 /dev/mapper/tk-d2-p3
 
 # 7. Grow the volume and file system
+wipefs --all /dev/md/tk-l2
 pvcreate /dev/md/tk-l2
 vgextend tamarack /dev/md/tk-l2
 lvextend --extents +100%FREE tamarack/data

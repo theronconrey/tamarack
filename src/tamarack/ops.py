@@ -30,11 +30,13 @@ ALLOWED_PROGRAMS = frozenset(
         "partprobe",
         "pvcreate",
         "pvresize",
+        "restorecon",
         "snapper",
         "systemctl",
         "tamarack-meta",
         "vgcreate",
         "vgextend",
+        "wipefs",
     }
 )
 

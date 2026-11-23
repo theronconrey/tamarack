@@ -12,6 +12,7 @@ start_engine
 d=("${DRIVES[@]}")
 
 drive create "${d[0]}" "${d[1]}" "${d[2]}"
+mdadm --wait /dev/md/tk-l1 || :  # the new array's first sync; check needs it done
 write_data
 sync
 

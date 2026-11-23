@@ -26,6 +26,12 @@ MOUNT_UNIT = "srv-tamarack.mount"  # data/systemd/srv-tamarack.mount
 SCRUB_TIMER = "tamarack-scrub.timer"  # data/systemd/tamarack-scrub.timer
 SNAPPER_CONFIG = "tamarack"  # data/snapper/tamarack is its template
 SHARES = f"{MOUNT_POINT}/shares"
+# Room md keeps before the data on every member. mdadm picks 128 MiB on
+# large drives but much less on small ones, and each reshape (a mirror
+# becoming parity, a parity layer widening) uses some of it, after which
+# there was no room left for RAID5's partial parity log. Fixed here, so
+# every layer can be reshaped and still get its PPL.
+MD_DATA_OFFSET = "--data-offset=128M"
 SNAPPER_TIMERS = ("snapper-timeline.timer", "snapper-cleanup.timer")
 FS_LABEL = "tamarack"
 META_PARTLABEL = "tk-meta"
@@ -147,6 +153,7 @@ def build_steps(plan: Plan) -> list[Step]:
                 md_path(layer),
                 "--run",
                 "--metadata=1.2",
+                MD_DATA_OFFSET,
                 f"--level={level}",
                 f"--raid-devices={layer.member_count}",
                 safety,
@@ -167,6 +174,8 @@ def build_steps(plan: Plan) -> list[Step]:
         Step(
             "LVM joins the layers into one volume",
             (
+                # Old labels on reused space would show through (steps.py).
+                *(cmd("wipefs", "--all", md) for md in mds),
                 cmd("pvcreate", *mds),
                 cmd("vgcreate", VG_NAME, *mds),
                 cmd("lvcreate", "--yes", "--extents", "100%FREE", "--name", LV_NAME, VG_NAME),
@@ -180,6 +189,9 @@ def build_steps(plan: Plan) -> list[Step]:
                 # now on: a mount made inside the engine's sandbox would stay there.
                 cmd("systemctl", "enable", "--now", MOUNT_UNIT, SCRUB_TIMER),
                 cmd("btrfs", "subvolume", "create", SHARES),
+                # btrfs leaves a new subvolume's root unlabelled; give it the
+                # volume's label (selinux/tamarack.fc) so all below inherits it.
+                cmd("restorecon", SHARES),
             ),
         ),
         Step(

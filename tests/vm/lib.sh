@@ -199,10 +199,17 @@ check_data() {
 # and dontaudit'ed by Fedora's policy; they only show if dontaudit is off.
 TRANSITION_NOISE='denied +\{ (siginh|rlimitinh|noatsecure) \}'
 
+# Denials by Fedora's own domains, not Tamarack's, that do not stop
+# anything working. Listed one by one, each to be raised with
+# selinux-policy; any other denial still fails the test.
+#  - snapperd asks systemd to reload when a config is created.
+#  - mdadm checks /dev/kmsg, which these VMs label init_var_run_t.
+FEDORA_POLICY_GAPS='scontext=system_u:system_r:snapperd_t:s0 tcontext=system_u:system_r:init_t:s0 tclass=system|denied +\{ getattr \} for .*comm="mdadm" path="/dev/kmsg"'
+
 check_avc() {
     local denials
     denials=$(ausearch -m AVC,USER_AVC -ts "$START" 2>/dev/null | grep denied \
-        | grep -Ev "$TRANSITION_NOISE") || :
+        | grep -Ev "$TRANSITION_NOISE" | grep -Ev "$FEDORA_POLICY_GAPS") || :
     if [ -n "$denials" ]; then
         echo "$denials" >&2
         fail "SELinux denials"

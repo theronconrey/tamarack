@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from .commands import (
     FIRST_LAYER_START,
     LV_NAME,
+    MD_DATA_OFFSET,
     META_PARTLABEL,
     MOUNT_POINT,
     VG_NAME,
@@ -283,7 +284,7 @@ def create_array(md: str, level: Level, members: list[str]) -> Command:
     safety = "--consistency-policy=ppl" if level is Level.RAID5 else "--bitmap=internal"
     return cmd(
         "mdadm",
-        *("--create", md, "--run", "--metadata=1.2"),
+        *("--create", md, "--run", "--metadata=1.2", MD_DATA_OFFSET),
         f"--level={level.value.removeprefix('raid')}",
         f"--raid-devices={len(members)}",
         safety,
@@ -322,10 +323,20 @@ def expansion_steps(layout: Layout, exp: Expansion, own_drive: int) -> list[Step
     return steps
 
 
+def clear_signatures(md: str) -> Command:
+    """Wipe old signatures from a new array before it becomes a PV.
+
+    A new array reuses space that belonged to an older one, often at the
+    same data offset, so the old PV label shows through and LVM sees two
+    PVs with one ID.
+    """
+    return cmd("wipefs", "--all", md)
+
+
 def grow_volume(grown: list[str], created: list[str]) -> Step:
     commands = [cmd("pvresize", md) for md in grown]
     for md in created:
-        commands += [cmd("pvcreate", md), cmd("vgextend", VG_NAME, md)]
+        commands += [clear_signatures(md), cmd("pvcreate", md), cmd("vgextend", VG_NAME, md)]
     commands += [
         cmd("lvextend", "--extents", "+100%FREE", f"{VG_NAME}/{LV_NAME}"),
         cmd("btrfs", "filesystem", "resize", "max", MOUNT_POINT),
