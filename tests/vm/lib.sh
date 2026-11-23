@@ -7,6 +7,20 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# On any failure, show what the engine and SELinux said, so a red run in
+# Testing Farm explains itself.
+diagnostics() {
+    local status=$?
+    [ "$status" -eq 0 ] && return 0
+    echo "=== tamarack-engine journal ===" >&2
+    journalctl -b -u tamarack-engine --no-pager -o short-precise 2>&1 | tail -200 >&2
+    echo "=== SELinux denials ===" >&2
+    ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>&1 | tail -50 >&2
+    echo "=== engine process context ===" >&2
+    ps -eZ | grep -i tamarack >&2 || :
+    return "$status"
+}
+
 # Fake drives: one scsi_debug host per drive, each with its own RAM store,
 # so they behave as separate disks with their own WWN and serial.
 make_drives() {  # count size_mb
@@ -60,6 +74,7 @@ check_avc() {
 }
 
 cleanup() {
+    diagnostics || :
     systemctl stop tamarack-engine 2>/dev/null || :
     systemctl disable --now srv-tamarack.mount 2>/dev/null || :
     umount /srv/tamarack /mnt/rescue 2>/dev/null || :

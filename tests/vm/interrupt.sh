@@ -5,7 +5,12 @@
 # engine must pick the job up again on restart, wait for the reshape by
 # itself, then pause until an admin resumes it.
 . "$(dirname "$0")/lib.sh"
-restore_speed() { echo 200000 > /proc/sys/dev/raid/speed_limit_max; cleanup; }
+restore_speed() {
+    local status=$?
+    echo 200000 > /proc/sys/dev/raid/speed_limit_max
+    (exit "$status")
+    cleanup
+}
 trap restore_speed EXIT
 
 make_drives 3 3072
