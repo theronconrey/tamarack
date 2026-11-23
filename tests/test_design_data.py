@@ -163,3 +163,28 @@ def test_design_doc_lists_every_polkit_action() -> None:
     for action_id in polkit_actions():
         suffix = action_id.removeprefix("com.borealislogistics.")
         assert f"`…{suffix}`" in text, f"{action_id} missing from the design doc"
+
+
+SELINUX = ROOT / "selinux"
+
+
+def test_selinux_module_labels_what_the_package_installs() -> None:
+    contexts = {}
+    for line in (SELINUX / "tamarack.fc").read_text().splitlines():
+        if line.strip() and not line.startswith("#"):
+            fields = line.split()
+            contexts[fields[0]] = fields[-1]
+    exec_start = unit_settings()["ExecStart"][0]
+    assert contexts[exec_start].endswith(":tamarack_engine_exec_t,s0)")
+    assert contexts["/var/lib/tamarack(/.*)?"].endswith(":tamarack_var_lib_t,s0)")
+    assert contexts["/etc/tamarack(/.*)?"].endswith(":tamarack_etc_t,s0)")
+    assert unit_settings()["StateDirectory"] == ["tamarack"]
+
+
+def test_selinux_policy_is_enforcing_and_named() -> None:
+    te = (SELINUX / "tamarack.te").read_text()
+    code = [line for line in te.splitlines() if not line.lstrip().startswith("#")]
+    assert "policy_module(tamarack," in "\n".join(code)
+    assert not any("permissive" in line for line in code)
+    # The engine itself never gets the storage tools' raw-disk permissions.
+    assert "sys_rawio" not in te and "fixed_disk" not in te

@@ -77,5 +77,6 @@ jobs:
           test ! -e /etc/tamarack/engine.conf  # execution stays off by default
           # --man=no: the container installs without documentation.
           systemd-analyze verify --man=no /usr/lib/systemd/system/tamarack-engine.service
+          semodule -l | grep -qx tamarack  # the SELinux module installed
           systemd-analyze security --offline=true --no-pager \
             /usr/lib/systemd/system/tamarack-engine.service || true

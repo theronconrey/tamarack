@@ -1,0 +1,27 @@
+## <summary>Tamarack storage engine.</summary>
+## <desc>
+##	<p>
+##	SPDX-License-Identifier: GPL-3.0-or-later
+##	</p>
+## </desc>
+
+########################################
+## <summary>
+##	Send and receive messages from the Tamarack engine over D-Bus.
+##	For confined clients such as a Cockpit page.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`tamarack_dbus_chat',`
+	gen_require(`
+		type tamarack_engine_t;
+		class dbus send_msg;
+	')
+
+	allow $1 tamarack_engine_t:dbus send_msg;
+	allow tamarack_engine_t $1:dbus send_msg;
+')
