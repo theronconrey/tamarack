@@ -9,8 +9,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 
 # On any failure, show what the engine and SELinux said, so a red run in
 # Testing Farm explains itself.
-diagnostics() {
-    local status=$?
+diagnostics() {  # [status]
+    local status=${1:-$?}
     [ "$status" -eq 0 ] && return 0
     echo "=== tamarack-engine journal ===" >&2
     journalctl -b -u tamarack-engine --no-pager -o short-precise 2>&1 | tail -200 >&2
@@ -48,7 +48,7 @@ diagnostics() {
     for m in /dev/mapper/tk-d*; do
         [ -e "$m" ] || continue
         echo "$m:" >&2
-        mdadm --examine "$m" 2>&1 | grep -E 'Data Offset|New Offset|Super Offset|Unused Space|Feature Map|Array State|Reshape' >&2 || :
+        mdadm --examine "$m" 2>&1 | grep -E 'Data Offset|New Offset|Super Offset|Unused Space|Feature Map|Array State|Reshape|Bad Block Log|Consistency|PPL' >&2 || :
     done
     echo "=== the volume's labels ===" >&2
     ls -ldZ /srv /srv/tamarack /srv/tamarack/shares >&2 2>&1 || :
@@ -183,7 +183,8 @@ start_engine() {
     auditctl -a always,exit -F arch=b64 -S all -F exe="$(readlink -f "$(command -v mdadm)")" \
         -F success=0 -k tamarack-md >&2 || echo "auditctl: could not add the mdadm rule" >&2
     systemctl restart tamarack-engine
-    START=$(date '+%m/%d/%Y %H:%M:%S')
+    START=$(date '+%m/%d/%Y %H:%M:%S')  # ausearch's format
+    JOURNAL_START=$(date '+%Y-%m-%d %H:%M:%S')  # journalctl's
     ps -eo label,comm | grep -q '^system_u:system_r:tamarack_engine_t:s0 *tamarack-engine' \
         || fail "the engine is not running in its SELinux domain (tamarack_engine_t)"
 }
@@ -225,11 +226,16 @@ check_avc() {
     fi
 }
 
-cleanup() {
-    diagnostics || :
+# Runs from the EXIT trap, or from a test's own trap with the test's exit
+# status as its argument. Never stops half way: set -e is off in here.
+cleanup() {  # [status]
+    local status=${1:-$?}
+    set +e
+    diagnostics "$status"
     systemctl stop tamarack-engine 2>/dev/null || :
     systemctl disable --now srv-tamarack.mount 2>/dev/null || :
-    umount /srv/tamarack /mnt/rescue 2>/dev/null || :
+    umount /mnt/rescue 2>/dev/null || :
+    while mountpoint -q /srv/tamarack; do umount /srv/tamarack || break; done
     # Take the stack down from the top. The VG may not be in the host's LVM
     # devices file, so remove its dm devices directly as well.
     vgchange -an tamarack 2>/dev/null || :

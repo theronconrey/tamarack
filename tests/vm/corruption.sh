@@ -22,7 +22,7 @@ dd if=/dev/urandom of="${d[0]}2" bs=1M seek=512 count=4 conv=notrunc oflag=direc
 # Read every member: md asks for the stripe again from the other drives.
 mdadm --action=check /dev/md/tk-l1
 mdadm --wait /dev/md/tk-l1 || :
-journalctl -k --since "$START" | grep -qi "checksum failed" \
+journalctl -k --since "$JOURNAL_START" | grep -qi "checksum failed" \
     || fail "dm-integrity did not report the corruption"
 echo 3 > /proc/sys/vm/drop_caches
 check_data

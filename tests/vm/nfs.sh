@@ -8,8 +8,7 @@
 nfs_cleanup() {
     local status=$?
     umount /mnt/tamarack-nfs /mnt/tamarack-ro 2>/dev/null || :
-    (exit "$status")
-    cleanup
+    cleanup "$status"
 }
 trap nfs_cleanup EXIT
 

@@ -8,8 +8,7 @@
 restore_speed() {
     local status=$?
     echo 200000 > /proc/sys/dev/raid/speed_limit_max
-    (exit "$status")
-    cleanup
+    cleanup "$status"
 }
 trap restore_speed EXIT
 

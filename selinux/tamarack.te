@@ -66,7 +66,9 @@ allow tamarack_engine_t self:process { getsched signal_perms };
 manage_dirs_pattern(tamarack_engine_t, tamarack_data_t, tamarack_data_t)
 read_files_pattern(tamarack_engine_t, tamarack_data_t, tamarack_data_t)
 allow tamarack_engine_t tamarack_data_t:dir { setattr ioctl };
-allow tamarack_engine_t tamarack_data_t:filesystem getattr;
+# btrfs filesystem resize looks at the filesystem itself (fs_t: rootcontext
+# labels only the root directory, not the superblock).
+fs_getattr_xattr_fs(tamarack_engine_t)
 # btrfs leaves a new subvolume's root unlabelled; the engine relabels it
 # with chcon (in its own domain, so only this relabel is allowed).
 gen_require(`
@@ -156,7 +158,6 @@ optional_policy(`
 	manage_files_pattern(snapperd_t, tamarack_data_t, tamarack_data_t)
 	manage_lnk_files_pattern(snapperd_t, tamarack_data_t, tamarack_data_t)
 	allow snapperd_t tamarack_data_t:dir { ioctl relabelfrom relabelto };
-	allow snapperd_t tamarack_data_t:filesystem getattr;
 ')
 
 # snapper is a D-Bus client of snapperd, which makes and prunes snapshots.
