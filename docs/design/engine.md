@@ -311,8 +311,20 @@ ships, and every remaining exposure is either fixed or explained.
 - **Sandbox paths** the tools need are writable: `/run/mdadm`, `/run/lvm`,
   `/run/lock/lvm`, `/run/cryptsetup` and `/etc/lvm/{archive,backup,devices}`.
 
-Still to do in step 6: writing the layout to the `tk-meta` partitions,
-and mounting at boot. `systemd-analyze security` rates the unit 2.6
+- **The layout is written to every drive.** Each plan ends with one
+  `tamarack-meta write PARTITION LAYOUT` per drive, so the plan digest
+  covers exactly the bytes written. `tamarack-meta` (in `/usr/libexec`)
+  refuses any device whose udev `PARTNAME` is not `tk-meta` and any text
+  that is not a valid layout, and writes a framed record (magic, version,
+  length, SHA-256, padded to 4 KiB) so a torn or stale write is never read
+  as a layout. It runs in its own SELinux domain, `tamarack_meta_t`, which
+  is the only Tamarack code with raw-disk access.
+
+Still to do: mounting at boot. The create plan mounts with `systemd-mount`,
+which lasts until reboot; a shipped `srv-tamarack.mount` that the engine
+enables after a create is the likely answer, and the VM matrix will settle
+it. The engine also does not yet read the `tk-meta` records back (it reads
+`/var/lib/tamarack/layout.json`). `systemd-analyze security` rates the unit 2.6
 ("OK"); the remaining exposures are the ones a storage service needs: root,
 raw block devices, `CAP_SYS_ADMIN`, writable md sysfs.
 

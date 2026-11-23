@@ -32,6 +32,8 @@ from .recovery import PROBE_PROGRAMS
 
 CONFIG_FILE = "/etc/tamarack/engine.conf"
 PROGRAM_DIRS = ("/usr/sbin", "/usr/bin")
+# Tamarack's own helpers live in /usr/libexec, not on anyone's PATH.
+LIBEXEC = {"tamarack-meta": "/usr/libexec"}
 ENVIRONMENT = {"PATH": ":".join(PROGRAM_DIRS), "LC_ALL": "C.UTF-8"}
 STDERR_LIMIT = 64 * 1024  # characters of stderr kept per command
 
@@ -46,6 +48,8 @@ def resolve(program: str, directories: Iterable[str] = PROGRAM_DIRS) -> str:
     """The absolute path of an allowed program, checked for safe ownership."""
     if program not in ALLOWED_PROGRAMS | PROBE_PROGRAMS:
         raise UnsafeProgram(f"{program!r} is not a program Tamarack may run")
+    if program in LIBEXEC and tuple(directories) == PROGRAM_DIRS:
+        directories = (LIBEXEC[program],)
     for directory in directories:
         path = os.path.join(directory, program)
         try:

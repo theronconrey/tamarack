@@ -71,8 +71,8 @@ def rule_for(command: Command) -> Rule:
         if "-n" not in args:
             return RERUN  # only sets partition labels
         return ASK  # a half-made partition table needs a look
-    if program == "partprobe":
-        return RERUN
+    if program in ("partprobe", "tamarack-meta"):
+        return RERUN  # tamarack-meta rewrites the same record
     if program == "integritysetup":
         if args[0] == "format":
             return RERUN  # a brand-new partition; it is opened only afterwards

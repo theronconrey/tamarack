@@ -186,5 +186,7 @@ def test_selinux_policy_is_enforcing_and_named() -> None:
     code = [line for line in te.splitlines() if not line.lstrip().startswith("#")]
     assert "policy_module(tamarack," in "\n".join(code)
     assert not any("permissive" in line for line in code)
-    # The engine itself never gets the storage tools' raw-disk permissions.
-    assert "sys_rawio" not in te and "fixed_disk" not in te
+    # Raw-disk access goes to tamarack-meta alone, never to the engine.
+    assert "sys_rawio" not in te
+    raw = [line for line in code if "fixed_disk" in line]
+    assert raw and all("(tamarack_meta_t)" in line for line in raw)
