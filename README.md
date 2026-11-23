@@ -11,7 +11,8 @@ Command: `tamarack`. Python package: `tamarack-nas`.
 
 ## Status
 
-Phase 1: **the planner** and **grow** from one drive up to four. Both are pure
+Phase 1: **the planner**, **grow** from one drive up to four, and **replace**
+(upgrades and failed drives). Both are pure
 functions with dry-run command output. Nothing in this repository
 writes to a disk yet.
 
@@ -54,6 +55,27 @@ The new drive joins existing layers in order while it has room:
 Widening is an mdadm reshape: the data stays online and protected, and mdadm
 resumes from its checkpoint after a power cut. Growing to five or more drives
 (two-drive protection) is not supported yet.
+
+## Replacing a drive
+
+```sh
+tamarack replace --from now.json --old /dev/sda --with /dev/sde=8TB            # upgrade
+tamarack replace --from now.json --old /dev/sdb --with /dev/sdb=4TB --failed   # failure
+```
+
+- **Upgrade** (old drive still works): `mdadm --replace` copies each of its
+  slices to the new drive while the old copy stays active, so protection never
+  drops. Then the old drive is retired and can be pulled.
+- **Failed drive**: the failed slices are removed and rebuilt onto the new
+  drive from the others. Protection is reduced until the rebuild finishes.
+- The new drive must hold everything the old one held; Tamarack says the
+  minimum size if it doesn't.
+- Extra space goes to work automatically: the drive joins layers it wasn't in,
+  and leftover space pairs with free space on other drives. Upgrading every
+  drive of a 4 × 4 TB box to 8 TB, one at a time, ends at the same 24 TB a
+  fresh 4 × 8 TB build has.
+- A single drive that fails can't be rebuilt (both copies were on it):
+  restore from backup.
 
 ## Layout files
 
