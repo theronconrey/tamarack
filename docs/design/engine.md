@@ -465,9 +465,24 @@ Added since then:
   back. The steps are written up for people in
   [docs/recovery.md](../recovery.md).
 
-Still to write: mixed sizes (`scsi_debug` gives every drive one size), and
-a real power cut and reboot (RAM drives don't survive one, so both need
-file-backed drives).
+Added after that:
+- **File-backed drives.** `scsi_debug` gives every drive one size and
+  keeps it in RAM, so `make_file_drives` in `tests/vm/lib.sh` also makes
+  drives of any size through the kernel's SCSI target (LIO, set up with
+  `targetcli`): a sparse file under `/var/tmp/tamarack-drives/`, a fileio
+  backstore named `tk-test-N` and a loopback (`tcm_loop`) target per drive,
+  so each is its own SCSI disk with its own WWN and serial. The
+  configuration is saved and `target.service` enabled, so the drives can
+  come back after a reboot. The client accepts these only when configfs
+  shows the disk is a `tk-test-*` fileio backstore on a file in that
+  directory.
+- **Mixed sizes.** Create on 2, 2 and 4 GB drives (one single-parity layer,
+  2 GB of the 4 GB drive unused), then add a second 4 GB drive: it widens
+  the parity layer and its other 2 GB pair with the unused space in a new
+  mirror layer, and the data, the layout records and a scrub stay clean.
+
+Still to write: a real power cut and reboot, on the file-backed drives
+(RAM drives don't survive one).
 
 ## 11. Implementation order
 

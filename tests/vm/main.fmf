@@ -6,6 +6,7 @@ require:
   - audit
   - python3-gobject-base
   - nfs-utils  # the NFS client side of the nfs test
+  - targetcli  # file-backed drives through LIO (tcm_loop)
 
 /create-grow:
     summary: Create on two drives, grow to four
@@ -34,6 +35,10 @@ require:
 /recover-by-hand:
     summary: Stock tools alone bring the volume back
     test: ./recover-by-hand.sh
+
+/mixed:
+    summary: Mixed sizes, leftover space paired later
+    test: ./mixed.sh
 
 /nfs:
     summary: Shares over NFSv4, squashing, read-only
