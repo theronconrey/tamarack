@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from .identity import validate_identity
 from .model import Drive, Layer, Level, Plan, Protection
 from .policy import REBUILD_RISK_DRIVE_SIZE, level_for, protection_for
 from .units import GiB, MiB, align_down, format_size
@@ -34,6 +35,13 @@ END_RESERVE = 1 * MiB
 # plus its journal. 0.5% is a deliberately conservative estimate until the
 # reference box gives measured numbers.
 INTEGRITY_OVERHEAD_ESTIMATE = 0.005
+
+
+def check_identities(identities: Sequence[str]) -> None:
+    """Every identity well formed, and no physical drive listed twice."""
+    known = [validate_identity(i) for i in identities if i]
+    if len(set(known)) != len(known):
+        raise ValueError("the same drive is listed twice (two paths, one identity)")
 
 
 def bucket_tolerance(size: int) -> int:
@@ -60,7 +68,11 @@ def _bucketed(usables: Sequence[int]) -> list[int]:
     return buckets
 
 
-def make_plan(sizes: Sequence[int], devices: Sequence[str] | None = None) -> Plan:
+def make_plan(
+    sizes: Sequence[int],
+    devices: Sequence[str] | None = None,
+    identities: Sequence[str] | None = None,
+) -> Plan:
     """Build a plan. Pure function: it never touches a disk."""
     if not sizes:
         raise ValueError("at least one drive is required")
@@ -70,12 +82,17 @@ def make_plan(sizes: Sequence[int], devices: Sequence[str] | None = None) -> Pla
         raise ValueError("one device name is needed per drive size")
     if len(set(devices)) != len(devices):
         raise ValueError("each device may appear only once")
+    if identities is None:
+        identities = [""] * len(sizes)
+    if len(identities) != len(sizes):
+        raise ValueError("one identity (or an empty string) is needed per drive")
+    check_identities(identities)
 
     usables = [usable_space(s) for s in sizes]
     buckets = _bucketed(usables)
     drives = [
-        Drive(device=d, size=s, usable=u, bucket=b)
-        for d, s, u, b in zip(devices, sizes, usables, buckets, strict=True)
+        Drive(device=d, size=s, usable=u, bucket=b, identity=i)
+        for d, s, u, b, i in zip(devices, sizes, usables, buckets, identities, strict=True)
     ]
     protection = protection_for(len(drives))
 

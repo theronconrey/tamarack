@@ -86,6 +86,13 @@ step the engine re-resolves identities to paths and refuses if a drive is
 missing or a path now points at a different drive. Commands use
 `/dev/disk/by-id/` paths, which the planners already support.
 
+Status: the planners carry identities, and `tamarack.review` builds the
+review document and digest (step 2). Each drive in the document has a role:
+`erase` (new, wiped), `keep`, `leave` (a working drive being replaced, needed
+until it is retired) or `failed` (not expected). `identity.verify` checks
+every drive but the failed ones against what UDisks2 reports; plan time and
+expiry stay outside the digest, so the same inputs always give the same one.
+
 ## 4. polkit actions
 
 Defined in
@@ -140,7 +147,7 @@ class Command:
 ```
 
 `render()` keeps producing the same shell text for review (the digest covers
-that text). The engine runs `argv` lists only. This is the first
+the argv it is rendered from). The engine runs `argv` lists only. This is the first
 implementation step, and it changes no output.
 
 Status: done in `tamarack.ops`. `Command` rejects programs outside a fixed
