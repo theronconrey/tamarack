@@ -10,6 +10,8 @@ tamarack grow --from layout.json --add /dev/sdc=4TB --layout-out next.json
 tamarack replace --from next.json --old /dev/sda --with /dev/sdd=8TB
 tamarack replace --from next.json --old /dev/sdb --with /dev/sdb=4TB --failed
 tamarack plan /dev/sda=4TB /dev/sdb=4TB --id /dev/sda=wwn:0x5000c500a1b2c3d4 --review
+tamarack engine status
+tamarack engine add /dev/disk/by-id/ata-WDC_WD80EFZZ-68BTXN0_XXXX --dry-run
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ import sys
 from collections.abc import Sequence
 from typing import Any
 
-from . import __version__
+from . import __version__, client
 from .commands import render
 from .grow import GrowPlan, plan_add_drive, render_grow
 from .layout import Layout, layout_from_plan
@@ -139,7 +141,8 @@ def format_plan(plan: Plan) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="tamarack", description="Drobo-style mixed-drive storage planner."
+        prog="tamarack",
+        description="Drobo-style mixed-drive storage: plan offline, or drive the engine.",
     )
     parser.add_argument("--version", action="version", version=f"tamarack {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -206,6 +209,7 @@ def build_parser() -> argparse.ArgumentParser:
     replace.add_argument(
         "--layout-out", metavar="FILE", help="write the resulting layout file here"
     )
+    client.add_parser(sub)
     return parser
 
 
@@ -333,6 +337,15 @@ def _main_replace(args: argparse.Namespace) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "engine":
+        try:
+            return client.run(args)
+        except client.ClientError as exc:
+            print(f"tamarack: {exc}", file=sys.stderr)
+            return 1
+        except (KeyboardInterrupt, EOFError):
+            print("\ntamarack: stopped; nothing more was sent to the engine", file=sys.stderr)
+            return 130
     try:
         handler = {"grow": _main_grow, "replace": _main_replace}.get(args.command, _main_plan)
         output = handler(args)

@@ -28,3 +28,11 @@ In particular:
   off (`git commit -s`).
 - If a change can't follow a rule, stop and say so in the pull request instead
   of working around it.
+
+Attribution:
+
+- Commits end with `Co-Authored-By: Claude <noreply@anthropic.com>` and the
+  `Signed-off-by:` line from `git commit -s`.
+- Pull request descriptions end with "Co-authored with Claude, reviewed by
+  Theron."
+- No session links and no "Generated with Claude Code" lines anywhere.
