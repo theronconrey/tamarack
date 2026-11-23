@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .model import Level, Plan, Protection
-from .planner import usable_space
+from .planner import check_identities, usable_space
 from .policy import protection_for
 
 FORMAT_VERSION = 1
@@ -77,6 +77,7 @@ class LayoutLayer:
 class Disk:
     device: str
     size: int
+    identity: str = ""  # wwn:... or serial:..., see tamarack.identity
 
     @property
     def usable(self) -> int:
@@ -121,7 +122,7 @@ class Layout:
         return {
             "format": "tamarack-layout",
             "version": FORMAT_VERSION,
-            "drives": [{"device": d.device, "size": d.size} for d in self.drives],
+            "drives": [_disk_dict(d) for d in self.drives],
             "layers": [
                 {
                     "index": layer.index,
@@ -144,7 +145,10 @@ class Layout:
             raise ValueError("not a tamarack layout file")
         if data.get("version") != FORMAT_VERSION:
             raise ValueError(f"unsupported layout version: {data.get('version')!r}")
-        drives = [Disk(device=str(d["device"]), size=int(d["size"])) for d in data["drives"]]
+        drives = [
+            Disk(device=str(d["device"]), size=int(d["size"]), identity=str(d.get("id", "")))
+            for d in data["drives"]
+        ]
         layers = [
             LayoutLayer(
                 index=int(layer["index"]),
@@ -168,6 +172,10 @@ class Layout:
     def validate(self) -> None:
         if not self.drives:
             raise ValueError("layout has no drives")
+        devices = [d.device for d in self.drives]
+        if len(set(devices)) != len(devices):
+            raise ValueError("layout lists a device twice")
+        check_identities([d.identity for d in self.drives])
         seen: set[tuple[int, int]] = set()
         for layer in self.layers:
             if layer.level is Level.UNUSED:
@@ -185,6 +193,15 @@ class Layout:
                 raise ValueError(f"drive {self.drives[i].device} is over-allocated")
 
 
+def _disk_dict(disk: Disk) -> dict[str, Any]:
+    # "id" is optional within format version 1: files written before drive
+    # identities existed stay valid, and files without identities stay as they were.
+    out: dict[str, Any] = {"device": disk.device, "size": disk.size}
+    if disk.identity:
+        out["id"] = disk.identity
+    return out
+
+
 def layout_from_plan(plan: Plan) -> Layout:
     """The layout ``tamarack plan --commands`` would create."""
     from .commands import partitions  # local import: commands imports model only
@@ -199,5 +216,5 @@ def layout_from_plan(plan: Plan) -> Layout:
         )
         for layer in plan.used_layers
     ]
-    drives = [Disk(device=d.device, size=d.size) for d in plan.drives]
+    drives = [Disk(device=d.device, size=d.size, identity=d.identity) for d in plan.drives]
     return Layout(drives=drives, layers=layers)
