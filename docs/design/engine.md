@@ -2,9 +2,11 @@
 
 # Tamarack storage engine: design
 
-Status: **implemented through step 7 of the order in section 11**, with
-execution off by default until the VM matrix passes. Each section ends with
-a status note saying what was built and what changed from the plan.
+Status: **implemented through step 7 of the order in section 11 and roadmap
+tracks 2 to 4** (health, snapshots, NFS shares), with the VM matrix passing.
+Execution stays off by default until the reboot test passes and the box has
+run on real disks. Each section ends with a status note saying what was
+built and what changed from the plan.
 
 The planners (`plan`, `grow`, `replace`) decide *what* to do and print it.
 The engine is the only part of Tamarack that *does* it: change partitions,
@@ -568,13 +570,23 @@ Added after that:
   come back after a reboot. The client accepts these only when configfs
   shows the disk is a `tk-test-*` fileio backstore on a file in that
   directory.
-- **Mixed sizes.** Create on 2, 2 and 4 GB drives (one single-parity layer,
-  2 GB of the 4 GB drive unused), then add a second 4 GB drive: it widens
-  the parity layer and its other 2 GB pair with the unused space in a new
-  mirror layer, and the data, the layout records and a scrub stay clean.
+- **Mixed sizes.** Create on 1.25, 1.25 and 2.5 GB file-backed drives (one
+  single-parity layer, the top half of the 2.5 GB drive unused), then add a
+  second 2.5 GB drive: it widens the parity layer and its top half pairs
+  with the unused space in a new two-copy layer, and the data, the layout
+  records and a scrub stay clean.
+- **NFS shares.** Two shares exported to 127.0.0.1 and mounted over NFSv4:
+  the owner can write, root on the client is squashed, the read-only share
+  refuses writes, the files land in the pool, and nfsd offers no NFSv3.
+- **PPL cost.** Write speed on a two- and a three-drive layer with md's
+  partial parity log on and off. The VM's drives live in RAM, so the numbers
+  are noise; real disks will tell.
+- **Every layer keeps PPL.** The grow tests end by checking that each layer's
+  consistency policy is `ppl`.
 
-Still to write: a real power cut and reboot, on the file-backed drives
-(RAM drives don't survive one).
+The whole matrix (10 tests) passes with SELinux enforcing (PR #22, Nov 23,
+2026). Still open: a real reboot, in PR #29 ("Opening the pool at boot"
+above), on file-backed drives (RAM drives don't survive one).
 
 ## 11. Implementation order
 
@@ -586,9 +598,23 @@ Still to write: a real power cut and reboot, on the file-backed drives
 | 4 | Engine service on D-Bus with read-only methods and planning | #10 |
 | 5 | polkit checks and `Execute` against the fake runner | #11 |
 | 6 | Real runner, packaging, SELinux module, `tk-meta` records, boot mount | #12, #13, #14, #16, #18 |
-| 7 | tmt VM matrix | #15, #16, #19 (running on Testing Farm) |
+| 7 | tmt VM matrix | #15, #16, #19, #22 (passing on Testing Farm) |
 
-Destructive execution stays off by default until the matrix passes.
+Then the roadmap tracks:
+
+| Track | What | Done in |
+| --- | --- | --- |
+| 1 | Prove the engine safe: VM matrix green, mixed sizes, file-backed drives; reboot test | #22, #25; reboot in #29 |
+| 2 | Health: scrub, SMART, md check, alerts | #24 |
+| 3 | Snapshots: snapper, 24/7/4/6 | #26 |
+| 4 | NFS shares | #27 |
+| — | Opening the pool at boot (`/etc/integritytab`) | #28 |
+| 5 | Cockpit page | next |
+| 6 | bootc image | |
+| 7 | TerraMaster F4-425 Pro bring-up | |
+
+Destructive execution still stays off by default (`/etc/tamarack/engine.conf`)
+until the reboot test passes and the box has run on real disks.
 
 ## 12. Decided defaults
 
@@ -601,19 +627,24 @@ These can be revisited with real use; each is one constant.
 
 ## 13. Open questions
 
-Settled: the VM tests don't depend on Testing Farm's disk options; they make
-RAM-backed `scsi_debug` drives inside the VM (section 10).
+Settled:
+- The VM tests make their own drives inside the VM (`scsi_debug` and
+  LIO file-backed), so they don't depend on Testing Farm's disk options.
+- Mixed sizes are tested on file-backed drives.
+- The SELinux module covers everything the matrix does, enforcing; the
+  denials left in the tests are Fedora's own (listed in `tests/vm/lib.sh`).
+- `tamarack engine` is a working command-line client of the engine.
+- Every one-drive-protection layer is RAID5 with PPL (section 9 notes,
+  README).
 
 Open:
 
-- **Mixed sizes and real power cuts in the VM matrix.** Both need
-  file-backed test drives (`scsi_debug` gives every drive one size, and RAM
-  drives don't survive a reboot).
 - **md array names at boot.** Arrays are created as `/dev/md/tk-lN`; whether
-  udev's incremental assembly brings them back under those names on every
-  host, or `--homehost` needs setting, will show in the reboot test.
-- **SELinux rules.** The module was written without an SELinux machine; the
-  enforcing VM runs will show what it lacks.
-- **Two-drive protection** (5+ drives) in the planners.
-- **The CLI and Cockpit as engine clients.** Today only the VM test client
-  talks to the engine.
+  they come back under those names on every host, or `--homehost` needs
+  setting, will show in the reboot test (#29).
+- **PPL's write cost on real disks.**
+- **Two-drive protection** (5+ drives) in grow.
+- **The Cockpit page** as the main client (track 5).
+- **Late-arriving drives.** If a pool drive appears after boot has opened
+  the integrity mappings, nothing opens its mapping later; the engine could
+  do it on start or on a udev event.

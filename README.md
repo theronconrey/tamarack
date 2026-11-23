@@ -24,7 +24,27 @@ Pre-alpha. Not for drives holding data you care about.
 - **Testing**: unit and D-Bus tests in Fedora CI on every pull request, and
   Packit Copr builds plus a tmt VM matrix ([`plans/`](plans),
   [`tests/vm/`](tests/vm)) that runs on Testing Farm with SELinux
-  enforcing. Execution stays for throwaway VMs until that matrix passes.
+  enforcing. The matrix passes (10 tests: create, grow, mixed sizes, a
+  pulled drive, silent corruption, an interrupted reshape, an online swap,
+  one drive to two, recovery by hand, NFS). Execution stays for throwaway
+  VMs until a reboot test passes and the box has run on real disks.
+
+## Roadmap
+
+Next: a Cockpit page as the everyday client, then a Fedora bootc image and
+bring-up on the TerraMaster F4-425 Pro. After that, roughly in order:
+
+- automatic checks after an unclean or degraded start, with a plain-words
+  list of any damaged files;
+- growing only when every drive is healthy, and finishing an interrupted
+  reshape first;
+- clean shutdown on a UPS, detected automatically;
+- spotting a pulled or failing drive straight away, and replacing a failing
+  drive while it still reads;
+- verified backups built in: btrfs send/receive to a second Tamarack or a USB
+  drive, and restic to a cloud bucket, with a scheduled test restore;
+- later, folder-level replication (for example to an S3 bucket) and growth
+  to five or more drives.
 
 The full design and its status: [docs/design/engine.md](docs/design/engine.md).
 
