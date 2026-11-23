@@ -214,7 +214,15 @@ cleanup() {
     systemctl stop tamarack-engine 2>/dev/null || :
     systemctl disable --now srv-tamarack.mount 2>/dev/null || :
     umount /srv/tamarack /mnt/rescue 2>/dev/null || :
+    # Take the stack down from the top. The VG may not be in the host's LVM
+    # devices file, so remove its dm devices directly as well.
     vgchange -an tamarack 2>/dev/null || :
+    for m in /dev/mapper/tamarack-*; do
+        if [ -e "$m" ]; then dmsetup remove --retry "$(basename "$m")" || :; fi
+    done
+    for md in /dev/md/tk-* /dev/md/rescue* /dev/md12[0-7]; do
+        if [ -e "$md" ]; then mdadm --stop "$md" >/dev/null 2>&1 || :; fi
+    done
     mdadm --stop --scan 2>/dev/null || :
     for m in /dev/mapper/tk-* /dev/mapper/rescue-*; do
         if [ -e "$m" ]; then integritysetup close "$(basename "$m")" || :; fi
@@ -228,6 +236,9 @@ cleanup() {
     udevadm settle
     if lsmod | grep -q '^scsi_debug ' && ! modprobe -r scsi_debug; then
         echo "WARNING: scsi_debug is still in use; the next test may see these drives" >&2
+        dmsetup ls >&2 || :
+        cat /proc/mdstat >&2 || :
+        lsblk -o NAME,TYPE,SIZE,MOUNTPOINTS >&2 || :
     fi
     remove_file_drives
     auditctl -D -k tamarack-md >/dev/null 2>&1 || :
