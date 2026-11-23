@@ -60,9 +60,13 @@ check_avc() {
 }
 
 cleanup() {
-    umount /srv/tamarack 2>/dev/null || :
+    systemctl stop tamarack-engine 2>/dev/null || :
+    systemctl disable --now srv-tamarack.mount 2>/dev/null || :
+    umount /srv/tamarack /mnt/rescue 2>/dev/null || :
     vgchange -an tamarack 2>/dev/null || :
     mdadm --stop --scan 2>/dev/null || :
-    for m in /dev/mapper/tk-*; do [ -e "$m" ] && integritysetup close "$(basename "$m")"; done
+    for m in /dev/mapper/tk-* /dev/mapper/rescue-*; do
+        [ -e "$m" ] && integritysetup close "$(basename "$m")"
+    done
     modprobe -r scsi_debug 2>/dev/null || :
 }
