@@ -35,7 +35,7 @@ diagnostics() {
     echo "=== failed system calls by mdadm ===" >&2
     auditctl -l 2>&1 | grep tamarack-md >&2 || echo "no tamarack-md audit rule loaded" >&2
     ausearch -k tamarack-md -i 2>/dev/null | grep -E 'type=SYSCALL|type=PATH' \
-        | grep -Ev 'exit=ENOENT' | tail -40 >&2 || :
+        | tail -40 >&2 || :
     echo "=== the same mdadm --create, outside the engine's sandbox ===" >&2
     local members
     mapfile -t members < <(ls /dev/mapper/tk-d* 2>/dev/null | head -2)

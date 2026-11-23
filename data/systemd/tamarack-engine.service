@@ -62,7 +62,10 @@ DevicePolicy=closed
 DeviceAllow=block-sd rw
 DeviceAllow=block-blkext rw
 DeviceAllow=block-virtblk rw
-DeviceAllow=block-md rw
+# m: mdadm --create makes the new array's node itself (mknod) when the
+# kernel does not create it on request; without it the device cgroup
+# refuses the mknod and mdadm fails with "unexpected failure opening".
+DeviceAllow=block-md rwm
 DeviceAllow=block-device-mapper rw
 DeviceAllow=/dev/mapper/control rw
 

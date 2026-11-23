@@ -438,6 +438,10 @@ What the first enforcing VM runs taught us:
   modules, so on a freshly installed box `mdadm --create` failed with no md
   personality loaded. The package's `%post` now runs `systemd-modules-load`
   for Tamarack's list.
+- On Fedora 45, writing md_mod's `new_array` fails and `mdadm --create` falls
+  back to making `/dev/mdN` itself with `mknod`. `DevicePolicy=closed` with
+  `DeviceAllow=block-md rw` refused that, so md arrays now get `rwm`; the
+  same create worked from outside the sandbox.
 
 ## 10. Testing on (virtual) disks
 
