@@ -5,3 +5,8 @@
 # mdadm and dm-integrity are the names of the Linux tools Tamarack builds on;
 # the spell checker doesn't know them.
 addFilter(r"spelling-error \('(mdadm|dm)'")
+# Fedora's own SELinux packaging macros (%selinux_relabel_pre and friends)
+# copy and remove files in the policy store; that is their job.
+addFilter(r"tamarack-selinux\.noarch: W: dangerous-command-in-%(pre|post|postun|posttrans) (cp|rm)")
+# A policy module package has nothing to document beyond the engine's docs.
+addFilter(r"tamarack-selinux\.noarch: W: no-documentation")
