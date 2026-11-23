@@ -4,12 +4,12 @@
 
      Tamarack storage engine D-Bus API, version 1 (design draft).
      See docs/design/engine.md. Every method carries the polkit action that
-     authorizes it in the io.github.theronconrey.Tamarack1.PolkitAction
+     authorizes it in the com.borealislogistics.Tamarack1.PolkitAction
      annotation; tests check these match the polkit policy file.
 -->
 <node>
-  <!-- /io/github/theronconrey/Tamarack1 -->
-  <interface name="io.github.theronconrey.Tamarack1.Manager">
+  <!-- /com/borealislogistics/Tamarack1 -->
+  <interface name="com.borealislogistics.Tamarack1.Manager">
     <property name="Version" type="s" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
     </property>
@@ -27,34 +27,34 @@
     <property name="ActiveJob" type="o" access="read"/>
 
     <method name="PlanCreate">
-      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
-                  value="io.github.theronconrey.tamarack.read"/>
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.read"/>
       <arg name="devices" type="as" direction="in"/>
       <arg name="plan" type="o" direction="out"/>
     </method>
     <method name="PlanAdd">
-      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
-                  value="io.github.theronconrey.tamarack.read"/>
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.read"/>
       <arg name="device" type="s" direction="in"/>
       <arg name="plan" type="o" direction="out"/>
     </method>
     <method name="PlanReplace">
-      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
-                  value="io.github.theronconrey.tamarack.read"/>
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.read"/>
       <arg name="old_device" type="s" direction="in"/>
       <arg name="new_device" type="s" direction="in"/>
       <arg name="plan" type="o" direction="out"/>
     </method>
     <method name="PlanRebuild">
-      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
-                  value="io.github.theronconrey.tamarack.read"/>
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.read"/>
       <arg name="failed_device" type="s" direction="in"/>
       <arg name="new_device" type="s" direction="in"/>
       <arg name="plan" type="o" direction="out"/>
     </method>
     <method name="ConfirmBackup">
-      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
-                  value="io.github.theronconrey.tamarack.confirm-backup"/>
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.confirm-backup"/>
     </method>
 
     <signal name="LayoutChanged">
@@ -65,8 +65,8 @@
     </signal>
   </interface>
 
-  <!-- /io/github/theronconrey/Tamarack1/Plans/N -->
-  <interface name="io.github.theronconrey.Tamarack1.Plan">
+  <!-- /com/borealislogistics/Tamarack1/Plans/N -->
+  <interface name="com.borealislogistics.Tamarack1.Plan">
     <!-- "create", "add", "replace" or "rebuild" -->
     <property name="Kind" type="s" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
@@ -96,22 +96,22 @@
 
     <!-- options: "confirm-erase" (as, required), "no-ups" (b) -->
     <method name="Execute">
-      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
-                  value="io.github.theronconrey.tamarack.create
-                         io.github.theronconrey.tamarack.add-drive
-                         io.github.theronconrey.tamarack.replace-drive"/>
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.create
+                         com.borealislogistics.tamarack.add-drive
+                         com.borealislogistics.tamarack.replace-drive"/>
       <arg name="digest" type="s" direction="in"/>
       <arg name="options" type="a{sv}" direction="in"/>
       <arg name="job" type="o" direction="out"/>
     </method>
     <method name="Discard">
-      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
-                  value="io.github.theronconrey.tamarack.read"/>
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.read"/>
     </method>
   </interface>
 
-  <!-- /io/github/theronconrey/Tamarack1/Jobs/N -->
-  <interface name="io.github.theronconrey.Tamarack1.Job">
+  <!-- /com/borealislogistics/Tamarack1/Jobs/N -->
+  <interface name="com.borealislogistics.Tamarack1.Job">
     <property name="Plan" type="o" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
     </property>
@@ -127,13 +127,13 @@
     <property name="Message" type="s" access="read"/>
 
     <method name="Resume">
-      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
-                  value="io.github.theronconrey.tamarack.resume"/>
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.resume"/>
     </method>
     <!-- Only between steps; a reshape always finishes -->
     <method name="Cancel">
-      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
-                  value="io.github.theronconrey.tamarack.cancel"/>
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.cancel"/>
     </method>
 
     <signal name="StepStarted">

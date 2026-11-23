@@ -12,7 +12,7 @@ After=udisks2.service upower.service
 
 [Service]
 Type=dbus
-BusName=io.github.theronconrey.Tamarack1
+BusName=com.borealislogistics.Tamarack1
 ExecStart=/usr/libexec/tamarack-engine
 
 StateDirectory=tamarack

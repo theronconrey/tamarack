@@ -4,7 +4,7 @@
 # D-Bus hands activation to systemd, which starts the sandboxed unit.
 
 [D-BUS Service]
-Name=io.github.theronconrey.Tamarack1
+Name=com.borealislogistics.Tamarack1
 Exec=/bin/false
 User=root
 SystemdService=tamarack-engine.service
