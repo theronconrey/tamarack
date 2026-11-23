@@ -30,6 +30,7 @@ ALLOWED_PROGRAMS = frozenset(
         "pvresize",
         "sgdisk",
         "systemd-mount",
+        "tamarack-meta",
         "vgcreate",
         "vgextend",
     }

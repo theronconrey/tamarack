@@ -32,4 +32,7 @@ systemd-mount --options=compress=zstd:1,noatime /dev/tamarack/data /srv/tamarack
 btrfs subvolume create /srv/tamarack/shares
 btrfs subvolume create /srv/tamarack/snapshots
 
-# 6. Layout metadata to the tk-meta partitions (not implemented yet)
+# 6. Write the layout to every tk-meta partition
+#    Each drive carries the whole layout, so the box can be read from any of them.
+tamarack-meta write '/dev/disk/by-id/ata-WDC odd-part1' '{"drives":[{"device":"/dev/disk/by-id/ata-WDC odd","size":4000000000000},{"device":"/dev/nvme0n1","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid1","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":3999980847104}],"version":1}'
+tamarack-meta write /dev/nvme0n1p1 '{"drives":[{"device":"/dev/disk/by-id/ata-WDC odd","size":4000000000000},{"device":"/dev/nvme0n1","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid1","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":3999980847104}],"version":1}'

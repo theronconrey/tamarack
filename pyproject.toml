@@ -21,6 +21,7 @@ dev = ["tamarack-nas[test]", "ruff", "mypy"]
 tamarack = "tamarack.cli:main"
 # Moved to /usr/libexec by the RPM: started by systemd, not by people.
 tamarack-engine = "tamarack.service:main"
+tamarack-meta = "tamarack.meta:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

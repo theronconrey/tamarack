@@ -29,4 +29,6 @@ systemd-mount --options=compress=zstd:1,noatime /dev/tamarack/data /srv/tamarack
 btrfs subvolume create /srv/tamarack/shares
 btrfs subvolume create /srv/tamarack/snapshots
 
-# 6. Layout metadata to the tk-meta partitions (not implemented yet)
+# 6. Write the layout to every tk-meta partition
+#    Each drive carries the whole layout, so the box can be read from any of them.
+tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid1","members":[{"drive":0,"partition":2},{"drive":0,"partition":3}],"slice_bytes":1999989899264}],"version":1}'

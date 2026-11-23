@@ -23,4 +23,7 @@ mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d2-p2
 mdadm --wait /dev/md/tk-l1
 
 # 5. Write the new layout to every tk-meta partition
-#    Not implemented yet; --layout-out FILE saves it meanwhile.
+#    Each drive carries the whole layout, so the box can be read from any of them.
+tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2}],"slice_bytes":3999980847104}],"version":1}'
+tamarack-meta write /dev/sdb1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2}],"slice_bytes":3999980847104}],"version":1}'
+tamarack-meta write /dev/sdc1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2}],"slice_bytes":3999980847104}],"version":1}'
