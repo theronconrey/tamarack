@@ -24,8 +24,9 @@ Like the other planners, this only produces data and text.
 from __future__ import annotations
 
 from .commands import integrity_device_name, md_device
+from .identity import validate_identity
 from .layout import Disk, Layout
-from .model import Protection
+from .model import PlanKind, Protection
 from .ops import Command, Step, cmd
 from .steps import (
     ChangePlan,
@@ -50,8 +51,12 @@ def plan_replace(
     new_size: int,
     new_device: str,
     failed: bool = False,
+    new_identity: str = "",
 ) -> ChangePlan:
-    """Plan replacing ``old_device`` with ``new_device``. Pure: never touches a disk."""
+    """Plan replacing ``old_device`` with ``new_device``. Pure: never touches a disk.
+
+    ``new_identity`` is the new drive's identity (see ``tamarack.identity``).
+    """
     devices = [d.device for d in layout.drives]
     if old_device not in devices:
         raise ValueError(f"{old_device} is not part of the layout")
@@ -60,6 +65,12 @@ def plan_replace(
     if new_device == old_device and not failed:
         raise ValueError("an upgrade needs the new drive attached alongside the old one")
     index = devices.index(old_device)
+    if new_identity:
+        validate_identity(new_identity)
+        if new_identity == layout.drives[index].identity:
+            raise ValueError(f"{new_device} is the same drive as {old_device}")
+        if new_identity in {d.identity for d in layout.drives}:
+            raise ValueError(f"{new_device} is a drive already in the layout, under another path")
     if failed and layout.protection is Protection.SAME_DRIVE_MIRROR:
         raise ValueError(
             "a single drive cannot be rebuilt after it fails: both copies were on it. "
@@ -74,7 +85,7 @@ def plan_replace(
         )
 
     drives = list(layout.drives)
-    drives[index] = Disk(new_device, new_size)
+    drives[index] = Disk(new_device, new_size, new_identity)
     base = Layout(drives=drives, layers=layout.layers)
     exp = expand(base, index)
 
@@ -119,7 +130,12 @@ def plan_replace(
             "another drive failure in that time loses data. Keep backups current.",
         )
     return ChangePlan(
-        before=layout, after=exp.after, steps=steps, warnings=warnings, erases=new_device
+        kind=PlanKind.REBUILD if failed else PlanKind.REPLACE,
+        before=layout,
+        after=exp.after,
+        steps=steps,
+        warnings=warnings,
+        erases=new_device,
     )
 
 

@@ -25,7 +25,7 @@ from .commands import (
     partition_path,
 )
 from .layout import Layout, LayoutLayer, Member
-from .model import Level, Protection
+from .model import Level, PlanKind, Protection
 from .ops import Command, Step, cmd, render_steps
 from .planner import END_RESERVE, META_PARTITION, START_RESERVE, bucket_tolerance
 from .policy import level_for, protection_for
@@ -41,6 +41,7 @@ class UnsupportedChange(ValueError):
 
 @dataclass
 class ChangePlan:
+    kind: PlanKind
     before: Layout
     after: Layout
     steps: list[Step]
