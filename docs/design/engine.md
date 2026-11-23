@@ -2,14 +2,16 @@
 
 # Tamarack storage engine: design
 
-Status: **proposed** (design review; no code in this change runs commands).
+Status: **implemented through step 7 of the order in section 11**, with
+execution off by default until the VM matrix passes. Each section ends with
+a status note saying what was built and what changed from the plan.
 
 The planners (`plan`, `grow`, `replace`) decide *what* to do and print it.
-The engine is the only part of Tamarack that will ever *do* it: change
-partitions, dm-integrity mappings, md arrays, LVM and Btrfs. This document
-fixes its shape before any of that code exists, following CONTRIBUTING.md:
-written for Fedora, least privilege, SELinux enforcing, nothing destructive
-without polkit authorization and a dry run the user has seen.
+The engine is the only part of Tamarack that *does* it: change partitions,
+dm-integrity mappings, md arrays, LVM and Btrfs. This document fixed its
+shape before that code existed, following CONTRIBUTING.md: written for
+Fedora, least privilege, SELinux enforcing, nothing destructive without
+polkit authorization and a dry run the user has seen.
 
 ## 1. Goals and non-goals
 
@@ -33,8 +35,9 @@ without polkit authorization and a dry run the user has seen.
 | Component | Runs as | Talks to | Notes |
 | --- | --- | --- | --- |
 | `tamarack-engine.service` | root, sandboxed, `tamarack_engine_t` | D-Bus system bus, UDisks2, UPower, block devices | The only privileged part. D-Bus activated. |
-| `tamarack` CLI | the calling user | engine over D-Bus | Planning stays local; execution goes through the engine. |
-| Cockpit plugin | the Cockpit session user | engine over D-Bus | Cockpit handles login, TLS, sessions. |
+| `tamarack-meta` | root, `tamarack_meta_t` | the `tk-meta` partitions | Run by the engine; the only code with raw-disk access. |
+| `tamarack` CLI | the calling user | (later) engine over D-Bus | Plans locally today; executing through the engine is to come. |
+| Cockpit plugin (later) | the Cockpit session user | engine over D-Bus | Cockpit handles login, TLS, sessions. |
 | `tamarack-metrics.service` (later) | `DynamicUser=` | engine over D-Bus (read only) | Prometheus endpoint. |
 | polkit | system | engine asks it | Decides every privileged call. |
 
@@ -178,10 +181,11 @@ boundary.
 At start the engine exports a Job object for every unfinished journal and
 re-attaches, without authorization, to one interrupted `mdadm --wait`.
 
-The service is still started **without a command runner**, so `Execute`
-and `Resume` answer `NotSupported` before polkit is asked. All of the above
-is exercised with the fake runner, on a private bus with fake polkit and
-UDisks2.
+In step 5 the service had no command runner, so `Execute` and `Resume`
+answered `NotSupported` before polkit was asked; all of the above was
+exercised with the fake runner, on a private bus with fake polkit and
+UDisks2. Since step 6 the real runner is given to the engine only when
+`/etc/tamarack/engine.conf` turns execution on (section 8).
 
 `ConfirmBackup()` records "the admin says a current backup exists" with a
 timestamp in `/var/lib/tamarack`. Tamarack can't verify backups; the check
@@ -403,15 +407,17 @@ file-backed drives).
 
 ## 11. Implementation order
 
-1. `Command` with `argv` (section 6), no behaviour change.
-2. Plan digest and drive identities in the planners.
-3. Journal writer and reader, with resume logic, unit-tested against a fake
-   command runner.
-4. Engine service on D-Bus with read-only methods and planning.
-5. polkit checks and `Execute` against the fake runner.
-6. Real runner, systemd unit, modules-load file, SELinux module, packaged in
-   the RPM.
-7. tmt VM matrix. Destructive execution stays disabled until it passes.
+| Step | What | Done in |
+| --- | --- | --- |
+| 1 | `Command` with `argv` (section 6), no behaviour change | #7 |
+| 2 | Plan digest and drive identities in the planners | #8 |
+| 3 | Journal writer and reader, with resume logic, against a fake runner | #9 |
+| 4 | Engine service on D-Bus with read-only methods and planning | #10 |
+| 5 | polkit checks and `Execute` against the fake runner | #11 |
+| 6 | Real runner, packaging, SELinux module, `tk-meta` records, boot mount | #12, #13, #14, #16, #18 |
+| 7 | tmt VM matrix | #15, #16, #19 (running on Testing Farm) |
+
+Destructive execution stays off by default until the matrix passes.
 
 ## 12. Decided defaults
 
@@ -424,5 +430,19 @@ These can be revisited with real use; each is one constant.
 
 ## 13. Open questions
 
-- tmt on Testing Farm with several extra disks per VM: confirm the
-  provisioning options before relying on them.
+Settled: the VM tests don't depend on Testing Farm's disk options; they make
+RAM-backed `scsi_debug` drives inside the VM (section 10).
+
+Open:
+
+- **Mixed sizes and real power cuts in the VM matrix.** Both need
+  file-backed test drives (`scsi_debug` gives every drive one size, and RAM
+  drives don't survive a reboot).
+- **md array names at boot.** Arrays are created as `/dev/md/tk-lN`; whether
+  udev's incremental assembly brings them back under those names on every
+  host, or `--homehost` needs setting, will show in the reboot test.
+- **SELinux rules.** The module was written without an SELinux machine; the
+  enforcing VM runs will show what it lacks.
+- **Two-drive protection** (5+ drives) in the planners.
+- **The CLI and Cockpit as engine clients.** Today only the VM test client
+  talks to the engine.

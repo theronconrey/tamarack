@@ -132,7 +132,8 @@ Least privilege and defence in depth, the Fedora way:
 
 Every PR confirms:
 
-- [ ] Tests, ruff, mypy and (once the spec exists) rpmlint pass
+- [ ] pytest, ruff (lint and format), mypy, rpmlint and `tmt lint` pass
+- [ ] Changes to plans update `tests/golden/` on purpose, and the PR says why
 - [ ] New files have SPDX headers
 - [ ] Uses the Fedora component for the job (section 1), not a home-grown one
 - [ ] No new dependency that isn't packaged in Fedora
