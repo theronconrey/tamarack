@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 tag: [vm]
 duration: 30m
-# Temporary, while the policy is brought up: see start_engine in lib.sh.
-environment:
-    TAMARACK_SHOW_DONTAUDIT: "yes"
 require:
   - kernel-modules-extra  # scsi_debug
   - audit

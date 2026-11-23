@@ -14,8 +14,9 @@ diagnostics() {
     [ "$status" -eq 0 ] && return 0
     echo "=== tamarack-engine journal ===" >&2
     journalctl -b -u tamarack-engine --no-pager -o short-precise 2>&1 | tail -200 >&2
-    echo "=== SELinux denials ===" >&2
-    ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>&1 | tail -50 >&2
+    echo "=== SELinux denials (this boot, transition noise left out) ===" >&2
+    ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>/dev/null \
+        | grep -Ev "$TRANSITION_NOISE" | grep -E 'denied|SELINUX_ERR' | head -100 >&2 || :
     echo "=== engine process context ===" >&2
     ps -eZ | grep -i tamarack >&2 || :
     echo "=== SELinux labels of the programs the engine runs ===" >&2
@@ -26,11 +27,12 @@ diagnostics() {
     ls -Z /usr/libexec/tamarack-meta >&2 || :
     echo "=== kernel: md, device-mapper, integrity ===" >&2
     journalctl -b -k --no-pager -o short-precise 2>&1 \
-        | grep -Ei 'md[0-9:/]|md_mod|raid|device-mapper|integrity' | tail -60 >&2 || :
+        | grep -Ei '\bmd[0-9]*:|md_mod|raid[0-9]|device-mapper|dm-integrity' | tail -60 >&2 || :
     echo "=== md devices ===" >&2
     cat /proc/mdstat >&2 || :
     lsmod | grep -E '^(raid1|raid456|dm_integrity|md_mod) ' >&2 || echo "md/dm modules: none loaded" >&2
     ls -lZ /dev/md* /sys/module/md_mod/parameters/new_array >&2 2>&1 || :
+    sandbox_probe
     return "$status"
 }
 
@@ -123,14 +125,30 @@ remove_file_drives() {
     rm -rf "$FILE_DRIVES"
 }
 
+# Can a new md array be made from inside the engine's sandbox? Compares
+# writing md_mod's new_array from the host and from the engine's mount
+# namespace, and shows how the engine sees /sys and /dev.
+sandbox_probe() {
+    echo "=== engine sandbox probe ===" >&2
+    systemctl start tamarack-engine 2>/dev/null || :
+    local pid new=/sys/module/md_mod/parameters/new_array
+    pid=$(systemctl show -p MainPID --value tamarack-engine)
+    [ "${pid:-0}" != 0 ] || { echo "engine not running" >&2; return 0; }
+    grep -E ' /(sys|dev)( |/(module|mapper|md)?)' "/proc/$pid/mountinfo" | head -20 >&2 || :
+    grep -E '^(Cap(Eff|Bnd)|NoNewPrivs|Seccomp):' "/proc/$pid/status" >&2 || :
+    systemctl show tamarack-engine -p DevicePolicy -p DeviceAllow >&2 || :
+    local out
+    out=$(sh -c "echo md120 > $new" 2>&1) && out="ok $out"
+    echo "host new_array: $out" >&2
+    out=$(nsenter -t "$pid" -m -- sh -c "echo md121 > $new" 2>&1) && out="ok $out"
+    echo "engine namespace new_array: $out" >&2
+    cat /proc/mdstat >&2
+    ls -l /dev/md12[01] >&2 2>&1 || :
+    mdadm --stop /dev/md120 /dev/md121 >/dev/null 2>&1 || :
+}
+
 start_engine() {
     [ "$(getenforce)" = "Enforcing" ] || fail "SELinux must be enforcing"
-    # Test VMs only, while bringing the policy up (main.fmf sets it): log
-    # the denials the policy normally hides (dontaudit), so a failure with
-    # no visible AVC still shows its cause. SELinux stays enforcing, and
-    # cleanup puts the dontaudit rules back. check_avc then also fails on
-    # hidden denials that may be harmless, so judge those by hand.
-    if [ "${TAMARACK_SHOW_DONTAUDIT:-}" = yes ]; then semodule -DB; fi
     install -d -m 0755 /etc/tamarack
     printf '[execution]\nenabled = yes\n' > /etc/tamarack/engine.conf
     # Test VMs only: let root use every Tamarack action without a prompt.
@@ -161,7 +179,7 @@ check_data() {
 }
 
 # siginh, rlimitinh and noatsecure are checked on every domain transition
-# and dontaudit'ed by Fedora's policy; they only show with semodule -DB.
+# and dontaudit'ed by Fedora's policy; they only show if dontaudit is off.
 TRANSITION_NOISE='denied +\{ (siginh|rlimitinh|noatsecure) \}'
 
 check_avc() {
@@ -195,5 +213,4 @@ cleanup() {
         echo "WARNING: scsi_debug is still in use; the next test may see these drives" >&2
     fi
     remove_file_drives
-    semodule -B 2>/dev/null || :
 }
