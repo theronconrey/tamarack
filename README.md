@@ -167,6 +167,18 @@ ruff check . && ruff format --check .
 mypy
 ```
 
+The engine's D-Bus tests need `python3-gobject-base` and `dbus-daemon`
+(`sudo dnf install python3-gobject-base dbus-daemon`); without them they are
+skipped. To poke at the read-only engine by hand on your session bus:
+
+```sh
+python3 -m tamarack.service --session --state-dir /tmp/tamarack-state &
+busctl --user introspect com.borealislogistics.Tamarack1 /com/borealislogistics/Tamarack1
+```
+
+It still looks drives up through UDisks2 on the system bus, and it never runs
+a command.
+
 ## Packaging
 
 Tamarack ships as an RPM built from [`tamarack.spec`](tamarack.spec) under the

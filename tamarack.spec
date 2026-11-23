@@ -16,6 +16,9 @@ BuildArch:      noarch
 BuildRequires:  python3-devel
 # Generates the man page from the argparse definition.
 BuildRequires:  /usr/bin/argparse-manpage
+# %%check runs the engine's D-Bus tests on a private bus.
+BuildRequires:  python3-gobject-base
+BuildRequires:  dbus-daemon
 
 # Runtime tools (mdadm, lvm2, cryptsetup, btrfs-progs, gdisk) are not required
 # yet: this release only plans layouts and prints dry-run commands. They become
