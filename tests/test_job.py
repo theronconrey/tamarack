@@ -351,9 +351,9 @@ def test_journal_path() -> None:
 @pytest.mark.parametrize(
     ("argv", "resume_rule", "probe"),
     [
-        (("sgdisk", "--zap-all", "/dev/sda"), "rerun", ()),
-        (("sgdisk", "-n", "2:0:+10M", "-t", "2:fd00", "-c", "2:tk-l1", "/dev/sda"), "ask", ()),
-        (("sgdisk", "-c", "2:tk-l1", "-c", "3:tk-l2", "/dev/sda"), "rerun", ()),
+        (("parted", "--script", "/dev/sda", "mklabel", "gpt"), "rerun", ()),
+        (("parted", "--script", "/dev/sda", "mkpart", "tk-l1", "17MiB", "27MiB"), "ask", ()),
+        (("parted", "--script", "/dev/sda", "name", "2", "tk-l1"), "rerun", ()),
         (
             ("integritysetup", "open", "--integrity", "crc32c", "/dev/sda2", "tk-d1-p2"),
             "probe",

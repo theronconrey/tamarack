@@ -44,9 +44,8 @@ Requires:       polkit
 Requires:       udisks2
 Requires:       dbus-common
 # The storage tools the engine runs (see tamarack/ops.py, ALLOWED_PROGRAMS).
-Requires:       gdisk
 Requires:       parted
-Requires:       cryptsetup
+Requires:       integritysetup
 Requires:       mdadm
 Requires:       lvm2
 Requires:       device-mapper

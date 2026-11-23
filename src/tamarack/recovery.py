@@ -66,12 +66,12 @@ def rule_for(command: Command) -> Rule:
     program, args = argv[0], argv[1:]
     if command.tolerate_failure:
         return RERUN  # its failure is already accepted
-    if program == "sgdisk":
-        if args[0] == "--zap-all":
+    if program == "parted":
+        if "mklabel" in args:
             return RERUN  # the drive is being erased anyway
-        if "-n" not in args:
-            return RERUN  # only sets partition labels
-        return ASK  # a half-made partition table needs a look
+        if "mkpart" not in args:
+            return RERUN  # only sets partition names
+        return ASK  # a half-made partition needs a look
     if program in ("partprobe", "tamarack-meta"):
         return RERUN  # tamarack-meta rewrites the same record
     if program == "integritysetup":

@@ -88,7 +88,7 @@ def test_every_command_is_an_allowed_argv_without_shell_syntax() -> None:
 def test_device_with_space_stays_one_argument() -> None:
     steps = build_steps(make_plan([4 * TB], ["/dev/x y"]))
     argvs = [c.argv for c in steps[0].commands]
-    assert ("sgdisk", "--zap-all", "/dev/x y") in argvs
+    assert ("parted", "--script", "/dev/x y", "mklabel", "gpt") in argvs
 
 
 def test_only_closing_a_failed_drive_tolerates_failure() -> None:
@@ -114,7 +114,7 @@ def test_command_rejects_bad_argv(argv: tuple[str, ...]) -> None:
 
 
 def test_shell_rendering_quotes_and_marks_tolerated_failures() -> None:
-    assert cmd("sgdisk", "--zap-all", "/dev/x y").shell() == "sgdisk --zap-all '/dev/x y'"
+    assert cmd("parted", "--script", "/dev/x y").shell() == "parted --script '/dev/x y'"
     assert cmd("integritysetup", "close", "tk-d1-p2", tolerate_failure=True).shell() == (
         "integritysetup close tk-d1-p2 || :"
     )

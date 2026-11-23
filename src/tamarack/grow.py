@@ -127,10 +127,10 @@ def _single_to_mirror(layout: Layout, new: Disk) -> ChangePlan:
             (
                 cmd("mdadm", "--zero-superblock", a3),
                 cmd(
-                    "sgdisk",
-                    *("-c", f"{a_first.partition}:tk-l{layer.index}"),
-                    *("-c", f"{a_second.partition}:tk-l{layer.index + 1}"),
-                    a,
+                    "parted",
+                    *("--script", a),
+                    *("name", str(a_first.partition), f"tk-l{layer.index}"),
+                    *("name", str(a_second.partition), f"tk-l{layer.index + 1}"),
                 ),
             ),
         ),

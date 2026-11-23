@@ -7,10 +7,10 @@ set -euo pipefail
 mdadm --detail --test /dev/md/tk-l1
 
 # 2. Partition /dev/sdb
-sgdisk --zap-all /dev/sdb
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdb
-sgdisk -n 2:0:+1907339M -t 2:fd00 -c 2:tk-l1 /dev/sdb
-sgdisk -n 3:0:+1907339M -t 3:fd00 -c 3:tk-l2 /dev/sdb
+parted --script /dev/sdb mklabel gpt
+parted --script /dev/sdb mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdb mkpart tk-l1 17MiB 1907356MiB set 2 raid on
+parted --script /dev/sdb mkpart tk-l2 1907356MiB 3814695MiB set 3 raid on
 partprobe /dev/sdb
 
 # 3. dm-integrity on the new partitions
@@ -28,7 +28,7 @@ mdadm /dev/md/tk-l1 --remove /dev/mapper/tk-d1-p3
 
 # 5. Free the second half of /dev/sda
 mdadm --zero-superblock /dev/mapper/tk-d1-p3
-sgdisk -c 2:tk-l1 -c 3:tk-l2 /dev/sda
+parted --script /dev/sda name 2 tk-l1 name 3 tk-l2
 
 # 6. Mirror the freed halves as a new layer
 mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d1-p3 /dev/mapper/tk-d2-p3

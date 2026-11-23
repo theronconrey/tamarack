@@ -357,6 +357,18 @@ VM matrix, run enforcing, is what will find what is missing.
 `tamarack_dbus_chat` lets a confined client such as a Cockpit page talk to
 the engine.
 
+What the first enforcing VM runs taught us:
+
+- The unit's `NoNewPrivileges=yes` blocks every SELinux domain transition
+  unless the policy grants `nnp_transition`. Without it the engine ran as
+  `init_t`. The module now grants it for systemd starting the engine and for
+  the engine starting each tool.
+- Fedora confines `mdadm` (`mdadm_t`), the LVM tools and `dmsetup`
+  (`lvm_t`), and `parted`, `partprobe`, `mkfs.btrfs` and `blkid` (`fsadm_t`),
+  but not `sgdisk` or `btrfs` (`bin_t`). Partitioning therefore moved from
+  `sgdisk` to `parted`, so the engine never needs raw disk access;
+  `integritysetup` is its own Fedora package and is now required.
+
 ## 10. Testing on (virtual) disks
 
 tmt plans, run by Packit and Fedora CI on Testing Farm VMs with extra

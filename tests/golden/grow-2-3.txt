@@ -7,9 +7,9 @@ set -euo pipefail
 mdadm --detail --test /dev/md/tk-l1
 
 # 2. Partition /dev/sdc
-sgdisk --zap-all /dev/sdc
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdc
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdc
+parted --script /dev/sdc mklabel gpt
+parted --script /dev/sdc mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdc mkpart tk-l1 17MiB 3814696MiB set 2 raid on
 partprobe /dev/sdc
 
 # 3. dm-integrity on the new partitions

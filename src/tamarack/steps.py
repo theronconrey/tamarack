@@ -14,14 +14,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .commands import (
-    LINUX_FS_TYPE,
-    LINUX_RAID_TYPE,
+    FIRST_LAYER_START,
     LV_NAME,
     META_PARTLABEL,
     MOUNT_POINT,
     VG_NAME,
     integrity_device_name,
+    make_partition,
     md_device,
+    new_partition_table,
     partition_path,
 )
 from .layout import Layout, LayoutLayer, Member
@@ -29,7 +30,7 @@ from .model import Level, PlanKind, Protection
 from .ops import Command, Step, cmd, render_steps
 from .planner import END_RESERVE, META_PARTITION, START_RESERVE, bucket_tolerance
 from .policy import level_for, protection_for
-from .units import GiB, MiB, align_down, format_size
+from .units import GiB, align_down, format_size
 
 # (partition number, size in bytes, layer index)
 PartSpec = tuple[int, int, int]
@@ -194,26 +195,19 @@ def health_check(layout: Layout, skip: set[int] | None = None) -> Step:
     )
 
 
-def partition_drive(device: str, parts: list[PartSpec], wipe: bool) -> Step:
+def partition_drive(
+    device: str, parts: list[PartSpec], wipe: bool, start: int = FIRST_LAYER_START
+) -> Step:
+    """Partitions in order from ``start``, right after the drive's existing ones."""
     commands: list[Command] = []
     if wipe:
         commands += [
-            cmd("sgdisk", "--zap-all", device),
-            cmd(
-                "sgdisk",
-                *("-n", "1:0:+16M", "-t", f"1:{LINUX_FS_TYPE}", "-c", f"1:{META_PARTLABEL}"),
-                device,
-            ),
+            new_partition_table(device),
+            make_partition(device, 1, META_PARTLABEL, START_RESERVE, META_PARTITION),
         ]
-    commands += [
-        cmd(
-            "sgdisk",
-            *("-n", f"{n}:0:+{size // MiB}M", "-t", f"{n}:{LINUX_RAID_TYPE}"),
-            *("-c", f"{n}:tk-l{layer}"),
-            device,
-        )
-        for n, size, layer in parts
-    ]
+    for n, size, layer in sorted(parts):
+        commands.append(make_partition(device, n, f"tk-l{layer}", start, size))
+        start += size
     commands.append(cmd("partprobe", device))
     if wipe:
         return Step(f"Partition {device}", tuple(commands))
@@ -298,7 +292,8 @@ def expansion_steps(layout: Layout, exp: Expansion, own_drive: int) -> list[Step
             continue
         parts = exp.partitions_on(d)
         if parts:
-            step = partition_drive(disk.device, parts, wipe=False)
+            start = FIRST_LAYER_START + layout.allocated(d)
+            step = partition_drive(disk.device, parts, wipe=False, start=start)
             integrity = integrity_open(disk.device, d, [n for n, _, _ in parts])
             steps.append(Step(step.title, step.commands + tuple(integrity), step.note))
     steps += [create_layer_step(layer) for layer in exp.created]

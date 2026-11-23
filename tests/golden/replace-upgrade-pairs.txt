@@ -7,10 +7,10 @@ set -euo pipefail
 mdadm --detail --test /dev/md/tk-l1
 
 # 2. Partition /dev/sdf
-sgdisk --zap-all /dev/sdf
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdf
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdf
-sgdisk -n 3:0:+3814697M -t 3:fd00 -c 3:tk-l2 /dev/sdf
+parted --script /dev/sdf mklabel gpt
+parted --script /dev/sdf mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdf mkpart tk-l1 17MiB 3814696MiB set 2 raid on
+parted --script /dev/sdf mkpart tk-l2 3814696MiB 7629393MiB set 3 raid on
 partprobe /dev/sdf
 
 # 3. dm-integrity on the new partitions
@@ -33,7 +33,7 @@ dmsetup rename tk-d2-p2-new tk-d2-p2
 
 # 6. Add partitions in free space on /dev/sde
 #    Existing partitions are untouched.
-sgdisk -n 3:0:+3814697M -t 3:fd00 -c 3:tk-l2 /dev/sde
+parted --script /dev/sde mkpart tk-l2 3814696MiB 7629393MiB set 3 raid on
 partprobe /dev/sde
 integritysetup format --batch-mode --integrity crc32c /dev/sde3
 integritysetup open --integrity crc32c /dev/sde3 tk-d1-p3

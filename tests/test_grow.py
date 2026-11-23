@@ -57,7 +57,7 @@ def test_copy_moves_before_the_old_half_is_freed() -> None:
         first(lines, prefix)
         for prefix in (
             "mdadm --detail --test",
-            "sgdisk --zap-all /dev/sdb",
+            "parted --script /dev/sdb mklabel gpt",
             "mdadm /dev/md/tk-l1 --replace /dev/mapper/tk-d1-p3 --with /dev/mapper/tk-d2-p2",
             "mdadm --wait /dev/md/tk-l1",
             "mdadm --zero-superblock /dev/mapper/tk-d1-p3",
@@ -143,14 +143,16 @@ def test_waiting_slice_pairs_with_the_new_drive() -> None:
     assert plan.after.layers[1].drive_indexes == {2, 3}
     assert plan.usable_after == pytest.approx(fresh(4, 4, 8, 8).usable_nominal, rel=1e-6)
     lines = render_grow(plan)
-    assert first(lines, "sgdisk -n 3:0") < first(lines, "mdadm --create /dev/md/tk-l2")
+    assert first(lines, "parted --script /dev/sdc mkpart") < first(
+        lines, "mdadm --create /dev/md/tk-l2"
+    )
 
 
 def test_existing_drives_are_never_erased() -> None:
     for plan in (add(fresh(4), 4), add(fresh(4, 4), 4), add(fresh(4, 4, 8), 8)):
         for line in render_grow(plan):
-            if line.startswith("sgdisk --zap-all"):
-                assert line.endswith(plan.erases)
+            if line.startswith("parted") and "mklabel" in line:
+                assert line.split()[2] == plan.erases
 
 
 def test_small_new_drive_joins_only_what_fits() -> None:

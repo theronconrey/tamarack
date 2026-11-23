@@ -3,23 +3,23 @@
 set -euo pipefail
 
 # 1. Partition each drive
-sgdisk --zap-all /dev/sda
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sda
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sda
+parted --script /dev/sda mklabel gpt
+parted --script /dev/sda mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sda mkpart tk-l1 17MiB 3814696MiB set 2 raid on
 partprobe /dev/sda
-sgdisk --zap-all /dev/sdb
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdb
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdb
+parted --script /dev/sdb mklabel gpt
+parted --script /dev/sdb mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdb mkpart tk-l1 17MiB 3814696MiB set 2 raid on
 partprobe /dev/sdb
-sgdisk --zap-all /dev/sdc
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdc
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdc
-sgdisk -n 3:0:+3814697M -t 3:fd00 -c 3:tk-l2 /dev/sdc
+parted --script /dev/sdc mklabel gpt
+parted --script /dev/sdc mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdc mkpart tk-l1 17MiB 3814696MiB set 2 raid on
+parted --script /dev/sdc mkpart tk-l2 3814696MiB 7629393MiB set 3 raid on
 partprobe /dev/sdc
-sgdisk --zap-all /dev/sdd
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdd
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdd
-sgdisk -n 3:0:+3814697M -t 3:fd00 -c 3:tk-l2 /dev/sdd
+parted --script /dev/sdd mklabel gpt
+parted --script /dev/sdd mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdd mkpart tk-l1 17MiB 3814696MiB set 2 raid on
+parted --script /dev/sdd mkpart tk-l2 3814696MiB 7629393MiB set 3 raid on
 partprobe /dev/sdd
 
 # 2. dm-integrity on every layer partition (journal mode is integritysetup's default; bitmap mode stays off)

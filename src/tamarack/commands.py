@@ -12,6 +12,7 @@ from dataclasses import dataclass
 
 from .model import Layer, Level, Plan
 from .ops import Command, Step, cmd, render_steps
+from .planner import META_PARTITION, START_RESERVE
 from .units import MiB
 
 VG_NAME = "tamarack"
@@ -21,8 +22,6 @@ MOUNT_OPTIONS = "compress=zstd:1,noatime"
 MOUNT_UNIT = "srv-tamarack.mount"  # data/systemd/srv-tamarack.mount
 FS_LABEL = "tamarack"
 META_PARTLABEL = "tk-meta"
-LINUX_RAID_TYPE = "fd00"
-LINUX_FS_TYPE = "8300"
 
 
 @dataclass(frozen=True)
@@ -87,28 +86,35 @@ def md_path(layer: Layer) -> str:
     return md_device(layer.index)
 
 
+# Partitioning uses parted, which Fedora's SELinux policy runs confined in
+# fsadm_t; the engine itself never gets raw access to disks.
+FIRST_LAYER_START = START_RESERVE + META_PARTITION  # bytes from the start of a drive
+
+
+def new_partition_table(device: str) -> Command:
+    """A fresh, empty GPT, replacing whatever the drive held."""
+    return cmd("parted", "--script", device, "mklabel", "gpt")
+
+
+def make_partition(device: str, number: int, label: str, start: int, size: int) -> Command:
+    """Partition ``number`` from ``start`` for ``size`` bytes (both MiB-aligned)."""
+    actions = ["mkpart", label, f"{start // MiB}MiB", f"{(start + size) // MiB}MiB"]
+    if label != META_PARTLABEL:
+        actions += ["set", str(number), "raid", "on"]
+    return cmd("parted", "--script", device, *actions)
+
+
 def build_steps(plan: Plan) -> list[Step]:
     """The steps, as structured commands, that would build the plan."""
     parts = partitions(plan)
     partition: list[Command] = []
     for i, drive in enumerate(plan.drives):
         dev = drive.device
-        partition.append(cmd("sgdisk", "--zap-all", dev))
-        for part in (p for p in parts if p.drive == i):
-            code = LINUX_FS_TYPE if part.layer == 0 else LINUX_RAID_TYPE
-            n = part.number
-            partition.append(
-                cmd(
-                    "sgdisk",
-                    "-n",
-                    f"{n}:0:+{part.size // MiB}M",
-                    "-t",
-                    f"{n}:{code}",
-                    "-c",
-                    f"{n}:{part.label}",
-                    dev,
-                )
-            )
+        partition.append(new_partition_table(dev))
+        start = START_RESERVE
+        for part in sorted((p for p in parts if p.drive == i), key=lambda p: p.number):
+            partition.append(make_partition(dev, part.number, part.label, start, part.size))
+            start += part.size
         partition.append(cmd("partprobe", dev))
 
     integrity: list[Command] = []

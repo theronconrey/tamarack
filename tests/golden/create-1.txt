@@ -3,10 +3,10 @@
 set -euo pipefail
 
 # 1. Partition each drive
-sgdisk --zap-all /dev/sda
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sda
-sgdisk -n 2:0:+1907339M -t 2:fd00 -c 2:tk-l1a /dev/sda
-sgdisk -n 3:0:+1907339M -t 3:fd00 -c 3:tk-l1b /dev/sda
+parted --script /dev/sda mklabel gpt
+parted --script /dev/sda mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sda mkpart tk-l1a 17MiB 1907356MiB set 2 raid on
+parted --script /dev/sda mkpart tk-l1b 1907356MiB 3814695MiB set 3 raid on
 partprobe /dev/sda
 
 # 2. dm-integrity on every layer partition (journal mode is integritysetup's default; bitmap mode stays off)

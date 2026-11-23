@@ -8,9 +8,9 @@ mdadm /dev/md/tk-l1 --remove detached
 integritysetup close tk-d2-p2 || :
 
 # 2. Partition /dev/sdb
-sgdisk --zap-all /dev/sdb
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdb
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdb
+parted --script /dev/sdb mklabel gpt
+parted --script /dev/sdb mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdb mkpart tk-l1 17MiB 3814696MiB set 2 raid on
 partprobe /dev/sdb
 
 # 3. dm-integrity on the new partitions
