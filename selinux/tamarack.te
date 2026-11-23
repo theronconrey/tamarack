@@ -61,6 +61,10 @@ files_read_etc_files(tamarack_engine_t)
 corecmd_exec_bin(tamarack_engine_t)
 files_read_usr_files(tamarack_engine_t)
 miscfiles_read_localization(tamarack_engine_t)
+# GLib looks up root's home directory and the system certificate paths at
+# start; harmless reads.
+auth_read_passwd(tamarack_engine_t)
+miscfiles_read_generic_certs(tamarack_engine_t)
 
 # /proc and sysfs: md degraded counts behind /dev/md/tk-lN.
 kernel_read_system_state(tamarack_engine_t)
