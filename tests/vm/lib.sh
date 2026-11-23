@@ -24,6 +24,12 @@ diagnostics() {
         ls -LZ "$(command -v "$p")" 2>&1 >&2 || echo "$p: not found" >&2
     done
     ls -Z /usr/libexec/tamarack-meta >&2 || :
+    echo "=== kernel: md, device-mapper, integrity ===" >&2
+    journalctl -b -k --no-pager -o short-precise 2>&1 \
+        | grep -Ei 'md[0-9:/]|md_mod|raid|device-mapper|integrity' | tail -60 >&2 || :
+    echo "=== md devices ===" >&2
+    cat /proc/mdstat >&2 || :
+    ls -lZ /dev/md* /sys/module/md_mod/parameters/new_array >&2 2>&1 || :
     return "$status"
 }
 
@@ -118,6 +124,12 @@ remove_file_drives() {
 
 start_engine() {
     [ "$(getenforce)" = "Enforcing" ] || fail "SELinux must be enforcing"
+    # Test VMs only, while bringing the policy up (main.fmf sets it): log
+    # the denials the policy normally hides (dontaudit), so a failure with
+    # no visible AVC still shows its cause. SELinux stays enforcing, and
+    # cleanup puts the dontaudit rules back. check_avc then also fails on
+    # hidden denials that may be harmless, so judge those by hand.
+    if [ "${TAMARACK_SHOW_DONTAUDIT:-}" = yes ]; then semodule -DB; fi
     install -d -m 0755 /etc/tamarack
     printf '[execution]\nenabled = yes\n' > /etc/tamarack/engine.conf
     # Test VMs only: let root use every Tamarack action without a prompt.
@@ -175,4 +187,5 @@ cleanup() {
         echo "WARNING: scsi_debug is still in use; the next test may see these drives" >&2
     fi
     remove_file_drives
+    semodule -B 2>/dev/null || :
 }
