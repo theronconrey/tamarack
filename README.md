@@ -21,17 +21,19 @@ Pre-alpha. Not for drives holding data you care about.
   degraded arrays, UPS, recent backup), and runs approved plans step by step
   with a power-cut-safe journal. **Execution is off** unless
   `/etc/tamarack/engine.conf` turns it on (see [Packaging](#packaging)).
-- **Testing**: unit and D-Bus tests in Fedora CI on every pull request; a
-  tmt VM matrix ([`plans/`](plans), [`tests/vm/`](tests/vm)) that runs with
-  SELinux enforcing on Testing Farm once the Packit app is installed.
-  Execution stays for throwaway VMs until that matrix passes.
+- **Testing**: unit and D-Bus tests in Fedora CI on every pull request, and
+  Packit Copr builds plus a tmt VM matrix ([`plans/`](plans),
+  [`tests/vm/`](tests/vm)) that runs on Testing Farm with SELinux
+  enforcing. Execution stays for throwaway VMs until that matrix passes.
 
 The full design and its status: [docs/design/engine.md](docs/design/engine.md).
 
 ## Try it
 
+From a checkout, without installing anything:
+
 ```sh
-# On Fedora: sudo dnf install python3-pytest python3-mypy ruff
+alias tamarack='PYTHONPATH=src python3 -m tamarack'
 tamarack plan 4TB 4TB 8TB 8TB
 tamarack plan /dev/sda=4TB /dev/sdb=8TB --json
 tamarack plan /dev/sda=4TB /dev/sdb=4TB /dev/sdc=8TB /dev/sdd=8TB --commands   # dry run
@@ -111,20 +113,19 @@ Paths like `/dev/sdb` can point at a different drive after a reboot, so plans
 can record each drive's identity: `wwn:` plus its World Wide Name, or
 `serial:` plus its serial number. The engine will read these from UDisks2; on
 the command line, give them with `--id` for listed drives and `--new-id` for
-the drive being added or swapped in. Layout files keep them.
+the drive being added or swapped in. Layout files keep them. The engine reads
+them from UDisks2 and checks them again before every step.
 
 `--review` prints the plan exactly as it will be approved: every drive and its
 role (`erase`, `keep`, `leave`, `failed`), every command as an argument list,
-and the warnings, with a SHA-256 digest over all of it. The engine will only
-run a plan whose digest matches the one that was reviewed.
+and the warnings, with a SHA-256 digest over all of it. The engine only runs
+a plan whose digest matches the one that was reviewed.
 
 ```sh
 tamarack replace /dev/sda=4TB /dev/sdb=4TB /dev/sdc=4TB \
   --id /dev/sdb=wwn:0x5000c500a1b2c3d4 \
   --old /dev/sdb --with /dev/sdb=4TB --failed --new-id serial:ZL2ABC --review
 ```
-
-Without installing: `PYTHONPATH=src python3 -m tamarack plan 4TB 8TB`.
 
 ## How the layout is chosen
 
@@ -161,13 +162,36 @@ Per layer, under the hood:
 
 Everything on disk is standard mdadm, LVM and Btrfs. If this software
 disappears, any Linux system can open the drives with `integritysetup open`,
-`mdadm --assemble --scan`, `vgchange -ay` and `mount`.
+`mdadm --assemble --scan`, `vgchange -ay` and `mount`. The steps are in
+[docs/recovery.md](docs/recovery.md), and a VM test does exactly that on every
+pull request.
 
-## Design
+## The engine
 
-The storage engine (the part that will change disks) is designed in
-[docs/design/engine.md](docs/design/engine.md), with draft D-Bus, polkit and
-systemd files under [`data/`](data/).
+The engine is the part that changes disks: a system service,
+`tamarack-engine.service`, on the D-Bus system bus as
+`com.borealislogistics.Tamarack1`. A client (a Cockpit page, later the CLI)
+works with it in four steps:
+
+1. **Plan.** `PlanCreate`, `PlanAdd`, `PlanReplace` or `PlanRebuild` returns
+   a Plan object with its steps, warnings, the drives it erases and a digest.
+2. **Review.** The person reads the plan and types the drives to be erased.
+3. **Execute.** `Plan.Execute(digest, {"confirm-erase": [...]})`. polkit asks
+   for the admin password, then the engine checks again that nothing changed:
+   the drives, degraded arrays, battery, UPS, a backup confirmed in the last
+   7 days. Then it runs the plan as a Job.
+4. **Follow.** The Job reports each step. After a power cut it picks up where
+   its journal says it stopped, and anything it can't verify waits for a
+   person.
+
+Every drive also carries the layout on its `tk-meta` partition; the engine
+reads it back on start and refuses to plan if the drives disagree.
+
+The design, with the reasoning and the status of each part:
+[docs/design/engine.md](docs/design/engine.md). The interface:
+[`src/tamarack/com.borealislogistics.Tamarack1.xml`](src/tamarack/com.borealislogistics.Tamarack1.xml).
+Unit, bus and polkit policy: [`data/`](data/). SELinux policy:
+[`selinux/`](selinux/).
 
 ## Develop
 
@@ -176,32 +200,38 @@ All contributions follow Fedora best practices; see
 
 
 ```sh
+sudo dnf install python3-pytest python3-mypy ruff tmt python3-gobject-base dbus-daemon
 python3 -m pytest
 ruff check . && ruff format --check .
 mypy
+tmt lint
 ```
 
-The engine's D-Bus tests need `python3-gobject-base` and `dbus-daemon`
-(`sudo dnf install python3-gobject-base dbus-daemon`); without them they are
-skipped. To poke at the read-only engine by hand on your session bus:
+Without `python3-gobject-base` and `dbus-daemon` the engine's D-Bus tests
+are skipped; CI requires them. The VM matrix runs on Testing Farm through
+Packit; `tmt run` runs it locally in a VM it provisions. To poke at the
+engine by hand on your session bus:
 
 ```sh
 python3 -m tamarack.service --session --state-dir /tmp/tamarack-state &
 busctl --user introspect com.borealislogistics.Tamarack1 /com/borealislogistics/Tamarack1
 ```
 
-It still looks drives up through UDisks2 on the system bus, and it never runs
-a command.
+On the session bus it only plans: execution is never enabled there, and
+polkit isn't consulted, so only reading is allowed. It still looks drives up
+through UDisks2 on the system bus.
 
 ## Packaging
 
 Tamarack ships as an RPM built from [`tamarack.spec`](tamarack.spec) under the
-Fedora Python Packaging Guidelines. Every push and pull request is tested in a
-Fedora container: code checks, RPM build, rpmlint, and an install of the built
-package. Packit Copr builds for every supported Fedora release are configured
-in [`.packit.yaml`](.packit.yaml).
+Fedora Python Packaging Guidelines. Every pull request is tested in Fedora
+containers (latest and rawhide): code checks, RPM build, rpmlint, and an
+install of the built packages with `systemd-analyze verify` and the SELinux
+module loaded. Packit ([`.packit.yaml`](.packit.yaml)) builds every pull
+request in Copr for every supported Fedora release and runs the VM matrix on
+the result.
 
-Two packages come out of it:
+Three packages come out of it:
 
 - `tamarack`: the planner and the `tamarack` command. Needs nothing but Python.
 - `tamarack-engine`: the sandboxed system service, its D-Bus and polkit
@@ -214,6 +244,8 @@ Two packages come out of it:
   ```
 
   Until the VM test matrix passes, only turn that on in a throwaway VM.
+- `tamarack-selinux`: the engine's SELinux policy module, pulled in by
+  `tamarack-engine` wherever the targeted policy is installed.
 
 ## License
 

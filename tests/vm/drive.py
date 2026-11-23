@@ -7,6 +7,8 @@ so it cannot erase a real drive even if run on the wrong machine.
     drive.py create DEV...      drive.py add DEV
     drive.py replace OLD NEW    drive.py rebuild FAILED NEW
     drive.py confirm-backup     drive.py tolerated     drive.py degraded
+    drive.py start-add DEV      drive.py wait-for JOB STATE
+    drive.py resume JOB         drive.py state JOB
 """
 
 from __future__ import annotations
@@ -48,7 +50,7 @@ def only_fake(device: str) -> None:
             sys.exit(f"drive.py: {device} is not a scsi_debug test drive; refusing")
 
 
-def run(method: str, signature: str, *args: Any) -> None:
+def run(method: str, signature: str, *args: Any, wait: bool = True) -> str:
     (plan,) = call(ROOT, MANAGER, method, GLib.Variant(signature, args))
     erases = get(plan, PLAN, "Erases")
     for device in erases:
@@ -57,6 +59,13 @@ def run(method: str, signature: str, *args: Any) -> None:
     print(f"{method}: plan {plan}, erasing {' '.join(erases)}")
     options = {"confirm-erase": GLib.Variant("as", erases), "no-ups": GLib.Variant("b", True)}
     (job,) = call(plan, PLAN, "Execute", GLib.Variant("(sa{sv})", (digest, options)))
+    if wait:
+        follow(job)
+    return str(job)
+
+
+def follow(job: str, until: tuple[str, ...] = ("completed",)) -> None:
+    """Print progress until the job stops; exit unless it ends in ``until``."""
     deadline = time.monotonic() + JOB_TIMEOUT
     last = None
     while True:
@@ -64,12 +73,12 @@ def run(method: str, signature: str, *args: Any) -> None:
         if (state, step) != last:
             print(f"  {state}: step {step}, {title}")
             last = (state, step)
-        if state in ("completed", "failed", "cancelled", "paused"):
+        if state in ("completed", "failed", "cancelled", "paused", *until):
             break
         if time.monotonic() > deadline:
             sys.exit(f"drive.py: job {job} timed out")
         time.sleep(1)
-    if state != "completed":
+    if state not in until:
         sys.exit(f"drive.py: job {job} {state}: {get(job, JOB, 'Message')}")
 
 
@@ -79,6 +88,15 @@ def main(argv: list[str]) -> None:
         run("PlanCreate", "(as)", args)
     elif command == "add":
         run("PlanAdd", "(s)", *args)
+    elif command == "start-add":  # print the job and return at once
+        print(run("PlanAdd", "(s)", *args, wait=False))
+    elif command == "wait-for":  # JOB STATE: until the job reaches STATE
+        follow(args[0], until=(args[1],))
+    elif command == "resume":
+        call(args[0], JOB, "Resume", GLib.Variant("(a{sv})", ({},)))
+        follow(args[0])
+    elif command == "state":
+        print(get(args[0], JOB, "State"))
     elif command == "replace":
         run("PlanReplace", "(ss)", *args)
     elif command == "rebuild":

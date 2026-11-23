@@ -21,3 +21,15 @@ require:
 /failed:
     summary: Rebuild after a drive disappears
     test: ./failed.sh
+
+/corruption:
+    summary: Silent corruption is caught and repaired
+    test: ./corruption.sh
+
+/interrupt:
+    summary: Engine killed mid-reshape, then resumed
+    test: ./interrupt.sh
+
+/recover-by-hand:
+    summary: Stock tools alone bring the volume back
+    test: ./recover-by-hand.sh
