@@ -23,7 +23,8 @@ tamarack engine share list | tee /var/tmp/tamarack-shares
 grep -q "sec=sys trusts the user IDs" /var/tmp/tamarack-shares || fail "security notes missing"
 grep -q "^/srv/tamarack/shares/media 127.0.0.1/32(rw," /etc/exports.d/tamarack.exports \
     || fail "media not in the exports file"
-rpcinfo -p 2>/dev/null | grep -qw mountd && fail "mountd is listening: NFSv3 should be off"
+mountd=$(rpcinfo -p 2>/dev/null | grep -cw mountd) || :
+[ "${mountd:-0}" -eq 0 ] || fail "mountd is listening: NFSv3 should be off"
 
 mkdir -p /mnt/tamarack-nfs /mnt/tamarack-ro
 mount -t nfs4 127.0.0.1:/srv/tamarack/shares/media /mnt/tamarack-nfs

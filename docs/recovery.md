@@ -50,3 +50,10 @@ JSON.
 ```sh
 sudo head -c 4096 /dev/sdX1 | head -2
 ```
+
+## Which kernel to recover with
+
+Arrays made by recent kernels record their logical block size, and the kernel
+warns that they "will not be assembled in old kernels" (6.18 and older). Use
+a rescue system with a kernel at least as new as the box's: a current Fedora
+live image works.

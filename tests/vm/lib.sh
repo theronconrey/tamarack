@@ -185,7 +185,9 @@ start_engine() {
     systemctl restart tamarack-engine
     START=$(date '+%m/%d/%Y %H:%M:%S')  # ausearch's format
     JOURNAL_START=$(date '+%Y-%m-%d %H:%M:%S')  # journalctl's
-    ps -eo label,comm | grep -q '^system_u:system_r:tamarack_engine_t:s0 *tamarack-engine' \
+    local domain
+    domain=$(ps -eo label,comm | grep -c '^system_u:system_r:tamarack_engine_t:s0 *tamarack-engine') || :
+    [ "${domain:-0}" -gt 0 ] \
         || fail "the engine is not running in its SELinux domain (tamarack_engine_t)"
 }
 
