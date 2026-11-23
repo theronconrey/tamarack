@@ -19,6 +19,7 @@ execute anything.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import tempfile
@@ -37,6 +38,7 @@ from .job import Observer, Report, Resolution, Runner, resume, start
 from .job import cancel as cancel_journal
 from .journal import JobState, JournalError, journal_path, load
 from .layout import Disk, Layout, layout_from_plan
+from .meta import compact
 from .model import Plan, PlanKind
 from .planner import make_plan
 from .replace import RETIRE_TITLE, plan_replace
@@ -44,6 +46,7 @@ from .review import LEAVE, digest, document, expected_drives
 from .steps import ChangePlan
 
 T = TypeVar("T")
+log = logging.getLogger("tamarack-engine")
 
 ERROR_PREFIX = "com.borealislogistics.Tamarack1.Error"
 PLAN_LIFETIME = 30 * 60  # seconds a plan stays executable after it is made
@@ -177,6 +180,18 @@ class DriveSource(Protocol):
         ...
 
 
+class MetaSource(Protocol):
+    """The layout records on the drives' tk-meta partitions (read only)."""
+
+    def partitions(self) -> list[str]:
+        """Every partition labelled tk-meta that is present now."""
+        ...
+
+    def read(self, device: str) -> str:
+        """The layout JSON on ``device``; raises OSError or ValueError if unreadable."""
+        ...
+
+
 @dataclass(frozen=True)
 class ExecuteOptions:
     confirm_erase: list[str]
@@ -288,6 +303,7 @@ class Engine:
         root: str = "/",
         runner: Runner | None = None,
         ups_present: Callable[[], bool] = lambda: False,
+        meta: MetaSource | None = None,
     ) -> None:
         self.state_dir = state_dir
         self.drives = drives
@@ -299,6 +315,7 @@ class Engine:
         self._layout: Layout | None = None
         self._layout_error = ""
         self.runner = runner
+        self.meta = meta
         self._ups_present = ups_present
         self._running: str | None = None  # job id of the job on a worker thread
         self._session_jobs: set[str] = set()  # jobs run since start, kept visible
@@ -309,7 +326,12 @@ class Engine:
     # --- state ---------------------------------------------------------------
 
     def reload(self) -> None:
-        """Read the layout file again. An unreadable file blocks all planning."""
+        """Read the layout again: the state file, checked against the drives.
+
+        An unreadable file, drives that disagree with each other or with the
+        file, or tk-meta partitions none of which can be read all block
+        planning: the engine must never mistake a pool for empty drives.
+        """
         path = os.path.join(self.state_dir, LAYOUT_FILE)
         self._layout, self._layout_error = None, ""
         try:
@@ -319,6 +341,48 @@ class Engine:
             pass
         except (OSError, ValueError, KeyError, TypeError) as exc:
             self._layout_error = f"{path} cannot be used: {exc}"
+            return
+        if self.meta is not None and not self.unfinished_jobs():
+            self._check_drives(path)
+
+    def _check_drives(self, path: str) -> None:
+        """Compare the layout records on the drives with the state file."""
+        assert self.meta is not None
+        try:
+            partitions = self.meta.partitions()
+        except EngineError as exc:
+            self._layout_error = f"the drives' layout records cannot be listed: {exc}"
+            return
+        records: dict[str, list[str]] = {}  # canonical layout -> partitions holding it
+        damaged = []
+        for partition in partitions:
+            try:
+                text = compact(Layout.from_json(self.meta.read(partition)))
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                log.warning("layout record on %s cannot be read: %s", partition, exc)
+                damaged.append(partition)
+                continue
+            records.setdefault(text, []).append(partition)
+        if not partitions:
+            return  # no Tamarack drives: a fresh box, or one built before tk-meta records
+        if len(records) > 1:
+            groups = "; ".join(", ".join(p) for p in records.values())
+            self._layout_error = f"the drives disagree about the layout ({groups})"
+            return
+        if not records:
+            self._layout_error = (
+                f"tk-meta partitions found ({', '.join(damaged)}) but none can be read"
+            )
+            return
+        ((text, holders),) = records.items()
+        on_drives = Layout.from_json(text)
+        if self._layout is None:
+            log.info("layout taken from the drives (%s)", ", ".join(holders))
+            write_atomically(path, on_drives.to_json() + "\n")
+            self._layout = on_drives
+        elif compact(self._layout) != text:
+            self._layout_error = f"{path} differs from the layout recorded on the drives"
+            self._layout = None
 
     @property
     def version(self) -> str:
