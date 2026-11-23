@@ -80,3 +80,13 @@ def test_tamarack_helpers_resolve_only_in_libexec(tmp_path: Path) -> None:
     assert LIBEXEC == {"tamarack-meta": "/usr/libexec"}
     with pytest.raises(UnsafeProgram, match="not installed in /usr/libexec"):
         resolve("tamarack-meta")
+
+
+def test_read_meta_refuses_bad_paths_and_missing_helper() -> None:
+    from tamarack.engine import InvalidArgument
+    from tamarack.runner import read_meta
+
+    with pytest.raises(UnsafeProgram):
+        read_meta("/dev/sda1")  # not installed here
+    with pytest.raises((InvalidArgument, UnsafeProgram)):
+        read_meta("/etc/passwd")

@@ -320,8 +320,16 @@ ships, and every remaining exposure is either fixed or explained.
   as a layout. It runs in its own SELinux domain, `tamarack_meta_t`, which
   is the only Tamarack code with raw-disk access.
 
-Still to do: the engine does not yet read the `tk-meta` records back (it
-reads `/var/lib/tamarack/layout.json`). `systemd-analyze security` rates the unit 2.6
+- **The engine reads the records back.** At start and after every job it
+  lists the `tk-meta` partitions through UDisks2 and reads each with
+  `tamarack-meta read`, the one command it runs even with execution off
+  (read-only, in `tamarack_meta_t`). With no state file it adopts the
+  drives' layout and saves it. Planning is refused (`LayoutUnreadable`)
+  when the drives disagree with each other or with the state file, or
+  when `tk-meta` partitions exist and none can be read, so a pool is never
+  mistaken for empty drives. One damaged record among good ones is logged
+  and ignored. The cross-check is skipped while a job is unfinished,
+  since records may be mid-update and planning is refused anyway. `systemd-analyze security` rates the unit 2.6
 ("OK"); the remaining exposures are the ones a storage service needs: root,
 raw block devices, `CAP_SYS_ADMIN`, writable md sysfs.
 

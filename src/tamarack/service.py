@@ -548,7 +548,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     from gi.repository import Gio, GLib
 
     from .runner import CONFIG_FILE, SubprocessRunner, execution_enabled
-    from .udisks import UDisksDrives
+    from .udisks import DriveRecords, UDisksDrives
 
     system = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None) if args.session else system
@@ -557,12 +557,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     if execution_enabled() and not args.session:
         runner = SubprocessRunner()
         log.warning("execution is enabled in %s: approved plans will change disks", CONFIG_FILE)
+    drives = UDisksDrives(system)
     engine = Engine(
         args.state_dir,
-        UDisksDrives(system),
+        drives,
         on_battery=on_battery,
         ups_present=ups_present,
         runner=runner,
+        meta=DriveRecords(drives),
     )
     authority: Authority = ReadOnlyAuthority() if args.session else PolkitAuthority(system)
     service = Service(engine, bus, authority)

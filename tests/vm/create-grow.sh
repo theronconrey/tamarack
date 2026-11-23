@@ -22,4 +22,11 @@ for d1 in "${d[@]}"; do
     /usr/libexec/tamarack-meta read "${d1}1" >/dev/null || fail "no layout on ${d1}1"
 done
 btrfs scrub start -B /srv/tamarack || fail "scrub found errors"
+
+# Lose the engine's state: it must read the layout back from the drives.
+systemctl stop tamarack-engine
+rm -f /var/lib/tamarack/layout.json
+systemctl start tamarack-engine
+[ "$(drive tolerated)" = 1 ] || fail "layout not recovered from the drives"
+[ -s /var/lib/tamarack/layout.json ] || fail "recovered layout not saved"
 check_avc
