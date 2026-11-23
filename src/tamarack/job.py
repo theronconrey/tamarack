@@ -205,6 +205,15 @@ class _Job:
             result = self.runner.run(command.argv)
         except OSError as exc:
             result = Result(127, str(exc))
+        if result.exit < 0:
+            # Killed by a signal: the engine is being stopped, not the command
+            # failing. Leave it in doubt, as after a power cut, so the next
+            # start re-attaches to it (an mdadm --wait) or Resume settles it.
+            return self.pause(
+                f"step {step} was interrupted: {command.shell()} was stopped by signal "
+                f"{-result.exit}; it continues when the engine starts again"
+            )
+        # Tolerated failures are the command's own (an exit code), never a kill.
         ok = result.exit == 0 or command.tolerate_failure
         self.write(
             {

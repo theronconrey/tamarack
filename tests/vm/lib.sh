@@ -108,10 +108,12 @@ make_file_drives() {  # size_mb...
         wwn=$(printf '%s%05x' "$LIO_WWN_PREFIX" "$i")
         rm -f "$file"
         truncate -s "${size}M" "$file"
-        # write_back=false: writes reach the file before they are
-        # acknowledged, as on a disk without a volatile cache.
+        # write_back=false (the default): writes reach the file before they
+        # are acknowledged, as on a disk without a volatile cache. Tests that
+        # don't cut power may set FILE_DRIVE_WRITE_BACK=true for speed.
         targetcli /backstores/fileio create name="$name" file_or_dev="$file" \
-            write_back=false >/dev/null || fail "cannot create backstore $name"
+            write_back="${FILE_DRIVE_WRITE_BACK:-false}" >/dev/null \
+            || fail "cannot create backstore $name"
         targetcli /loopback create wwn="$wwn" >/dev/null \
             || fail "cannot create loopback target $wwn"
         targetcli "/loopback/$wwn/luns" create "/backstores/fileio/$name" >/dev/null \
