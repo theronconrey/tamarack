@@ -492,7 +492,9 @@ What the first enforcing VM runs taught us:
   no room left to add RAID5's partial parity log.
 - A new array reuses space an older one had, at the same data offset, so
   the old PV label showed through and `pvcreate` found a duplicate PV ID.
-  `wipefs --all` now runs on every new array before `pvcreate`.
+  `wipefs --all` now runs on every new array before `pvcreate`. Fedora 45
+  labels `wipefs` `bin_t`, so the module labels it `fsadm_exec_t`, like
+  `blkid` and `mkfs`, to run it in `fsadm_t`.
 - snapper's timers carry the generic `systemd_unit_file_t` label; the engine
   may ask for their status, not start or enable other generic units.
 

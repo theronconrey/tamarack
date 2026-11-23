@@ -14,3 +14,6 @@
 # to every disk. Give it cryptsetup's label so it runs in lvm_t, as
 # cryptsetup does. To be proposed to selinux-policy upstream.
 /usr/bin/integritysetup	--	gen_context(system_u:object_r:lvm_exec_t,s0)
+# wipefs, like blkid and mkfs, belongs in fsadm_t, but Fedora 45 leaves it
+# bin_t, so it would run in the engine's domain without disk access.
+/usr/bin/wipefs	--	gen_context(system_u:object_r:fsadm_exec_t,s0)

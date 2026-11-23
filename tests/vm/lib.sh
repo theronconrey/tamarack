@@ -20,7 +20,7 @@ diagnostics() {
     echo "=== engine process context ===" >&2
     ps -eZ | grep -i tamarack >&2 || :
     echo "=== SELinux labels of the programs the engine runs ===" >&2
-    for p in parted partprobe integritysetup mdadm pvcreate pvresize vgcreate vgextend \
+    for p in parted partprobe integritysetup wipefs restorecon mdadm pvcreate pvresize vgcreate vgextend \
         lvcreate lvextend mkfs.btrfs btrfs dmsetup systemctl blkid findmnt pvs vgs lvs; do
         ls -LZ "$(command -v "$p")" 2>&1 >&2 || echo "$p: not found" >&2
     done
