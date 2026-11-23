@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- SPDX-License-Identifier: GPL-3.0-or-later
+
+     polkit actions for the Tamarack engine. Installed to
+     /usr/share/polkit-1/actions/. Destructive actions use auth_admin (never
+     _keep), so every change asks for the admin password again.
+-->
+<policyconfig>
+  <vendor>Tamarack</vendor>
+  <vendor_url>https://github.com/theronconrey/tamarack</vendor_url>
+
+  <action id="io.github.theronconrey.tamarack.read">
+    <description>View storage layout and plan changes</description>
+    <message>Authentication is required to view the storage layout</message>
+    <defaults>
+      <allow_any>yes</allow_any>
+      <allow_inactive>yes</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <action id="io.github.theronconrey.tamarack.create">
+    <description>Create a new storage pool</description>
+    <message>Authentication is required to create a storage pool. This erases every drive listed.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
+  <action id="io.github.theronconrey.tamarack.add-drive">
+    <description>Add a drive to the storage pool</description>
+    <message>Authentication is required to add a drive. The new drive will be erased.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
+  <action id="io.github.theronconrey.tamarack.replace-drive">
+    <description>Replace or rebuild a drive in the storage pool</description>
+    <message>Authentication is required to replace a drive. The new drive will be erased.</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
+  <action id="io.github.theronconrey.tamarack.resume">
+    <description>Resume an interrupted storage change</description>
+    <message>Authentication is required to resume an interrupted storage change</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+  </action>
+
+  <action id="io.github.theronconrey.tamarack.cancel">
+    <description>Cancel a storage change between steps</description>
+    <message>Authentication is required to cancel a storage change</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="io.github.theronconrey.tamarack.confirm-backup">
+    <description>Confirm a current backup exists</description>
+    <message>Authentication is required to confirm that a current backup exists</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

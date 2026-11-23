@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Tamarack storage engine (design draft; docs/design/engine.md, section 8).
+# The only privileged Tamarack component. Every relaxation of the sandbox
+# below carries a comment saying why.
+
+[Unit]
+Description=Tamarack storage engine
+Documentation=man:tamarack(1) https://github.com/theronconrey/tamarack
+Wants=udisks2.service upower.service
+After=udisks2.service upower.service
+
+[Service]
+Type=dbus
+BusName=io.github.theronconrey.Tamarack1
+ExecStart=/usr/libexec/tamarack-engine
+
+StateDirectory=tamarack
+StateDirectoryMode=0700
+UMask=0077
+
+# Filesystem and process isolation
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectProc=invisible
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+# dm-integrity, raid1 and raid456 are loaded at boot by
+# /usr/lib/modules-load.d/tamarack.conf, so the engine never loads modules.
+ProtectKernelModules=yes
+# mdadm writes md sysfs attributes (sync speed, reshape state).
+ProtectKernelTunables=no
+KeyringMode=private
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+
+# The engine needs no network: D-Bus and udev only.
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+
+# Raw block-device access is the engine's job, so PrivateDevices= stays off;
+# DevicePolicy=closed limits it to the device classes below.
+PrivateDevices=no
+DevicePolicy=closed
+DeviceAllow=block-sd rw
+DeviceAllow=block-blkext rw
+DeviceAllow=block-virtblk rw
+DeviceAllow=block-md rw
+DeviceAllow=block-device-mapper rw
+DeviceAllow=/dev/mapper/control rw
+
+# Partitioning, dm and md ioctls need CAP_SYS_ADMIN and CAP_SYS_RAWIO;
+# creating device nodes needs CAP_MKNOD; state files need the rest.
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO CAP_MKNOD CAP_DAC_OVERRIDE CAP_CHOWN
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @raw-io
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
