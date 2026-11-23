@@ -32,7 +32,7 @@ ROOT = "/com/borealislogistics/Tamarack1"
 MANAGER = f"{BUS_NAME}.Manager"
 PLAN = f"{BUS_NAME}.Plan"
 JOB = f"{BUS_NAME}.Job"
-JOB_TIMEOUT = 20 * 60
+JOB_TIMEOUT = int(os.environ.get("TAMARACK_JOB_TIMEOUT", 20 * 60))  # seconds
 
 bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
 

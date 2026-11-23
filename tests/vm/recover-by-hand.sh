@@ -25,7 +25,14 @@ for m in /dev/mapper/tk-*; do integritysetup close "$(basename "$m")"; done
 lsblk -nrpo NAME,PARTLABEL | awk '$2 ~ /^tk-l/ {print $1}' | while read -r part; do
     integritysetup open --integrity crc32c "$part" "rescue-$(basename "$part")"
 done
-mdadm --assemble --scan
+# udev may assemble them first (Fedora's incremental rules); then --scan
+# finds nothing left to do and exits 1, which is fine.
+udevadm settle
+mdadm --assemble --scan || :
+for md in /dev/md/tk-l*; do
+    [ -e "$md" ] || fail "md arrays not assembled"
+    mdadm --readwrite "$md" 2>/dev/null || :
+done
 vgchange -ay tamarack
 mkdir -p /mnt/rescue
 mount -o ro /dev/tamarack/data /mnt/rescue

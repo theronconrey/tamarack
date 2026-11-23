@@ -76,15 +76,32 @@ def decode(data: bytes) -> str:
 
 
 def partition_label(device: str, sys_root: str = "/") -> str:
-    """GPT partition name of ``device`` as udev reports it (PARTNAME)."""
+    """GPT partition name of ``device``: the kernel's PARTNAME, else udev's.
+
+    The kernel only knows a partition's name when it read the table itself;
+    partitions that parted adds one by one (BLKPG) have no PARTNAME, so the
+    name then comes from udev's database (ID_PART_ENTRY_NAME, from blkid).
+    """
     name = os.path.basename(os.path.realpath(device))
     uevent = os.path.join(sys_root, "sys", "class", "block", name, "uevent")
+    fields: dict[str, str] = {}
     try:
         with open(uevent, encoding="utf-8") as f:
             for line in f:
                 key, _, value = line.rstrip("\n").partition("=")
-                if key == "PARTNAME":
-                    return value
+                fields[key] = value
+    except OSError:
+        return ""
+    if fields.get("PARTNAME"):
+        return fields["PARTNAME"]
+    if not (fields.get("MAJOR", "").isdigit() and fields.get("MINOR", "").isdigit()):
+        return ""
+    db = os.path.join(sys_root, "run", "udev", "data", f"b{fields['MAJOR']}:{fields['MINOR']}")
+    try:
+        with open(db, encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("E:ID_PART_ENTRY_NAME="):
+                    return line.rstrip("\n").partition("=")[2]
     except OSError:
         pass
     return ""

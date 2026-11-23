@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 tag: [vm]
-duration: 30m
+duration: 45m  # first syncs and reshapes of 3 GB RAID5 layers take ~5 min each
 require:
   - kernel-modules-extra  # scsi_debug
   - audit
   - python3-gobject-base
+  - nfs-utils  # the NFS client side of the nfs test
   - targetcli  # file-backed drives through LIO (tcm_loop)
 
 /create-grow:
@@ -38,6 +39,14 @@ require:
 /mixed:
     summary: Mixed sizes, leftover space paired later
     test: ./mixed.sh
+
+/nfs:
+    summary: Shares over NFSv4, squashing, read-only
+    test: ./nfs.sh
+
+/ppl-cost:
+    summary: Write speed with and without md's partial parity log
+    test: ./ppl-cost.sh
 
 /reboot:
     summary: The pool comes back by itself after a reboot

@@ -44,20 +44,24 @@ Requires:       polkit
 Requires:       udisks2
 Requires:       dbus-common
 # The storage tools the engine runs (see tamarack/ops.py, ALLOWED_PROGRAMS).
-Requires:       gdisk
 Requires:       parted
-Requires:       cryptsetup
+Requires:       integritysetup
 Requires:       mdadm
 Requires:       lvm2
 Requires:       device-mapper
 Requires:       btrfs-progs
 Requires:       util-linux-core
 Requires:       systemd
+Requires(post): systemd
 # SMART monitoring (smartd, enabled by Fedora's presets) and the weekly md
 # check (raid-check.timer, from mdadm).
 Requires:       smartmontools
 # Timeline snapshots of the shares (template: data/snapper/tamarack).
 Requires:       snapper
+# NFS shares; firewalld is recommended, not required, so a box without it
+# still serves (the admin then opens port 2049 another way).
+Requires:       nfs-utils
+Recommends:     firewalld
 Recommends:     upower
 # The engine's own SELinux domain, wherever the targeted policy is in use.
 Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
@@ -119,6 +123,7 @@ install -Dpm 0644 data/polkit/com.borealislogistics.tamarack.policy \
 install -Dpm 0644 data/modules-load/tamarack.conf \
     %{buildroot}%{_modulesloaddir}/tamarack.conf
 install -dm 0755 %{buildroot}%{_sysconfdir}/tamarack
+install -Dpm 0644 data/nfs/tamarack.conf %{buildroot}%{_sysconfdir}/nfs.conf.d/tamarack.conf
 install -Dpm 0644 data/snapper/tamarack \
     %{buildroot}%{_datadir}/snapper/config-templates/tamarack
 install -Dpm 0644 selinux/tamarack.pp.bz2 \
@@ -140,6 +145,10 @@ if [ ! -e %{_sysconfdir}/integritytab ]; then
     chmod 0644 %{_sysconfdir}/integritytab
 fi
 command -v restorecon >/dev/null && restorecon %{_sysconfdir}/integritytab || :
+# The sandboxed engine cannot load kernel modules, and modules-load.d is
+# only read at boot: load the md personalities and dm-integrity now, so a
+# pool can be made before the first reboot.
+/usr/lib/systemd/systemd-modules-load %{_modulesloaddir}/tamarack.conf || :
 
 %preun engine
 %systemd_preun tamarack-engine.service
@@ -180,6 +189,8 @@ fi
 %{_datadir}/polkit-1/actions/com.borealislogistics.tamarack.policy
 %{_modulesloaddir}/tamarack.conf
 %{_datadir}/snapper/config-templates/tamarack
+%dir %{_sysconfdir}/nfs.conf.d
+%config(noreplace) %{_sysconfdir}/nfs.conf.d/tamarack.conf
 %dir %{_sysconfdir}/tamarack
 %ghost %config(noreplace) %{_sysconfdir}/integritytab
 

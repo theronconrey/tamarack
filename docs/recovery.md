@@ -22,10 +22,14 @@ This is what the `recover-by-hand` VM test does, step by step.
    done
    ```
 
-3. **Assemble the md arrays.** mdadm finds them by their superblocks:
+3. **Assemble the md arrays.** mdadm finds them by their superblocks. Fedora
+   may already have assembled them as the mappings appeared; then this says
+   "No arrays found" and there is nothing more to do. Check that
+   `/dev/md/tk-l1` (and any further layers) exist:
 
    ```sh
    sudo mdadm --assemble --scan
+   ls /dev/md/
    ```
 
 4. **Activate the volume group and mount**, read-only to be safe:
@@ -46,3 +50,10 @@ JSON.
 ```sh
 sudo head -c 4096 /dev/sdX1 | head -2
 ```
+
+## Which kernel to recover with
+
+Arrays made by recent kernels record their logical block size, and the kernel
+warns that they "will not be assembled in old kernels" (6.18 and older). Use
+a rescue system with a kernel at least as new as the box's: a current Fedora
+live image works.

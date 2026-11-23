@@ -48,7 +48,7 @@ def test_status_without_a_pool(h: Harness) -> None:
 def test_dry_run_shows_the_plan_and_discards_it(h: Harness) -> None:
     code, text = run(h, ["create", "/dev/sda", "/dev/sdb", "--dry-run", "--commands"])
     assert code == 0
-    assert "1. Partition each drive" in text and "sgdisk --zap-all /dev/sda" in text
+    assert "1. Partition each drive" in text and "parted --script /dev/sda mklabel gpt" in text
     assert "Plan digest: sha256:" in text and "discarded" in text
     assert h.service.engine.plan_ids() == []
     assert h.service.engine.runner.calls == []  # type: ignore[union-attr]

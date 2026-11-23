@@ -14,22 +14,25 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .commands import (
-    LINUX_FS_TYPE,
-    LINUX_RAID_TYPE,
+    FIRST_LAYER_START,
     LV_NAME,
+    MD_DATA_OFFSET,
     META_PARTLABEL,
     MOUNT_POINT,
     VG_NAME,
     integrity_device_name,
+    make_partition,
     md_device,
+    new_partition_table,
     partition_path,
+    write_safety,
 )
 from .layout import Layout, LayoutLayer, Member
 from .model import Level, PlanKind, Protection
 from .ops import Command, Step, cmd, render_steps
 from .planner import END_RESERVE, META_PARTITION, START_RESERVE, bucket_tolerance
 from .policy import level_for, protection_for
-from .units import GiB, MiB, align_down, format_size
+from .units import GiB, align_down, format_size
 
 # (partition number, size in bytes, layer index)
 PartSpec = tuple[int, int, int]
@@ -113,7 +116,7 @@ def expand(layout: Layout, drive: int) -> Expansion:
     """Put ``drive``'s free space to work.
 
     The drive joins layers it is not yet in, in order, while it has room: a
-    two-drive mirror becomes single parity, a single-parity layer widens. Then
+    single-parity layer (two members included) widens. Then
     leftover space on any drives is paired into new layers, SHR style.
     """
     if protection_for(len(layout.drives)) is Protection.TWO_DRIVE:
@@ -185,35 +188,43 @@ def layers_from_free_space(
 # --- steps -------------------------------------------------------------------
 
 
+def wait_idle(md: str) -> Command:
+    """Wait for md's resync, recovery or reshape to finish.
+
+    md refuses to reshape, replace or drop the bitmap of an array that is
+    still syncing. ``mdadm --wait`` exits 1 when there was nothing to wait
+    for, which is not a failure here.
+    """
+    return cmd("mdadm", "--wait", md, tolerate_failure=True)
+
+
 def health_check(layout: Layout, skip: set[int] | None = None) -> Step:
     indexes = [layer.index for layer in layout.layers if not (skip and layer.index in skip)]
     return Step(
         "Check the other layers are healthy" if skip else "Check every layer is healthy",
-        tuple(cmd("mdadm", "--detail", "--test", md_device(i)) for i in indexes),
-        "Stops here if an array is degraded: a second problem must be fixed first.",
+        tuple(
+            c
+            for i in indexes
+            for c in (wait_idle(md_device(i)), cmd("mdadm", "--detail", "--test", md_device(i)))
+        ),
+        "Waits for any resync still running (a new array's first one, say), then stops "
+        "here if an array is degraded: a second problem must be fixed first.",
     )
 
 
-def partition_drive(device: str, parts: list[PartSpec], wipe: bool) -> Step:
+def partition_drive(
+    device: str, parts: list[PartSpec], wipe: bool, start: int = FIRST_LAYER_START
+) -> Step:
+    """Partitions in order from ``start``, right after the drive's existing ones."""
     commands: list[Command] = []
     if wipe:
         commands += [
-            cmd("sgdisk", "--zap-all", device),
-            cmd(
-                "sgdisk",
-                *("-n", "1:0:+16M", "-t", f"1:{LINUX_FS_TYPE}", "-c", f"1:{META_PARTLABEL}"),
-                device,
-            ),
+            new_partition_table(device),
+            make_partition(device, 1, META_PARTLABEL, START_RESERVE, META_PARTITION),
         ]
-    commands += [
-        cmd(
-            "sgdisk",
-            *("-n", f"{n}:0:+{size // MiB}M", "-t", f"{n}:{LINUX_RAID_TYPE}"),
-            *("-c", f"{n}:tk-l{layer}"),
-            device,
-        )
-        for n, size, layer in parts
-    ]
+    for n, size, layer in sorted(parts):
+        commands.append(make_partition(device, n, f"tk-l{layer}", start, size))
+        start += size
     commands.append(cmd("partprobe", device))
     if wipe:
         return Step(f"Partition {device}", tuple(commands))
@@ -241,6 +252,9 @@ def widen_step(before: LayoutLayer, after: LayoutLayer) -> Step:
     added = member_path(after.members[-1])
     width = after.member_count
     if before.level is Level.RAID1:
+        # Only layouts from before every one-drive-protection layer was RAID5
+        # (policy.py). A mirror has no room for PPL after the conversion, so
+        # it keeps md's resync policy; the health report says so.
         return Step(
             f"Layer {before.index}: mirror -> single parity across {width} drives",
             (
@@ -248,36 +262,40 @@ def widen_step(before: LayoutLayer, after: LayoutLayer) -> Step:
                 cmd("mdadm", "--grow", md, "--level=5"),
                 cmd("mdadm", md, "--add", added),
                 cmd("mdadm", "--grow", md, f"--raid-devices={width}"),
-                cmd("mdadm", "--wait", md),
-                cmd("mdadm", "--grow", md, "--consistency-policy=ppl"),
+                wait_idle(md),
+                cmd("mdadm", "--grow", md, "--bitmap=internal"),
             ),
             "A two-drive mirror converts to single parity in place, then reshapes onto "
-            "the drive. The data stays online and protected throughout; mdadm resumes "
-            "from its checkpoint after a power cut. Large layers take hours to days.",
+            "the drive. During the reshape the layer has neither a bitmap nor a parity "
+            "log, so keep the power on; mdadm resumes from its checkpoint after a power "
+            "cut. Large layers take hours to days.",
         )
     return Step(
         f"Layer {before.index}: widen single parity to {width} drives",
         (
-            cmd("mdadm", "--grow", md, "--consistency-policy=resync"),
+            # Added while PPL is on, so mdadm reserves PPL space on the new
+            # member; added later, a small member gets no room for it.
             cmd("mdadm", md, "--add", added),
+            cmd("mdadm", "--grow", md, "--consistency-policy=resync"),
             cmd("mdadm", "--grow", md, f"--raid-devices={width}"),
-            cmd("mdadm", "--wait", md),
+            wait_idle(md),
             cmd("mdadm", "--grow", md, "--consistency-policy=ppl"),
         ),
-        "PPL is paused for the reshape and switched back on afterwards. The data stays "
-        "online and protected; mdadm resumes from its checkpoint after a power cut.",
+        "md cannot reshape with its partial parity log on, so the log is off for the "
+        "reshape and back on afterwards. During the reshape a power cut while a drive "
+        "is also missing can damage data, so keep the power on; mdadm resumes from its "
+        "checkpoint after a power cut. Large layers take hours to days.",
     )
 
 
 def create_array(md: str, level: Level, members: list[str]) -> Command:
     """``mdadm --create`` with Tamarack's write-safety option for the level."""
-    safety = "--consistency-policy=ppl" if level is Level.RAID5 else "--bitmap=internal"
     return cmd(
         "mdadm",
-        *("--create", md, "--run", "--metadata=1.2"),
+        *("--create", md, "--run", "--metadata=1.2", MD_DATA_OFFSET),
         f"--level={level.value.removeprefix('raid')}",
         f"--raid-devices={len(members)}",
-        safety,
+        *write_safety(level),
         *members,
     )
 
@@ -298,7 +316,8 @@ def expansion_steps(layout: Layout, exp: Expansion, own_drive: int) -> list[Step
             continue
         parts = exp.partitions_on(d)
         if parts:
-            step = partition_drive(disk.device, parts, wipe=False)
+            start = FIRST_LAYER_START + layout.allocated(d)
+            step = partition_drive(disk.device, parts, wipe=False, start=start)
             integrity = integrity_open(disk.device, d, [n for n, _, _ in parts])
             steps.append(Step(step.title, step.commands + tuple(integrity), step.note))
     steps += [create_layer_step(layer) for layer in exp.created]
@@ -312,10 +331,20 @@ def expansion_steps(layout: Layout, exp: Expansion, own_drive: int) -> list[Step
     return steps
 
 
+def clear_signatures(md: str) -> Command:
+    """Wipe old signatures from a new array before it becomes a PV.
+
+    A new array reuses space that belonged to an older one, often at the
+    same data offset, so the old PV label shows through and LVM sees two
+    PVs with one ID.
+    """
+    return cmd("wipefs", "--all", md)
+
+
 def grow_volume(grown: list[str], created: list[str]) -> Step:
     commands = [cmd("pvresize", md) for md in grown]
     for md in created:
-        commands += [cmd("pvcreate", md), cmd("vgextend", VG_NAME, md)]
+        commands += [clear_signatures(md), cmd("pvcreate", md), cmd("vgextend", VG_NAME, md)]
     commands += [
         cmd("lvextend", "--extents", "+100%FREE", f"{VG_NAME}/{LV_NAME}"),
         cmd("btrfs", "filesystem", "resize", "max", MOUNT_POINT),

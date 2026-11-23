@@ -19,21 +19,24 @@ from dataclasses import dataclass
 ALLOWED_PROGRAMS = frozenset(
     {
         "btrfs",
+        "chcon",
         "dmsetup",
+        "firewall-cmd",
         "integritysetup",
         "lvcreate",
         "lvextend",
         "mdadm",
         "mkfs.btrfs",
+        "parted",
         "partprobe",
         "pvcreate",
         "pvresize",
-        "sgdisk",
         "snapper",
         "systemctl",
         "tamarack-meta",
         "vgcreate",
         "vgextend",
+        "wipefs",
     }
 )
 

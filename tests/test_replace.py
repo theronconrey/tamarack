@@ -25,7 +25,9 @@ def upgrade(layout: Layout, old: str, new: str, size_tb: float) -> ChangePlan:
 
 
 def first(lines: list[str], prefix: str) -> int:
-    return next(i for i, line in enumerate(lines) if line.startswith(prefix))
+    """First line starting with ``prefix``, past the health check's waits."""
+    checks = {i - 1 for i, line in enumerate(lines) if line.startswith("mdadm --detail --test")}
+    return next(i for i, line in enumerate(lines) if line.startswith(prefix) and i not in checks)
 
 
 # --- upgrades ---
@@ -62,11 +64,11 @@ def test_second_upgrade_pairs_the_free_space() -> None:
     once = upgrade(fresh(4, 4, 4, 4), "/dev/sda", "/dev/sde", 8).after
     plan = upgrade(once, "/dev/sdb", "/dev/sdf", 8)
     new_layer = plan.after.layers[-1]
-    assert new_layer.level is Level.RAID1 and new_layer.drive_indexes == {0, 1}
+    assert new_layer.level is Level.RAID5 and new_layer.drive_indexes == {0, 1}
     lines = render(plan)
     # sde (drive 0) gains a partition in free space; it is never wiped.
-    assert any(line.startswith("sgdisk -n 3:0") and line.endswith("/dev/sde") for line in lines)
-    assert not any(line == "sgdisk --zap-all /dev/sde" for line in lines)
+    assert any(line.startswith("parted --script /dev/sde mkpart tk-l") for line in lines)
+    assert "parted --script /dev/sde mklabel gpt" not in lines
 
 
 def test_upgrade_copies_before_retiring_the_old_drive() -> None:
@@ -75,7 +77,7 @@ def test_upgrade_copies_before_retiring_the_old_drive() -> None:
         first(lines, prefix)
         for prefix in (
             "mdadm --detail --test /dev/md/tk-l1",
-            "sgdisk --zap-all /dev/sdd",
+            "parted --script /dev/sdd mklabel gpt",
             "integritysetup open --integrity crc32c /dev/sdd2 tk-d2-p2-new",
             "mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d2-p2-new",
             "mdadm /dev/md/tk-l1 --replace /dev/mapper/tk-d2-p2 --with /dev/mapper/tk-d2-p2-new",
@@ -91,7 +93,7 @@ def test_upgrade_copies_before_retiring_the_old_drive() -> None:
 def test_upgrade_never_touches_the_old_drive_or_others() -> None:
     plan = upgrade(fresh(4, 4, 4), "/dev/sdb", "/dev/sdd", 4)
     for line in render(plan):
-        if line.startswith(("sgdisk", "integritysetup format")):
+        if line.startswith(("parted", "integritysetup format")):
             assert "/dev/sdd" in line
 
 
@@ -114,7 +116,7 @@ def test_failed_drive_is_rebuilt_not_copied() -> None:
         for prefix in (
             "mdadm /dev/md/tk-l1 --remove failed",
             "integritysetup close tk-d2-p2 || :",
-            "sgdisk --zap-all /dev/sdd",
+            "parted --script /dev/sdd mklabel gpt",
             "integritysetup open --integrity crc32c /dev/sdd2 tk-d2-p2",
             "mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d2-p2",
             "mdadm --wait /dev/md/tk-l1",

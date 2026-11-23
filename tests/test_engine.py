@@ -149,7 +149,7 @@ def test_create_plan_is_stored_with_digest_and_expiry(tmp_path: Path) -> None:
     assert plan.erases == ["/dev/sda", "/dev/sdb", "/dev/sdc"]
     assert plan.expires_at == int(clock.now) + PLAN_LIFETIME
     assert plan.steps[0][0] == "Partition each drive"
-    assert plan.steps[0][2][0] == "sgdisk --zap-all /dev/sda"
+    assert plan.steps[0][2][0] == "parted --script /dev/sda mklabel gpt"
     assert plan.summary["after"]["drive_failures_tolerated"] == 1
     assert e.drives.lookups == [(d, True) for d in ("/dev/sda", "/dev/sdb", "/dev/sdc")]  # type: ignore[attr-defined]
 

@@ -122,7 +122,7 @@ def test_create_document_erases_every_drive() -> None:
     assert doc["erases"] == ["/dev/sda", "/dev/sdb"]
     assert roles(doc) == [("/dev/sda", "wwn:0x1", "erase"), ("/dev/sdb", "serial:B", "erase")]
     assert doc["steps"][0]["commands"][0] == {
-        "argv": ["sgdisk", "--zap-all", "/dev/sda"],
+        "argv": ["parted", "--script", "/dev/sda", "mklabel", "gpt"],
         "tolerate_failure": False,
         "resume": "rerun",
     }

@@ -351,9 +351,9 @@ def test_journal_path() -> None:
 @pytest.mark.parametrize(
     ("argv", "resume_rule", "probe"),
     [
-        (("sgdisk", "--zap-all", "/dev/sda"), "rerun", ()),
-        (("sgdisk", "-n", "2:0:+10M", "-t", "2:fd00", "-c", "2:tk-l1", "/dev/sda"), "ask", ()),
-        (("sgdisk", "-c", "2:tk-l1", "-c", "3:tk-l2", "/dev/sda"), "rerun", ()),
+        (("parted", "--script", "/dev/sda", "mklabel", "gpt"), "rerun", ()),
+        (("parted", "--script", "/dev/sda", "mkpart", "tk-l1", "17MiB", "27MiB"), "ask", ()),
+        (("parted", "--script", "/dev/sda", "name", "2", "tk-l1"), "rerun", ()),
         (
             ("integritysetup", "open", "--integrity", "crc32c", "/dev/sda2", "tk-d1-p2"),
             "probe",
@@ -412,3 +412,17 @@ def test_every_probe_is_a_read_only_program() -> None:
                     probe = tuple(c["probe"])
                     assert probe[0] in PROBE_PROGRAMS
                     assert any(probe[: len(p)] == p for p in read_only), probe
+
+
+def test_a_killed_command_leaves_the_job_in_doubt_not_failed(tmp_path: Path) -> None:
+    """Stopping the engine kills mdadm --wait; the job must not move on or fail."""
+    doc = PLANS["add-3-4"]()
+    planned = commands(doc)
+    wait = next(c for c in planned if c[:2] == ("mdadm", "--wait"))
+    report = run_fresh(tmp_path, doc, FakeRunner({wait: Result(-15)}))
+    assert report.state == "paused" and "signal 15" in report.message
+    state = load(str(tmp_path / "1.jsonl"))
+    assert state.in_doubt and not state.failed
+    after = FakeRunner()
+    assert resume(str(tmp_path / "1.jsonl"), after, authorized=True, now=clock).state == "completed"
+    assert after.calls[0] == wait  # the wait runs again, nothing after it ran before

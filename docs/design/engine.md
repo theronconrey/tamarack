@@ -137,6 +137,7 @@ Defined in
 | `…tamarack.resume` | `Job.Resume` after an interruption | no / no / `auth_admin` |
 | `…tamarack.cancel` | `Job.Cancel` | no / no / `auth_admin_keep` |
 | `…tamarack.confirm-backup` | `Manager.ConfirmBackup` | no / no / `auth_admin_keep` |
+| `…tamarack.share` | `Manager.SetShare`, `Manager.RemoveShare` | no / no / `auth_admin_keep` |
 | `…tamarack.configure` | `Manager.SetSnapshotSchedule` (and later settings) | no / no / `auth_admin_keep` |
 
 Destructive actions use `auth_admin`, not `auth_admin_keep`: every change
@@ -250,6 +251,31 @@ rules assemble the arrays from their superblocks, LVM activates the
   which systemd's generator may read.
 - Still to prove in the VM: that the arrays come back as `/dev/md/tk-lN`
   after a reboot, which depends on how mdadm treats the home host.
+
+### NFS shares (track 4)
+
+- **A share is a folder** in the `shares` subvolume (`/srv/tamarack/shares/NAME`),
+  not a subvolume of its own, so snapper's snapshots include it. A new
+  folder gets the owner given (uid, gid) and mode 2775; an existing folder
+  is left as it is. Removing a share stops exporting it and keeps the files.
+- **NFSv4 only.** `/etc/nfs.conf.d/tamarack.conf` turns NFSv3 and UDP off,
+  so only TCP port 2049 is used and no rpcbind or mountd faces the network.
+- **The engine owns the exports file**, `/etc/exports.d/tamarack.exports`,
+  rendered from `/var/lib/tamarack/shares.json`. After writing it, the engine
+  runs `systemctl enable --now` and `systemctl reload` on
+  `nfs-server.service`. If nfs-server refuses the new exports, the old file
+  is put back. The engine then has firewalld add or remove the `nfs` service,
+  permanently and now.
+- **Security is spelled out.** Every share lists its clients (addresses,
+  networks or host names; nothing that could inject export options),
+  read-only or read-write, and squashing (`root`, the default; `all`, to map
+  everyone to the share's owner; or `none`). `Manager.Shares` adds plain
+  statements: that `sec=sys` trusts the user IDs clients send, what
+  squashing means, and a warning for very wide client ranges. Kerberos
+  (`sec=krb5p`) is v2.
+- **API:** `Manager.SetShare(name, options)` and `Manager.RemoveShare(name)`,
+  authorized by the new `…tamarack.share` action. From a terminal: `tamarack
+  engine share list | set NAME --client … | remove NAME`.
 
 ## 6. Steps become structured commands
 
@@ -416,6 +442,76 @@ a first draft written without an SELinux machine to try them on; the step 7
 VM matrix, run enforcing, is what will find what is missing.
 `tamarack_dbus_chat` lets a confined client such as a Cockpit page talk to
 the engine.
+
+What the first enforcing VM runs taught us:
+
+- The unit's `NoNewPrivileges=yes` blocks every SELinux domain transition
+  unless the policy grants `nnp_transition`. Without it the engine ran as
+  `init_t`. The module now grants it for systemd starting the engine and for
+  the engine starting each tool.
+- Fedora confines `mdadm` (`mdadm_t`), the LVM tools and `dmsetup`
+  (`lvm_t`), and `parted`, `partprobe`, `mkfs.btrfs` and `blkid` (`fsadm_t`),
+  but not `sgdisk` or `btrfs` (`bin_t`). Partitioning therefore moved from
+  `sgdisk` to `parted`, so the engine never needs raw disk access;
+  `integritysetup` is its own Fedora package and is now required.
+- Fedora's policy labels `cryptsetup` `lvm_exec_t` but leaves
+  `integritysetup` as `bin_t`, so it ran in the engine's own domain and was
+  denied the raw partitions. The module labels `integritysetup` `lvm_exec_t`
+  too, so it runs in `lvm_t` like `cryptsetup`; this belongs in
+  selinux-policy upstream and should move there.
+- `tamarack-meta` (Python) reads `/etc/passwd` and `/etc/pki` at start-up.
+- `modules-load.d` is only read at boot, and the sandboxed engine cannot load
+  modules, so on a freshly installed box `mdadm --create` failed with no md
+  personality loaded. The package's `%post` now runs `systemd-modules-load`
+  for Tamarack's list.
+- On Fedora 45, writing md_mod's `new_array` fails and `mdadm --create` falls
+  back to making `/dev/mdN` itself with `mknod`. `DevicePolicy=closed` with
+  `DeviceAllow=block-md rw` refused that, so md arrays now get `rwm`; the
+  same create worked from outside the sandbox.
+- `systemctl` runs in the engine's domain, so systemd checks the engine for
+  `enable` (a daemon reload) and for each unit it starts. Tamarack's mount,
+  scrub timer and scrub service are labelled `tamarack_unit_file_t`; the
+  engine may also start snapper's timers and `nfs-server.service`.
+- A new btrfs filesystem's root has no label (`unlabeled_t`). The volume now
+  has its own type, `tamarack_data_t`, set at every mount with
+  `rootcontext=` and inherited by everything below; the engine and snapperd
+  may manage it. A private type rather than `public_content_rw_t`, so
+  services allowed to read public content cannot read the shares.
+- Partitions that parted adds one at a time have no `PARTNAME` in the
+  kernel's uevent, so `tamarack-meta` refused to write the layout. It now
+  falls back to udev's `ID_PART_ENTRY_NAME`.
+- md refuses to reshape, replace a member or drop the bitmap while an array
+  is still syncing, and a new array starts with a full resync. Every health
+  check now runs `mdadm --wait` first; `--wait` exits 1 when there was
+  nothing to wait for, so its failure is tolerated everywhere.
+- btrfs leaves a new subvolume's root unlabelled, so the engine could not
+  make share folders in `shares`; the create plan now labels it with
+  `chcon`, and snapperd may relabel `.snapshots`.
+- Every array is created with `--data-offset=128M`. On small members mdadm
+  reserves much less, and after a mirror was reshaped into parity there was
+  no room left to add RAID5's partial parity log.
+- A new array reuses space an older one had, at the same data offset, so
+  the old PV label showed through and `pvcreate` found a duplicate PV ID.
+  `wipefs --all` now runs on every new array before `pvcreate`.
+- Reshaping a mirror into parity still left no room for PPL: mdadm only puts
+  PPL between the superblock and the bad block log, and a member written with
+  a bitmap has its bad block log 8 sectors after the superblock (read from
+  mdadm's super1.c). Layers with one-drive protection are now RAID5 from the
+  start, two members included, so PPL is on from creation; a new member is
+  added while PPL is still on (so mdadm reserves room for it) and PPL is only
+  switched off for the reshape itself. During a reshape a layer has neither
+  PPL nor a bitmap.
+- By default `mdadm --create` builds RAID5 onto its last member as a spare,
+  and until that recovery ends the array reports degraded, which blocked
+  every following job. RAID5 is created with `--force`: all members active
+  and an ordinary resync, which the health check waits for.
+- btrfs runs in the engine's domain and needs `CAP_SYS_ADMIN` for resize
+  and subvolumes; `RestrictSUIDSGID=` is off because share folders are
+  setgid.
+- A rebuild fails and removes the pulled drive's members by name: md may
+  not have noticed the drive is gone while its mapping still answers.
+- snapper's timers carry the generic `systemd_unit_file_t` label; the engine
+  may ask for their status, not start or enable other generic units.
 
 ## 10. Testing on (virtual) disks
 

@@ -49,5 +49,6 @@ systemctl is-enabled --quiet tamarack-scrub.timer || fail "scrub timer not enabl
 [ "$(drive health)" = ok ] || fail "health is $(drive health) after reboot"
 [ "$(drive degraded)" = False ] || fail "degraded after reboot"
 [ "$(drive tolerated)" = 1 ] || fail "should survive one drive failure"
+check_ppl  # md kept the partial parity log across the reboot
 check_avc
 rm -rf "$STATE"

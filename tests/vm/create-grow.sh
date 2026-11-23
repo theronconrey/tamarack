@@ -29,4 +29,5 @@ rm -f /var/lib/tamarack/layout.json
 systemctl start tamarack-engine
 [ "$(drive tolerated)" = 1 ] || fail "layout not recovered from the drives"
 [ -s /var/lib/tamarack/layout.json ] || fail "recovered layout not saved"
+check_ppl
 check_avc
