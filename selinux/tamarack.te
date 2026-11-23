@@ -17,6 +17,9 @@ policy_module(tamarack, 0.1.0)
 type tamarack_engine_t;
 type tamarack_engine_exec_t;
 init_daemon_domain(tamarack_engine_t, tamarack_engine_exec_t)
+# The unit sets NoNewPrivileges=yes; under it, systemd may only start the
+# engine in its own domain if the policy allows the NNP transition.
+init_nnp_daemon_domain(tamarack_engine_t)
 
 type tamarack_unit_file_t;
 systemd_unit_file(tamarack_unit_file_t)
@@ -97,19 +100,37 @@ optional_policy(`
 ')
 
 # The storage tools run in their own domains.
+# NoNewPrivileges is inherited, so each of these transitions also needs
+# nnp_transition (and nosuid_transition) to take effect.
 optional_policy(`
+	gen_require(`
+		type mdadm_t;
+		class process2 { nnp_transition nosuid_transition };
+	')
 	raid_domtrans_mdadm(tamarack_engine_t)
+	allow tamarack_engine_t mdadm_t:process2 { nnp_transition nosuid_transition };
 ')
 
 optional_policy(`
+	gen_require(`
+		type lvm_t;
+		class process2 { nnp_transition nosuid_transition };
+	')
 	lvm_domtrans(tamarack_engine_t)
+	allow tamarack_engine_t lvm_t:process2 { nnp_transition nosuid_transition };
 ')
 
 optional_policy(`
+	gen_require(`
+		type fsadm_t;
+		class process2 { nnp_transition nosuid_transition };
+	')
 	fstools_domtrans(tamarack_engine_t)
+	allow tamarack_engine_t fsadm_t:process2 { nnp_transition nosuid_transition };
 ')
 
 domtrans_pattern(tamarack_engine_t, tamarack_meta_exec_t, tamarack_meta_t)
+allow tamarack_engine_t tamarack_meta_t:process2 { nnp_transition nosuid_transition };
 
 ########################################
 #

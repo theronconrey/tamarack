@@ -48,6 +48,8 @@ start_engine() {
     rm -rf /var/lib/tamarack
     systemctl restart tamarack-engine
     START=$(date '+%m/%d/%Y %H:%M:%S')
+    ps -eo label,comm | grep -q '^system_u:system_r:tamarack_engine_t:s0 *tamarack-engine' \
+        || fail "the engine is not running in its SELinux domain (tamarack_engine_t)"
 }
 
 drive() { python3 "$HERE/drive.py" "$@"; }
