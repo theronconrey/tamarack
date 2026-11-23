@@ -754,8 +754,11 @@ class Engine:
         directory = self._host_path(share.path)
         if not os.path.isdir(directory):
             os.mkdir(directory, 0o2775)
+            # chmod while root still owns it: afterwards it would need
+            # CAP_FOWNER, which the unit does not grant. Directories keep
+            # setgid through chown, so new files keep the share's group.
+            os.chmod(directory, 0o2775)
             os.chown(directory, share.uid, share.gid)
-            os.chmod(directory, 0o2775)  # setgid: new files keep the share's group
         others = [s for s in self.shares if s.name != name]
         self._apply_shares([*others, share])
         return share

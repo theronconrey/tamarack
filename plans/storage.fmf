@@ -13,7 +13,10 @@ discover:
 provision:
     how: virtual
     hardware:
-        memory: ">= 8 GB"
+        # scsi_debug keeps every drive in RAM: up to four 3 GB drives, which
+        # md's resync and dm-integrity's wipe fill completely. With 8 GB the
+        # VM ran out of memory and dropped the test's connection.
+        memory: ">= 16 GB"
 prepare:
   - name: Packages under test
     how: install

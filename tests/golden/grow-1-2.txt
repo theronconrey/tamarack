@@ -3,14 +3,15 @@
 set -euo pipefail
 
 # 1. Check every layer is healthy
-#    Stops here if an array is degraded: a second problem must be fixed first.
+#    Waits for any resync still running (a new array's first one, say), then stops here if an array is degraded: a second problem must be fixed first.
+mdadm --wait /dev/md/tk-l1 || :
 mdadm --detail --test /dev/md/tk-l1
 
 # 2. Partition /dev/sdb
-sgdisk --zap-all /dev/sdb
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdb
-sgdisk -n 2:0:+1907339M -t 2:fd00 -c 2:tk-l1 /dev/sdb
-sgdisk -n 3:0:+1907339M -t 3:fd00 -c 3:tk-l2 /dev/sdb
+parted --script /dev/sdb mklabel gpt
+parted --script /dev/sdb mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdb mkpart tk-l1 17MiB 1907356MiB set 2 raid on
+parted --script /dev/sdb mkpart tk-l2 1907356MiB 3814695MiB set 3 raid on
 partprobe /dev/sdb
 
 # 3. dm-integrity on the new partitions
@@ -23,17 +24,18 @@ integritysetup open --integrity crc32c /dev/sdb3 tk-d2-p3
 #    The old copy stays active until the new one is complete, so protection never drops during the move.
 mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d2-p2
 mdadm /dev/md/tk-l1 --replace /dev/mapper/tk-d1-p3 --with /dev/mapper/tk-d2-p2
-mdadm --wait /dev/md/tk-l1
+mdadm --wait /dev/md/tk-l1 || :
 mdadm /dev/md/tk-l1 --remove /dev/mapper/tk-d1-p3
 
 # 5. Free the second half of /dev/sda
 mdadm --zero-superblock /dev/mapper/tk-d1-p3
-sgdisk -c 2:tk-l1 -c 3:tk-l2 /dev/sda
+parted --script /dev/sda name 2 tk-l1 name 3 tk-l2
 
-# 6. Mirror the freed halves as a new layer
-mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d1-p3 /dev/mapper/tk-d2-p3
+# 6. Pair the freed halves as a new layer
+mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=2 --force --consistency-policy=ppl /dev/mapper/tk-d1-p3 /dev/mapper/tk-d2-p3
 
 # 7. Grow the volume and file system
+wipefs --all /dev/md/tk-l2
 pvcreate /dev/md/tk-l2
 vgextend tamarack /dev/md/tk-l2
 lvextend --extents +100%FREE tamarack/data
@@ -41,5 +43,5 @@ btrfs filesystem resize max /srv/tamarack
 
 # 8. Write the new layout to every tk-meta partition
 #    Each drive carries the whole layout, so the box can be read from any of them.
-tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid1","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":1999989899264},{"index":2,"level":"raid1","members":[{"drive":0,"partition":3},{"drive":1,"partition":3}],"slice_bytes":1999989899264}],"version":1}'
-tamarack-meta write /dev/sdb1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid1","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":1999989899264},{"index":2,"level":"raid1","members":[{"drive":0,"partition":3},{"drive":1,"partition":3}],"slice_bytes":1999989899264}],"version":1}'
+tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":1999989899264},{"index":2,"level":"raid5","members":[{"drive":0,"partition":3},{"drive":1,"partition":3}],"slice_bytes":1999989899264}],"version":1}'
+tamarack-meta write /dev/sdb1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2}],"slice_bytes":1999989899264},{"index":2,"level":"raid5","members":[{"drive":0,"partition":3},{"drive":1,"partition":3}],"slice_bytes":1999989899264}],"version":1}'

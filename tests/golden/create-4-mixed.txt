@@ -3,23 +3,23 @@
 set -euo pipefail
 
 # 1. Partition each drive
-sgdisk --zap-all /dev/sda
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sda
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sda
+parted --script /dev/sda mklabel gpt
+parted --script /dev/sda mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sda mkpart tk-l1 17MiB 3814696MiB set 2 raid on
 partprobe /dev/sda
-sgdisk --zap-all /dev/sdb
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdb
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdb
+parted --script /dev/sdb mklabel gpt
+parted --script /dev/sdb mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdb mkpart tk-l1 17MiB 3814696MiB set 2 raid on
 partprobe /dev/sdb
-sgdisk --zap-all /dev/sdc
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdc
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdc
-sgdisk -n 3:0:+3814697M -t 3:fd00 -c 3:tk-l2 /dev/sdc
+parted --script /dev/sdc mklabel gpt
+parted --script /dev/sdc mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdc mkpart tk-l1 17MiB 3814696MiB set 2 raid on
+parted --script /dev/sdc mkpart tk-l2 3814696MiB 7629393MiB set 3 raid on
 partprobe /dev/sdc
-sgdisk --zap-all /dev/sdd
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdd
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdd
-sgdisk -n 3:0:+3814697M -t 3:fd00 -c 3:tk-l2 /dev/sdd
+parted --script /dev/sdd mklabel gpt
+parted --script /dev/sdd mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdd mkpart tk-l1 17MiB 3814696MiB set 2 raid on
+parted --script /dev/sdd mkpart tk-l2 3814696MiB 7629393MiB set 3 raid on
 partprobe /dev/sdd
 
 # 2. dm-integrity on every layer partition (journal mode is integritysetup's default; bitmap mode stays off)
@@ -37,10 +37,12 @@ integritysetup format --batch-mode --integrity crc32c /dev/sdd3
 integritysetup open --integrity crc32c /dev/sdd3 tk-d4-p3
 
 # 3. One md array per layer
-mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --level=5 --raid-devices=4 --consistency-policy=ppl /dev/mapper/tk-d1-p2 /dev/mapper/tk-d2-p2 /dev/mapper/tk-d3-p2 /dev/mapper/tk-d4-p2
-mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --level=1 --raid-devices=2 --bitmap=internal /dev/mapper/tk-d3-p3 /dev/mapper/tk-d4-p3
+mdadm --create /dev/md/tk-l1 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=4 --force --consistency-policy=ppl /dev/mapper/tk-d1-p2 /dev/mapper/tk-d2-p2 /dev/mapper/tk-d3-p2 /dev/mapper/tk-d4-p2
+mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=2 --force --consistency-policy=ppl /dev/mapper/tk-d3-p3 /dev/mapper/tk-d4-p3
 
 # 4. LVM joins the layers into one volume
+wipefs --all /dev/md/tk-l1
+wipefs --all /dev/md/tk-l2
 pvcreate /dev/md/tk-l1 /dev/md/tk-l2
 vgcreate tamarack /dev/md/tk-l1 /dev/md/tk-l2
 lvcreate --yes --extents 100%FREE --name data tamarack
@@ -49,6 +51,7 @@ lvcreate --yes --extents 100%FREE --name data tamarack
 mkfs.btrfs --label tamarack --metadata dup /dev/tamarack/data
 systemctl enable --now srv-tamarack.mount tamarack-scrub.timer
 btrfs subvolume create /srv/tamarack/shares
+chcon system_u:object_r:tamarack_data_t:s0 /srv/tamarack/shares
 
 # 6. Snapshots of the shares: 24 hourly, 7 daily, 4 weekly, 6 monthly
 #    snapper keeps them in shares/.snapshots; the schedule can be changed or turned off later.
@@ -57,7 +60,7 @@ systemctl enable --now snapper-timeline.timer snapper-cleanup.timer
 
 # 7. Write the layout to every tk-meta partition
 #    Each drive carries the whole layout, so the box can be read from any of them.
-tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid1","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
-tamarack-meta write /dev/sdb1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid1","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
-tamarack-meta write /dev/sdc1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid1","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
-tamarack-meta write /dev/sdd1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid1","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
+tamarack-meta write /dev/sda1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid5","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
+tamarack-meta write /dev/sdb1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid5","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
+tamarack-meta write /dev/sdc1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid5","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'
+tamarack-meta write /dev/sdd1 '{"drives":[{"device":"/dev/sda","size":4000000000000},{"device":"/dev/sdb","size":4000000000000},{"device":"/dev/sdc","size":8000000000000},{"device":"/dev/sdd","size":8000000000000}],"format":"tamarack-layout","layers":[{"index":1,"level":"raid5","members":[{"drive":0,"partition":2},{"drive":1,"partition":2},{"drive":2,"partition":2},{"drive":3,"partition":2}],"slice_bytes":3999980847104},{"index":2,"level":"raid5","members":[{"drive":2,"partition":3},{"drive":3,"partition":3}],"slice_bytes":3999999721472}],"version":1}'

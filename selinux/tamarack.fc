@@ -2,6 +2,18 @@
 /usr/libexec/tamarack-engine	--	gen_context(system_u:object_r:tamarack_engine_exec_t,s0)
 /usr/libexec/tamarack-meta	--	gen_context(system_u:object_r:tamarack_meta_exec_t,s0)
 /usr/lib/systemd/system/tamarack-engine\.service	--	gen_context(system_u:object_r:tamarack_unit_file_t,s0)
+/usr/lib/systemd/system/tamarack-scrub\.(service|timer)	--	gen_context(system_u:object_r:tamarack_unit_file_t,s0)
+/usr/lib/systemd/system/srv-tamarack\.mount	--	gen_context(system_u:object_r:tamarack_unit_file_t,s0)
+/srv/tamarack(/.*)?		gen_context(system_u:object_r:tamarack_data_t,s0)
 /var/lib/tamarack(/.*)?		gen_context(system_u:object_r:tamarack_var_lib_t,s0)
 /etc/tamarack(/.*)?		gen_context(system_u:object_r:tamarack_etc_t,s0)
 /etc/integritytab	--	gen_context(system_u:object_r:tamarack_integritytab_t,s0)
+# Fedora's policy labels cryptsetup lvm_exec_t but leaves integritysetup,
+# from the same project and doing the same job, as bin_t, so it would run
+# unconfined in the engine's domain and the engine would need raw access
+# to every disk. Give it cryptsetup's label so it runs in lvm_t, as
+# cryptsetup does. To be proposed to selinux-policy upstream.
+/usr/bin/integritysetup	--	gen_context(system_u:object_r:lvm_exec_t,s0)
+# wipefs, like blkid and mkfs, belongs in fsadm_t, but Fedora 45 leaves it
+# bin_t, so it would run in the engine's domain without disk access.
+/usr/bin/wipefs	--	gen_context(system_u:object_r:fsadm_exec_t,s0)

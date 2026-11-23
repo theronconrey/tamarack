@@ -319,7 +319,10 @@ def test_create_plan_over_the_bus(harness: Harness) -> None:
     assert get(client, "Digest", path, PLAN) == digest(expected)
     assert get(client, "Erases", path, PLAN) == devices
     steps = get(client, "Steps", path, PLAN)
-    assert steps[0][0] == "Partition each drive" and steps[0][2][0] == "sgdisk --zap-all /dev/sda"
+    assert (
+        steps[0][0] == "Partition each drive"
+        and steps[0][2][0] == "parted --script /dev/sda mklabel gpt"
+    )
     assert json.loads(get(client, "Summary", path, PLAN))["kind"] == "create"
     assert get(client, "ExpiresAt", path, PLAN) > 0
     # Planning is authorized as "read", for the caller who asked.

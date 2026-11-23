@@ -13,7 +13,10 @@ Documentation=https://github.com/theronconrey/tamarack
 What=/dev/tamarack/data
 Where=/srv/tamarack
 Type=btrfs
-Options=compress=zstd:1,noatime
+# rootcontext: a new filesystem's root has no SELinux label (unlabeled_t)
+# until something labels it; this gives it Tamarack's data label at every
+# mount, and everything created below inherits it.
+Options=compress=zstd:1,noatime,rootcontext=system_u:object_r:tamarack_data_t:s0
 
 [Install]
 WantedBy=multi-user.target

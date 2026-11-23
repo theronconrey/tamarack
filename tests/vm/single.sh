@@ -14,4 +14,5 @@ drive confirm-backup
 drive add "${d[1]}"  # one copy moves to the new drive
 check_data
 [ "$(drive tolerated)" = 1 ] || fail "two drives should survive one failure"
+check_ppl
 check_avc

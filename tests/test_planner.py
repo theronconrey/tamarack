@@ -38,7 +38,7 @@ def test_policy_rejects_zero_drives() -> None:
     "members, protection, level",
     [
         (1, Protection.ONE_DRIVE, Level.UNUSED),
-        (2, Protection.ONE_DRIVE, Level.RAID1),
+        (2, Protection.ONE_DRIVE, Level.RAID5),
         (3, Protection.ONE_DRIVE, Level.RAID5),
         (4, Protection.ONE_DRIVE, Level.RAID5),
         (2, Protection.TWO_DRIVE, Level.RAID1),
@@ -54,23 +54,23 @@ def test_single_drive_is_mirrored_on_itself() -> None:
     plan = make_plan([2 * TB])
     assert plan.protection is Protection.SAME_DRIVE_MIRROR
     (layer,) = plan.layers
-    assert layer.level is Level.RAID1 and layer.copies_on_same_drive
+    assert layer.level is Level.RAID5 and layer.copies_on_same_drive
     assert layer.member_count == 2
     assert plan.usable_nominal == near(1 * TB)
     assert plan.drive_failures_tolerated == 0
     assert any("Single drive" in w for w in plan.warnings)
 
 
-def test_two_equal_drives_mirror() -> None:
+def test_two_equal_drives_keep_two_copies_as_parity() -> None:
     plan = make_plan([4 * TB, 4 * TB])
-    assert [layer.level for layer in plan.layers] == [Level.RAID1]
+    assert [layer.level for layer in plan.layers] == [Level.RAID5]
     assert plan.usable_nominal == near(4 * TB)
     assert plan.drive_failures_tolerated == 1
 
 
 def test_mixed_four_drives_shr_style() -> None:
     plan = make_plan([4 * TB, 4 * TB, 8 * TB, 8 * TB])
-    assert [layer.level for layer in plan.layers] == [Level.RAID5, Level.RAID1]
+    assert [layer.level for layer in plan.layers] == [Level.RAID5, Level.RAID5]
     assert [len(layer.members) for layer in plan.layers] == [4, 2]
     assert plan.usable_nominal == near(16 * TB)
     assert not plan.warnings

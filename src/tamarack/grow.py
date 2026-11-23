@@ -41,6 +41,7 @@ from .steps import (
     minimum_size_for,
     partition_drive,
     render,
+    wait_idle,
 )
 from .units import GiB, format_size
 
@@ -101,8 +102,8 @@ def _single_to_mirror(layout: Layout, new: Disk) -> ChangePlan:
     after = Layout(
         drives=[old, new],
         layers=[
-            LayoutLayer(layer.index, Level.RAID1, half, (a_first, b_first)),
-            LayoutLayer(layer.index + 1, Level.RAID1, half, (a_second, b_second)),
+            LayoutLayer(layer.index, Level.RAID5, half, (a_first, b_first)),
+            LayoutLayer(layer.index + 1, Level.RAID5, half, (a_second, b_second)),
         ],
     )
     a, a3 = old.device, member_path(a_second)
@@ -116,7 +117,7 @@ def _single_to_mirror(layout: Layout, new: Disk) -> ChangePlan:
             (
                 cmd("mdadm", l1, "--add", b2),
                 cmd("mdadm", l1, "--replace", a3, "--with", b2),
-                cmd("mdadm", "--wait", l1),
+                wait_idle(l1),
                 cmd("mdadm", l1, "--remove", a3),
             ),
             "The old copy stays active until the new one is complete, so protection "
@@ -127,16 +128,16 @@ def _single_to_mirror(layout: Layout, new: Disk) -> ChangePlan:
             (
                 cmd("mdadm", "--zero-superblock", a3),
                 cmd(
-                    "sgdisk",
-                    *("-c", f"{a_first.partition}:tk-l{layer.index}"),
-                    *("-c", f"{a_second.partition}:tk-l{layer.index + 1}"),
-                    a,
+                    "parted",
+                    *("--script", a),
+                    *("name", str(a_first.partition), f"tk-l{layer.index}"),
+                    *("name", str(a_second.partition), f"tk-l{layer.index + 1}"),
                 ),
             ),
         ),
         Step(
-            "Mirror the freed halves as a new layer",
-            (create_array(l2, Level.RAID1, [a3, b3]),),
+            "Pair the freed halves as a new layer",
+            (create_array(l2, Level.RAID5, [a3, b3]),),
         ),
         grow_volume(grown=[], created=[l2]),
         metadata_step(after),

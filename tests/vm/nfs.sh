@@ -8,8 +8,7 @@
 nfs_cleanup() {
     local status=$?
     umount /mnt/tamarack-nfs /mnt/tamarack-ro 2>/dev/null || :
-    (exit "$status")
-    cleanup
+    cleanup "$status"
 }
 trap nfs_cleanup EXIT
 
@@ -24,7 +23,10 @@ tamarack engine share list | tee /var/tmp/tamarack-shares
 grep -q "sec=sys trusts the user IDs" /var/tmp/tamarack-shares || fail "security notes missing"
 grep -q "^/srv/tamarack/shares/media 127.0.0.1/32(rw," /etc/exports.d/tamarack.exports \
     || fail "media not in the exports file"
-rpcinfo -p 2>/dev/null | grep -qw mountd && fail "mountd is listening: NFSv3 should be off"
+# NFSv3 off: nfsd registers no version 3. (rpc.mountd still registers with
+# rpcbind; an NFSv4-only server needs it for export upcalls.)
+v3=$(rpcinfo -p 2>/dev/null | awk '$5 == "nfs" && $2 == 3' | wc -l) || :
+[ "${v3:-0}" -eq 0 ] || fail "nfsd offers NFSv3: it should be off"
 
 mkdir -p /mnt/tamarack-nfs /mnt/tamarack-ro
 mount -t nfs4 127.0.0.1:/srv/tamarack/shares/media /mnt/tamarack-nfs

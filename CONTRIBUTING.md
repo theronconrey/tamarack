@@ -56,7 +56,7 @@ Least privilege and defence in depth, the Fedora way:
 - **Destructive actions need explicit authorization.** Every method that can
   erase or reshape storage is a separate polkit action requiring admin
   authentication, and runs only after a dry run the user has seen.
-- **Running external tools safely.** Call `mdadm`, `sgdisk`, `integritysetup`
+- **Running external tools safely.** Call `mdadm`, `parted`, `integritysetup`
   and friends with argument lists (`subprocess.run([...], check=True)`), never
   `shell=True`, never strings built from user input. Validate device paths
   against UDisks/udev before use.

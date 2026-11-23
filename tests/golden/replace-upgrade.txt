@@ -3,13 +3,14 @@
 set -euo pipefail
 
 # 1. Check every layer is healthy
-#    Stops here if an array is degraded: a second problem must be fixed first.
+#    Waits for any resync still running (a new array's first one, say), then stops here if an array is degraded: a second problem must be fixed first.
+mdadm --wait /dev/md/tk-l1 || :
 mdadm --detail --test /dev/md/tk-l1
 
 # 2. Partition /dev/sdd
-sgdisk --zap-all /dev/sdd
-sgdisk -n 1:0:+16M -t 1:8300 -c 1:tk-meta /dev/sdd
-sgdisk -n 2:0:+3814679M -t 2:fd00 -c 2:tk-l1 /dev/sdd
+parted --script /dev/sdd mklabel gpt
+parted --script /dev/sdd mkpart tk-meta 1MiB 17MiB
+parted --script /dev/sdd mkpart tk-l1 17MiB 3814696MiB set 2 raid on
 partprobe /dev/sdd
 
 # 3. dm-integrity on the new partitions
@@ -20,7 +21,7 @@ integritysetup open --integrity crc32c /dev/sdd2 tk-d2-p2-new
 #    The old copy stays active until the new one is complete, so protection never drops.
 mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d2-p2-new
 mdadm /dev/md/tk-l1 --replace /dev/mapper/tk-d2-p2 --with /dev/mapper/tk-d2-p2-new
-mdadm --wait /dev/md/tk-l1
+mdadm --wait /dev/md/tk-l1 || :
 mdadm /dev/md/tk-l1 --remove /dev/mapper/tk-d2-p2
 
 # 5. Retire the old drive

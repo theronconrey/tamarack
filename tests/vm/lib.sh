@@ -7,6 +7,55 @@ HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# On any failure, show what the engine and SELinux said, so a red run in
+# Testing Farm explains itself.
+diagnostics() {  # [status]
+    local status=${1:-$?}
+    [ "$status" -eq 0 ] && return 0
+    echo "=== tamarack-engine journal ===" >&2
+    journalctl -b -u tamarack-engine --no-pager -o short-precise 2>&1 | tail -200 >&2
+    echo "=== SELinux denials (this boot, transition noise left out) ===" >&2
+    ausearch -m AVC,USER_AVC,SELINUX_ERR -ts boot 2>/dev/null \
+        | grep -Ev "$TRANSITION_NOISE" | grep -E 'denied|SELINUX_ERR' | head -100 >&2 || :
+    echo "=== engine process context ===" >&2
+    ps -eZ | grep -i tamarack >&2 || :
+    echo "=== SELinux labels of the programs the engine runs ===" >&2
+    for p in parted partprobe integritysetup wipefs chcon mdadm pvcreate pvresize vgcreate vgextend \
+        lvcreate lvextend mkfs.btrfs btrfs dmsetup systemctl blkid findmnt pvs vgs lvs; do
+        ls -LZ "$(command -v "$p")" 2>&1 >&2 || echo "$p: not found" >&2
+    done
+    ls -Z /usr/libexec/tamarack-meta >&2 || :
+    echo "=== kernel: md, device-mapper, integrity ===" >&2
+    journalctl -b -k --no-pager -o short-precise 2>&1 \
+        | grep -Ei '\bmd[0-9]*:|md_mod|raid[0-9]|device-mapper|dm-integrity' | tail -60 >&2 || :
+    echo "=== md devices ===" >&2
+    cat /proc/mdstat >&2 || :
+    lsmod | grep -E '^(raid1|raid456|dm_integrity|md_mod) ' >&2 || echo "md/dm modules: none loaded" >&2
+    ls -lZ /dev/md* /sys/module/md_mod/parameters/new_array >&2 2>&1 || :
+    echo "=== failed system calls by mdadm ===" >&2
+    auditctl -l 2>&1 | grep tamarack-md >&2 || echo "no tamarack-md audit rule loaded" >&2
+    ausearch -k tamarack-md -i 2>/dev/null | grep -E 'type=SYSCALL|type=PATH' \
+        | tail -40 >&2 || :
+    echo "=== the same mdadm --create, outside the engine's sandbox ===" >&2
+    local members
+    mapfile -t members < <(ls /dev/mapper/tk-d* 2>/dev/null | head -2)
+    if [ "${#members[@]}" -eq 2 ] && [ ! -e /dev/md/tk-l1 ]; then
+        mdadm --create /dev/md/tk-probe --run --metadata=1.2 --level=1 --raid-devices=2 \
+            --bitmap=internal "${members[@]}" >&2 2>&1 && echo "outside the sandbox: created" >&2
+        mdadm --stop /dev/md/tk-probe >/dev/null 2>&1 || :
+    fi
+    echo "=== md members ===" >&2
+    for m in /dev/mapper/tk-d*; do
+        [ -e "$m" ] || continue
+        echo "$m:" >&2
+        mdadm --examine "$m" 2>&1 | grep -E 'Data Offset|New Offset|Super Offset|Unused Space|Feature Map|Array State|Reshape|Bad Block Log|Consistency|PPL' >&2 || :
+    done
+    echo "=== the volume's labels ===" >&2
+    ls -ldZ /srv /srv/tamarack /srv/tamarack/shares >&2 2>&1 || :
+    sandbox_probe
+    return "$status"
+}
+
 # Fake drives: one scsi_debug host per drive, each with its own RAM store,
 # so they behave as separate disks with their own WWN and serial.
 make_drives() {  # count size_mb
@@ -59,10 +108,12 @@ make_file_drives() {  # size_mb...
         wwn=$(printf '%s%05x' "$LIO_WWN_PREFIX" "$i")
         rm -f "$file"
         truncate -s "${size}M" "$file"
-        # write_back=false: writes reach the file before they are
-        # acknowledged, as on a disk without a volatile cache.
+        # write_back=false (the default): writes reach the file before they
+        # are acknowledged, as on a disk without a volatile cache. Tests that
+        # don't cut power may set FILE_DRIVE_WRITE_BACK=true for speed.
         targetcli /backstores/fileio create name="$name" file_or_dev="$file" \
-            write_back=false >/dev/null || fail "cannot create backstore $name"
+            write_back="${FILE_DRIVE_WRITE_BACK:-false}" >/dev/null \
+            || fail "cannot create backstore $name"
         targetcli /loopback create wwn="$wwn" >/dev/null \
             || fail "cannot create loopback target $wwn"
         targetcli "/loopback/$wwn/luns" create "/backstores/fileio/$name" >/dev/null \
@@ -96,6 +147,29 @@ remove_file_drives() {
     rm -rf "$FILE_DRIVES"
 }
 
+# Can a new md array be made from inside the engine's sandbox? Compares
+# writing md_mod's new_array from the host and from the engine's mount
+# namespace, and shows how the engine sees /sys and /dev.
+sandbox_probe() {
+    echo "=== engine sandbox probe ===" >&2
+    systemctl start tamarack-engine 2>/dev/null || :
+    local pid new=/sys/module/md_mod/parameters/new_array
+    pid=$(systemctl show -p MainPID --value tamarack-engine)
+    [ "${pid:-0}" != 0 ] || { echo "engine not running" >&2; return 0; }
+    grep -E ' /(sys|dev)( |/(module|mapper|md)?)' "/proc/$pid/mountinfo" | head -20 >&2 || :
+    grep -E '^(Cap(Eff|Bnd)|NoNewPrivs|Seccomp):' "/proc/$pid/status" >&2 || :
+    nsenter -t "$pid" -m -- sh -c 'ls -ldZ /srv /srv/tamarack /srv/tamarack/shares; findmnt -T /srv/tamarack' >&2 2>&1 || :
+    systemctl show tamarack-engine -p DevicePolicy -p DeviceAllow >&2 || :
+    local out
+    out=$(sh -c "echo md120 > $new" 2>&1) && out="ok $out"
+    echo "host new_array: $out" >&2
+    out=$(nsenter -t "$pid" -m -- sh -c "echo md121 > $new" 2>&1) && out="ok $out"
+    echo "engine namespace new_array: $out" >&2
+    cat /proc/mdstat >&2
+    ls -l /dev/md12[01] >&2 2>&1 || :
+    mdadm --stop /dev/md120 /dev/md121 >/dev/null 2>&1 || :
+}
+
 start_engine() {
     [ "$(getenforce)" = "Enforcing" ] || fail "SELinux must be enforcing"
     install -d -m 0755 /etc/tamarack
@@ -105,8 +179,18 @@ start_engine() {
         /etc/polkit-1/rules.d/50-tamarack-test.rules
     systemctl restart polkit
     rm -rf /var/lib/tamarack
+    # Record every failed system call made in mdadm's domain, with its
+    # error number: mdadm --create fails with no AVC and no kernel message.
+    auditctl -D -k tamarack-md >/dev/null 2>&1 || :
+    auditctl -a always,exit -F arch=b64 -S all -F exe="$(readlink -f "$(command -v mdadm)")" \
+        -F success=0 -k tamarack-md >&2 || echo "auditctl: could not add the mdadm rule" >&2
     systemctl restart tamarack-engine
-    START=$(date '+%m/%d/%Y %H:%M:%S')
+    START=$(date '+%m/%d/%Y %H:%M:%S')  # ausearch's format
+    JOURNAL_START=$(date '+%Y-%m-%d %H:%M:%S')  # journalctl's
+    local domain
+    domain=$(ps -eo label,comm | grep -c '^system_u:system_r:tamarack_engine_t:s0 *tamarack-engine') || :
+    [ "${domain:-0}" -gt 0 ] \
+        || fail "the engine is not running in its SELinux domain (tamarack_engine_t)"
 }
 
 drive() { python3 "$HERE/drive.py" "$@"; }
@@ -125,22 +209,80 @@ check_data() {
         || fail "data changed"
 }
 
+# siginh, rlimitinh and noatsecure are checked on every domain transition
+# and dontaudit'ed by Fedora's policy; they only show if dontaudit is off.
+TRANSITION_NOISE='denied +\{ (siginh|rlimitinh|noatsecure) \}'
+
+# Denials by Fedora's own domains, not Tamarack's, that do not stop
+# anything working. Listed one by one, each to be raised with
+# selinux-policy; any other denial still fails the test.
+#  - snapperd asks systemd to reload when a config is created.
+#  - mdadm checks /dev/kmsg, which these VMs label init_var_run_t.
+#  - rpcbind binds an unreserved UDP port when nfs-server starts.
+FEDORA_POLICY_GAPS='scontext=system_u:system_r:snapperd_t:s0 tcontext=system_u:system_r:init_t:s0 tclass=system|denied +\{ getattr \} for .*comm="mdadm" path="/dev/kmsg"|denied +\{ name_bind \} for .*comm="rpcbind" .*tcontext=system_u:object_r:unreserved_port_t:s0 tclass=udp_socket'
+
+# Every layer keeps md's partial parity log once nothing is reshaping.
+check_ppl() {
+    local md policy
+    for md in /dev/md/tk-l*; do
+        [ -e "$md" ] || continue
+        mdadm --wait "$md" >/dev/null 2>&1 || :
+        policy=$(mdadm --detail "$md" | sed -n 's/^ *Consistency Policy : //p')
+        [ "$policy" = ppl ] || fail "$md has consistency policy '$policy', not ppl"
+    done
+}
+
 check_avc() {
-    if ausearch -m AVC,USER_AVC -ts "$START" 2>/dev/null | grep -q denied; then
-        ausearch -m AVC,USER_AVC -ts "$START" >&2
+    local denials
+    denials=$(ausearch -m AVC,USER_AVC -ts "$START" 2>/dev/null | grep denied \
+        | grep -Ev "$TRANSITION_NOISE" | grep -Ev "$FEDORA_POLICY_GAPS") || :
+    if [ -n "$denials" ]; then
+        echo "$denials" >&2
         fail "SELinux denials"
     fi
 }
 
-cleanup() {
+# Runs from the EXIT trap, or from a test's own trap with the test's exit
+# status as its argument. Never stops half way: set -e is off in here.
+cleanup() {  # [status]
+    local status=${1:-$?}
+    set +e
+    diagnostics "$status"
     systemctl stop tamarack-engine 2>/dev/null || :
     systemctl disable --now srv-tamarack.mount 2>/dev/null || :
-    umount /srv/tamarack /mnt/rescue 2>/dev/null || :
+    umount /mnt/rescue 2>/dev/null || :
+    while mountpoint -q /srv/tamarack; do umount /srv/tamarack || break; done
+    # Take the stack down from the top. The VG may not be in the host's LVM
+    # devices file, so remove its dm devices directly as well.
     vgchange -an tamarack 2>/dev/null || :
+    for m in /dev/mapper/tamarack-*; do
+        if [ -e "$m" ]; then dmsetup remove --retry "$(basename "$m")" || :; fi
+    done
+    for md in /dev/md/tk-* /dev/md/rescue* /dev/md12[0-7]; do
+        if [ -e "$md" ]; then mdadm --stop "$md" >/dev/null 2>&1 || :; fi
+    done
     mdadm --stop --scan 2>/dev/null || :
     for m in /dev/mapper/tk-* /dev/mapper/rescue-*; do
-        [ -e "$m" ] && integritysetup close "$(basename "$m")"
+        if [ -e "$m" ]; then integritysetup close "$(basename "$m")" || :; fi
     done
-    modprobe -r scsi_debug 2>/dev/null || :
+    # Wipe the test drives, so a job that failed half way (partitions but
+    # no layout record) cannot make the engine refuse the next test. Only
+    # the drives this test made: scsi_debug and tk-test-* LIO disks.
+    for d in "${DRIVES[@]:-}"; do
+        [ -b "$d" ] && wipefs --all --force "$d"?* "$d" >/dev/null 2>&1 || :
+    done
+    udevadm settle
+    if lsmod | grep -q '^scsi_debug ' && ! modprobe -r scsi_debug; then
+        echo "WARNING: scsi_debug is still in use; the next test may see these drives" >&2
+        dmsetup ls >&2 || :
+        cat /proc/mdstat >&2 || :
+        lsblk -o NAME,TYPE,SIZE,MOUNTPOINTS >&2 || :
+    fi
     remove_file_drives
+    # The snapper config outlives the volume; the next pool makes a new one.
+    rm -f /etc/snapper/configs/tamarack
+    if [ -f /etc/sysconfig/snapper ]; then
+        sed -i -E 's/^(SNAPPER_CONFIGS="[^"]*)\btamarack\b ?/\1/' /etc/sysconfig/snapper
+    fi
+    auditctl -D -k tamarack-md >/dev/null 2>&1 || :
 }
