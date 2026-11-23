@@ -143,7 +143,7 @@ def _failures_text(n: int) -> str:
 def format_grow(plan: GrowPlan) -> str:
     before = plan.before
     out = [
-        f"Adding {plan.new_device} to {', '.join(d.device for d in before.drives)}",
+        f"Adding {plan.erases} to {', '.join(d.device for d in before.drives)}",
         "",
         f"Before: {_failures_text(before.drive_failures_tolerated)}, "
         f"{format_size(plan.usable_before)} usable",
