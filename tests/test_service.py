@@ -601,3 +601,37 @@ def test_snapshot_schedule_over_the_bus(runner_harness: tuple[Harness, FakeRunne
         lambda: call(h.client, "SetSnapshotSchedule", GLib.Variant("(a{su})", (bad,)))
     )
     assert name == ERR + "InvalidArgument"
+
+
+def test_shares_over_the_bus(bus: str, tmp_path: Path, chowns: list[tuple[str, int, int]]) -> None:
+    state, root = tmp_path / "state", tmp_path / "root"
+    state.mkdir()
+    (root / "srv" / "tamarack" / "shares").mkdir(parents=True)
+    (root / "etc" / "exports.d").mkdir(parents=True)
+    plan = make_plan(
+        [4 * TB, 4 * TB],
+        ["/dev/sda", "/dev/sdb"],
+        ["wwn:0x5000000000000001", "wwn:0x5000000000000002"],
+    )
+    (state / "layout.json").write_text(layout_from_plan(plan).to_json())
+    runner = FakeRunner()
+    h = Harness(bus, state, runner=runner, root=str(root))
+    try:
+        assert json.loads(get(h.client, "Shares")) == []
+        options = {
+            "clients": GLib.Variant("as", ["192.168.1.0/24"]),
+            "read-only": GLib.Variant("b", True),
+        }
+        call(h.client, "SetShare", GLib.Variant("(sa{sv})", ("media", options)))
+        (share,) = json.loads(get(h.client, "Shares"))
+        assert share["path"] == "/srv/tamarack/shares/media" and share["read_only"]
+        assert share["security"][0].startswith("sec=sys trusts the user IDs")
+        assert (root / "etc/exports.d/tamarack.exports").read_text().count("media") == 1
+        assert any(a == "com.borealislogistics.tamarack.share" for _, a, _ in h.fakes.checks)
+        bad = {"clients": GLib.Variant("as", ["host(rw)"])}
+        name, _ = error_of(lambda: call(h.client, "SetShare", GLib.Variant("(sa{sv})", ("x", bad))))
+        assert name == ERR + "InvalidArgument"
+        call(h.client, "RemoveShare", GLib.Variant("(s)", ("media",)))
+        assert json.loads(get(h.client, "Shares")) == []
+    finally:
+        h.stop()

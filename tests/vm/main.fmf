@@ -5,6 +5,7 @@ require:
   - kernel-modules-extra  # scsi_debug
   - audit
   - python3-gobject-base
+  - nfs-utils  # the NFS client side of the nfs test
   - targetcli  # file-backed drives through LIO (tcm_loop)
 
 /create-grow:
@@ -38,3 +39,7 @@ require:
 /mixed:
     summary: Mixed sizes, leftover space paired later
     test: ./mixed.sh
+
+/nfs:
+    summary: Shares over NFSv4, squashing, read-only
+    test: ./nfs.sh

@@ -38,3 +38,19 @@ def bus(tmp_path: Path) -> Iterator[str]:
     yield address
     daemon.terminate()
     daemon.wait(timeout=10)
+
+
+@pytest.fixture
+def chowns(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, int, int]]:
+    """Record os.chown calls instead of making them.
+
+    Giving a file away needs root, and package builds (mock) run the tests
+    as an ordinary user.
+    """
+    calls: list[tuple[str, int, int]] = []
+
+    def chown(path: str, uid: int, gid: int) -> None:
+        calls.append((str(path), uid, gid))
+
+    monkeypatch.setattr("os.chown", chown)
+    return calls
