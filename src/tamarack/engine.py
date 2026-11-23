@@ -62,6 +62,10 @@ ACTIONS = {
 NEEDS_BACKUP = {PlanKind.ADD, PlanKind.REPLACE, PlanKind.REBUILD}
 LAYOUT_FILE = "layout.json"
 BACKUP_FILE = "backup-confirmed"
+SCHEDULE_FILE = "snapshot-schedule.json"
+SNAPSHOT_PERIODS = ("hourly", "daily", "weekly", "monthly")
+DEFAULT_SCHEDULE = {"hourly": 24, "daily": 7, "weekly": 4, "monthly": 6}
+MAX_KEPT = 1000
 JOBS_SUBDIR = "jobs"
 
 # Paths UDisks2 and udev create: /dev/sdb, /dev/nvme0n1, /dev/disk/by-id/...
@@ -653,6 +657,55 @@ class Engine:
             return cancel_journal(self._journal(job_id))
         self._cancel_requested.discard(job_id)
         return report
+
+    @property
+    def snapshot_schedule(self) -> dict[str, int]:
+        try:
+            with open(os.path.join(self.state_dir, SCHEDULE_FILE), encoding="utf-8") as f:
+                stored = json.load(f)
+            return {p: int(stored[p]) for p in SNAPSHOT_PERIODS}
+        except (OSError, ValueError, KeyError, TypeError):
+            return dict(DEFAULT_SCHEDULE)
+
+    def authorize_snapshot_schedule(self, schedule: dict[str, Any]) -> str:
+        self._valid_schedule(schedule)
+        return f"{POLKIT}.configure"
+
+    def set_snapshot_schedule(self, schedule: dict[str, Any]) -> dict[str, int]:
+        """Apply a new timeline schedule with snapper, then remember it."""
+        wanted = self._valid_schedule(schedule)
+        runner = self._require_runner()
+        if self._layout is None:
+            raise NoLayout("there is no pool to snapshot yet")
+        if self._running:
+            raise Busy(f"job {self._running} is running")
+        from .commands import SNAPPER_CONFIG
+        from .ops import cmd
+
+        on = any(wanted.values())
+        settings = [f"TIMELINE_CREATE={'yes' if on else 'no'}"] + [
+            f"TIMELINE_LIMIT_{period.upper()}={wanted[period]}" for period in SNAPSHOT_PERIODS
+        ]
+        command = cmd("snapper", "--config", SNAPPER_CONFIG, "set-config", *settings)
+        result = runner.run(command.argv)
+        if result.exit:
+            raise EngineError(f"snapper could not change the schedule: {result.stderr.strip()}")
+        write_atomically(
+            os.path.join(self.state_dir, SCHEDULE_FILE), json.dumps(wanted, sort_keys=True) + "\n"
+        )
+        return wanted
+
+    @staticmethod
+    def _valid_schedule(schedule: dict[str, Any]) -> dict[str, int]:
+        if set(schedule) != set(SNAPSHOT_PERIODS):
+            raise InvalidArgument(f"give all of {', '.join(SNAPSHOT_PERIODS)}")
+        wanted = {}
+        for period in SNAPSHOT_PERIODS:
+            value = schedule[period]
+            if not isinstance(value, int) or isinstance(value, bool) or not 0 <= value <= MAX_KEPT:
+                raise InvalidArgument(f"{period} must be a whole number from 0 to {MAX_KEPT}")
+            wanted[period] = value
+        return wanted
 
     def authorize_confirm_backup(self) -> str:
         return f"{POLKIT}.confirm-backup"

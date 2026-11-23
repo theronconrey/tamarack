@@ -27,6 +27,9 @@
     <property name="OnBattery" type="b" access="read"/>
     <!-- Unix time of the last ConfirmBackup, 0 if never -->
     <property name="LastBackupConfirmed" type="t" access="read"/>
+    <!-- Snapshots kept per period: hourly, daily, weekly, monthly. All zero
+         means timeline snapshots are off. -->
+    <property name="SnapshotSchedule" type="a{su}" access="read"/>
     <!-- The running or paused job, or "/" -->
     <property name="ActiveJob" type="o" access="read"/>
 
@@ -59,6 +62,13 @@
     <method name="ConfirmBackup">
       <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
                   value="com.borealislogistics.tamarack.confirm-backup"/>
+    </method>
+    <!-- Keys "hourly", "daily", "weekly", "monthly" (all four); all zero
+         turns timeline snapshots off. Applied with snapper set-config. -->
+    <method name="SetSnapshotSchedule">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.configure"/>
+      <arg name="schedule" type="a{su}" direction="in"/>
     </method>
 
     <signal name="LayoutChanged">

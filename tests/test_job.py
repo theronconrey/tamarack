@@ -402,6 +402,7 @@ def test_every_probe_is_a_read_only_program() -> None:
         ("lvs",),
         ("mdadm", "--detail"),
         ("pvs",),
+        ("snapper", "--config", "tamarack", "get-config"),
         ("vgs",),
     }
     for doc in (make() for make in PLANS.values()):

@@ -137,6 +137,7 @@ Defined in
 | `…tamarack.resume` | `Job.Resume` after an interruption | no / no / `auth_admin` |
 | `…tamarack.cancel` | `Job.Cancel` | no / no / `auth_admin_keep` |
 | `…tamarack.confirm-backup` | `Manager.ConfirmBackup` | no / no / `auth_admin_keep` |
+| `…tamarack.configure` | `Manager.SetSnapshotSchedule` (and later settings) | no / no / `auth_admin_keep` |
 
 Destructive actions use `auth_admin`, not `auth_admin_keep`: every change
 asks for the admin password again. Each check passes polkit the plan's
@@ -208,6 +209,25 @@ makes skipping them a deliberate act.
   `ArrayDegraded` or `DriveFailing` on D-Bus. The first check after start
   reports problems that already exist. `Manager.Health` holds the whole
   picture as JSON for Cockpit and the CLI.
+
+### Snapshots (track 3)
+
+- **snapper** (Fedora's `snapper`) takes timeline snapshots of the `shares`
+  subvolume and prunes them. The engine package ships a template,
+  `/usr/share/snapper/config-templates/tamarack`, with the defaults: 24
+  hourly, 7 daily, 4 weekly, 6 monthly.
+- **A create plan** runs `snapper --config tamarack create-config --template
+  tamarack` on `shares`, then enables snapper's own `snapper-timeline.timer`
+  and `snapper-cleanup.timer`. The separate `snapshots` subvolume from the
+  first design is gone: snapper keeps them in `shares/.snapshots`, which
+  read-only NFS access can expose as "previous versions" later.
+- **`Manager.SetSnapshotSchedule`** (polkit `…tamarack.configure`, admin,
+  remembered for a few minutes) changes the four limits, or turns timeline
+  snapshots off when all are zero, through `snapper set-config`.
+  `Manager.SnapshotSchedule` reports them. From a terminal: `tamarack engine
+  snapshots [--keep H D W M | --off]`.
+- snapper is a D-Bus client of `snapperd`, which does the work in its own
+  SELinux domain; the engine's policy only lets the two talk.
 
 ## 6. Steps become structured commands
 

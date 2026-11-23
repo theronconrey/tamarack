@@ -96,3 +96,13 @@ def test_missing_engine_is_explained(bus: str) -> None:
 def test_job_paths() -> None:
     assert client.job_path("3") == "/com/borealislogistics/Tamarack1/Jobs/3"
     assert client.job_path("/x/Jobs/3") == "/x/Jobs/3"
+
+
+def test_snapshots_command(h: Harness) -> None:
+    code, text = run(h, ["snapshots"])
+    assert code == 0 and text == "Snapshots kept: 24 hourly, 7 daily, 4 weekly, 6 monthly\n"
+    run(h, ["create", "/dev/sda", "/dev/sdb", "--no-ups"], typed="/dev/sda /dev/sdb")
+    code, text = run(h, ["snapshots", "--keep", "12", "7", "0", "3"])
+    assert text == "Snapshots kept: 12 hourly, 7 daily, 0 weekly, 3 monthly\n"
+    code, text = run(h, ["snapshots", "--off"])
+    assert text == "Snapshots: off\n"
