@@ -28,7 +28,7 @@ jobs:
         run: >
           dnf -y install glibc-langpack-en git-core rpm-build rpmdevtools rpmlint
           python3-devel pyproject-rpm-macros python3-pytest python3-mypy ruff
-          python3-gobject-base dbus-daemon tmt
+          python3-gobject-base dbus-daemon tmt nodejs
 
       - uses: actions/checkout@v4
 
@@ -41,6 +41,7 @@ jobs:
           ruff check .
           ruff format --check .
           mypy
+          node --test tests/cockpit/test_status.js
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           tmt lint
 
@@ -80,5 +81,7 @@ jobs:
           # --man=no: the container installs without documentation.
           systemd-analyze verify --man=no /usr/lib/systemd/system/tamarack-engine.service
           semodule -l | grep -qx tamarack  # the SELinux module installed
+          # The Cockpit page: installed where Cockpit looks, and listed by it.
+          cockpit-bridge --packages | grep -qw tamarack
           systemd-analyze security --offline=true --no-pager \
             /usr/lib/systemd/system/tamarack-engine.service || true

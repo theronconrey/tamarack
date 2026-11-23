@@ -869,3 +869,19 @@ def test_failed_snapper_keeps_the_old_schedule(tmp_path: Path) -> None:
     with pytest.raises(EngineError, match="not found"):
         e.set_snapshot_schedule({"hourly": 1, "daily": 1, "weekly": 1, "monthly": 1})
     assert e.snapshot_schedule["hourly"] == 24
+
+
+def test_space_is_empty_until_the_volume_is_mounted(tmp_path: Path) -> None:
+    assert run_engine(tmp_path, ["/dev/sda", "/dev/sdb"]).space() == {}
+
+
+def test_space_reports_the_mounted_volume_like_df(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    mount = os.path.join(e.root, "srv/tamarack")
+    monkeypatch.setattr(os.path, "ismount", lambda p: p == mount)
+    fake = os.statvfs_result((4096, 4096, 1000, 400, 350, 0, 0, 0, 0, 255))
+    monkeypatch.setattr(os, "statvfs", lambda p: fake)
+    # size = blocks; used = blocks - bfree; free = bavail (what users can write)
+    assert e.space() == {"size": 4096000, "used": 2457600, "free": 1433600}

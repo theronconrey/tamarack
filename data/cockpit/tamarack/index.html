@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tamarack</title>
+    <link rel="stylesheet" href="tamarack.css">
+    <script src="../base1/cockpit.js"></script>
+    <script src="status.js"></script>
+    <script src="tamarack.js" defer></script>
+</head>
+<body>
+<main class="tk-page">
+    <div class="tk-head">
+        <div>
+            <h1>Storage</h1>
+            <p id="tk-summary" class="tk-muted">Loading…</p>
+        </div>
+        <span class="tk-muted tk-small">Managed by Tamarack</span>
+    </div>
+
+    <div id="tk-banner"></div>
+
+    <div id="tk-content" class="tk-columns" hidden>
+        <section id="drives" class="tk-card tk-wide" aria-labelledby="drives-h">
+            <div class="tk-card-head">
+                <h2 id="drives-h">Drives</h2>
+                <span id="tk-drive-count" class="tk-muted tk-small"></span>
+            </div>
+            <div id="tk-drives"></div>
+        </section>
+
+        <div class="tk-stack">
+            <section class="tk-card" aria-labelledby="space-h">
+                <h2 id="space-h">Space</h2>
+                <div id="tk-capacity"></div>
+            </section>
+            <section class="tk-card" aria-labelledby="care-h">
+                <h2 id="care-h">Looking after your data</h2>
+                <div id="tk-care"></div>
+            </section>
+        </div>
+    </div>
+</main>
+</body>
+</html>
