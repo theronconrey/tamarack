@@ -162,8 +162,17 @@ cleanup() {
     vgchange -an tamarack 2>/dev/null || :
     mdadm --stop --scan 2>/dev/null || :
     for m in /dev/mapper/tk-* /dev/mapper/rescue-*; do
-        [ -e "$m" ] && integritysetup close "$(basename "$m")"
+        if [ -e "$m" ]; then integritysetup close "$(basename "$m")" || :; fi
     done
-    modprobe -r scsi_debug 2>/dev/null || :
+    # Wipe the test drives, so a job that failed half way (partitions but
+    # no layout record) cannot make the engine refuse the next test. Only
+    # the drives this test made: scsi_debug and tk-test-* LIO disks.
+    for d in "${DRIVES[@]:-}"; do
+        [ -b "$d" ] && wipefs --all --force "$d"?* "$d" >/dev/null 2>&1 || :
+    done
+    udevadm settle
+    if lsmod | grep -q '^scsi_debug ' && ! modprobe -r scsi_debug; then
+        echo "WARNING: scsi_debug is still in use; the next test may see these drives" >&2
+    fi
     remove_file_drives
 }
