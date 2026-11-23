@@ -311,8 +311,10 @@ ships, and every remaining exposure is either fixed or explained.
 - **Sandbox paths** the tools need are writable: `/run/mdadm`, `/run/lvm`,
   `/run/lock/lvm`, `/run/cryptsetup` and `/etc/lvm/{archive,backup,devices}`.
 
-Still to do in step 6: the SELinux module and writing the layout to the
-`tk-meta` partitions.
+Still to do in step 6: writing the layout to the `tk-meta` partitions,
+and mounting at boot. `systemd-analyze security` rates the unit 2.6
+("OK"); the remaining exposures are the ones a storage service needs: root,
+raw block devices, `CAP_SYS_ADMIN`, writable md sysfs.
 
 ## 9. SELinux
 
@@ -322,6 +324,17 @@ tool's existing Fedora domain (`mdadm_t`, `lvm_t`, `fsadm_t` and so on) rather
 than being granted the tool's permissions itself. Its own files are
 `tamarack_engine_exec_t` and `tamarack_var_lib_t`. The VM tests run
 **enforcing** and fail on any AVC denial.
+
+Status (step 6): the module is in [`selinux/`](../../selinux) and ships as
+the `tamarack-selinux` subpackage, which `tamarack-engine` pulls in wherever
+the targeted policy is installed. The engine domain may manage its state,
+read its config, read `/proc` and sysfs, use the system bus (own its name;
+talk to polkit, UDisks2, UPower and systemd) and transition into `mdadm_t`,
+`lvm_t` and `fsadm_t`. It gets no raw-disk access of its own. The rules are
+a first draft written without an SELinux machine to try them on; the step 7
+VM matrix, run enforcing, is what will find what is missing.
+`tamarack_dbus_chat` lets a confined client such as a Cockpit page talk to
+the engine.
 
 ## 10. Testing on (virtual) disks
 
