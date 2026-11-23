@@ -13,8 +13,10 @@ execution on in ``/etc/tamarack/engine.conf``::
     enabled = yes
 
 Without that file, or with anything but ``yes``, the engine plans and
-reviews but refuses to execute. Until the VM test matrix (step 7 of
-docs/design/engine.md) passes, execution is meant for test machines only.
+reviews but refuses to execute. The one command it runs regardless is
+``tamarack-meta read``, which only reads the layout records on the drives.
+Until the VM test matrix (step 7 of docs/design/engine.md) passes,
+execution is meant for test machines only.
 """
 
 from __future__ import annotations
@@ -87,6 +89,30 @@ class SubprocessRunner:
         if completed.returncode:
             log.warning("%s exited %d", argv[0], completed.returncode)
         return Result(completed.returncode, stderr)
+
+
+def read_meta(device: str, directories: Iterable[str] = PROGRAM_DIRS) -> str:
+    """``tamarack-meta read DEVICE``: the one command the engine runs with execution off.
+
+    It only reads, and runs in its own SELinux domain like the writes do.
+    """
+    from .engine import validate_device_path
+
+    path = resolve("tamarack-meta", directories)
+    completed = subprocess.run(
+        [path, "read", validate_device_path(device)],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        env=ENVIRONMENT,
+        close_fds=True,
+        check=False,
+        text=True,
+        errors="replace",
+        timeout=60,
+    )
+    if completed.returncode:
+        raise ValueError(completed.stderr.strip() or f"tamarack-meta exited {completed.returncode}")
+    return completed.stdout
 
 
 def execution_enabled(path: str = CONFIG_FILE) -> bool:

@@ -97,6 +97,19 @@ def find_present(objects: Objects, devices: Iterable[str]) -> dict[str, str]:
     return present
 
 
+def find_meta_partitions(objects: Objects) -> list[str]:
+    """Device paths of every partition named tk-meta, as UDisks2 reports them."""
+    from .commands import META_PARTLABEL
+
+    found = []
+    for interfaces in objects.values():
+        if interfaces.get(PARTITION, {}).get("Name") == META_PARTLABEL and BLOCK in interfaces:
+            device = _path(interfaces[BLOCK].get("Device", b""))
+            if device:
+                found.append(device)
+    return sorted(found)
+
+
 class UDisksDrives:
     """``DriveSource`` backed by UDisks2 on the given GDBus connection."""
 
@@ -129,3 +142,18 @@ class UDisksDrives:
 
     def present(self, devices: list[str]) -> dict[str, str]:
         return find_present(self.objects(), devices)
+
+
+class DriveRecords:
+    """``MetaSource``: tk-meta partitions found by UDisks2, read by tamarack-meta."""
+
+    def __init__(self, drives: UDisksDrives) -> None:
+        self.drives = drives
+
+    def partitions(self) -> list[str]:
+        return find_meta_partitions(self.drives.objects())
+
+    def read(self, device: str) -> str:
+        from .runner import read_meta
+
+        return read_meta(device)
