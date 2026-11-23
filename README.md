@@ -130,6 +130,12 @@ Everything on disk is standard mdadm, LVM and Btrfs. If this software
 disappears, any Linux system can open the drives with `integritysetup open`,
 `mdadm --assemble --scan`, `vgchange -ay` and `mount`.
 
+## Design
+
+The storage engine (the part that will change disks) is designed in
+[docs/design/engine.md](docs/design/engine.md), with draft D-Bus, polkit and
+systemd files under [`data/`](data/).
+
 ## Develop
 
 All contributions follow Fedora best practices; see
