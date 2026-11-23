@@ -1,14 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Tamarack storage engine (design draft; docs/design/engine.md, section 8).
+# Tamarack storage engine (docs/design/engine.md, section 8).
 # The only privileged Tamarack component. Every relaxation of the sandbox
-# below carries a comment saying why.
+# below carries a comment saying why. It runs storage commands only when
+# /etc/tamarack/engine.conf turns execution on.
 
 [Unit]
 Description=Tamarack storage engine
 Documentation=man:tamarack(1) https://github.com/theronconrey/tamarack
 Wants=udisks2.service upower.service
-After=udisks2.service upower.service
+After=udisks2.service upower.service polkit.service
 
 [Service]
 Type=dbus
@@ -21,6 +22,13 @@ UMask=0077
 
 # Filesystem and process isolation
 ProtectSystem=strict
+# The storage tools keep locks and state here: mdadm in /run/mdadm, LVM in
+# /run/lvm, /run/lock/lvm and /etc/lvm (metadata backups and the devices
+# file), cryptsetup's integritysetup in /run/cryptsetup.
+ReadWritePaths=-/run/mdadm -/run/lvm -/run/lock/lvm -/run/cryptsetup
+ReadWritePaths=-/etc/lvm/archive -/etc/lvm/backup -/etc/lvm/devices
+RuntimeDirectory=mdadm lvm lock/lvm cryptsetup
+RuntimeDirectoryPreserve=yes
 ProtectHome=yes
 PrivateTmp=yes
 ProtectProc=invisible

@@ -13,9 +13,10 @@ so the engine keeps answering while an authentication dialog is open. Jobs
 run on a worker thread; their progress comes back to the main loop as
 property changes and signals.
 
-The service is started without a command runner, so ``Execute`` and
-``Resume`` answer ``NotSupported`` until the real runner lands with the VM
-test matrix (step 6 of docs/design/engine.md).
+The service gets the real command runner only when the administrator turns
+execution on in /etc/tamarack/engine.conf (see ``tamarack.runner``); without
+it ``Execute`` and ``Resume`` answer ``NotSupported``. Execution is for test
+machines until the VM test matrix passes (docs/design/engine.md, step 7).
 
 Run as ``/usr/libexec/tamarack-engine`` by ``tamarack-engine.service``
 (packaged in a later step), or for development:
@@ -545,14 +546,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     gi.require_version("Gio", "2.0")
     from gi.repository import Gio, GLib
 
+    from .runner import CONFIG_FILE, SubprocessRunner, execution_enabled
     from .udisks import UDisksDrives
 
     system = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
     bus = Gio.bus_get_sync(Gio.BusType.SESSION, None) if args.session else system
     on_battery, ups_present = upower(system)
-    # No runner: this build never runs a storage command (docs/design/engine.md, step 6).
+    runner = None
+    if execution_enabled() and not args.session:
+        runner = SubprocessRunner()
+        log.warning("execution is enabled in %s: approved plans will change disks", CONFIG_FILE)
     engine = Engine(
-        args.state_dir, UDisksDrives(system), on_battery=on_battery, ups_present=ups_present
+        args.state_dir,
+        UDisksDrives(system),
+        on_battery=on_battery,
+        ups_present=ups_present,
+        runner=runner,
     )
     authority: Authority = ReadOnlyAuthority() if args.session else PolkitAuthority(system)
     service = Service(engine, bus, authority)

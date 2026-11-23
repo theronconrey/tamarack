@@ -5,7 +5,7 @@ After a power cut the journal shows every command that finished, and at most
 one that started without finishing. Commands after it never started, so only
 that one is in doubt. Each command has a resume rule:
 
-* ``rerun``: running it again is harmless (``mkdir -p``, ``mdadm --wait``,
+* ``rerun``: running it again is harmless (``partprobe``, ``mdadm --wait``,
   formatting a partition nothing uses yet).
 * ``probe``: a read-only command tells whether it took effect; if the probe
   succeeds the command is treated as done, otherwise it runs again.
@@ -96,9 +96,7 @@ def rule_for(command: Command) -> Rule:
         return _probe("lvs", f"{args[-1]}/{name}")
     if program == "mkfs.btrfs":
         return _probe("blkid", "--match-token", "TYPE=btrfs", args[-1])
-    if program == "mkdir" and args[0] == "-p":
-        return RERUN
-    if program == "mount":
+    if program == "systemd-mount":
         return _probe("findmnt", "--mountpoint", args[-1])
     if program == "btrfs":
         if args[:2] == ("subvolume", "create"):
