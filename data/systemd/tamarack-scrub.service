@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Read and verify every block of the Tamarack volume. Btrfs checks its own
+# checksums and repairs from the DUP metadata copy; under it, dm-integrity
+# turns silent corruption into read errors that md repairs from the other
+# drives. Started monthly by tamarack-scrub.timer. Fedora's raid-check.timer
+# (from mdadm) separately checks the md arrays every week.
+
+[Unit]
+Description=Scrub the Tamarack volume
+Documentation=https://github.com/theronconrey/tamarack
+Requires=srv-tamarack.mount
+After=srv-tamarack.mount
+ConditionPathIsMountPoint=/srv/tamarack
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/btrfs scrub start -B -d /srv/tamarack
+# Stay out of the way of normal use.
+Nice=19
+IOSchedulingClass=idle
+CPUSchedulingPolicy=batch
+
+# btrfs scrub keeps its progress in /var/lib/btrfs.
+StateDirectory=btrfs
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+# The scrub ioctls need CAP_SYS_ADMIN; nothing else is kept.
+CapabilityBoundingSet=CAP_SYS_ADMIN
+# NoNewPrivileges= stays off: it would stop the SELinux transition from
+# init_t into fsadm_t, Fedora's confined domain for btrfs.

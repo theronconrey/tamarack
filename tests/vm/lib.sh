@@ -43,6 +43,79 @@ make_drives() {  # count size_mb
     echo "drives: ${DRIVES[*]}"
 }
 
+# File-backed drives of any size, through the kernel's SCSI target (LIO):
+# one sparse file, fileio backstore and loopback (tcm_loop) target per
+# drive, so each is its own SCSI disk with its own WWN and serial. Unlike
+# scsi_debug the drives can differ in size, and the targets are saved for
+# target.service, so they can come back after a reboot.
+FILE_DRIVES=/var/tmp/tamarack-drives
+# Loopback WWNs made here start with this, so cleanup removes only ours.
+LIO_WWN_PREFIX=naa.50014050000
+
+# The block device behind LUN 0 of a loopback target, found by SCSI address.
+lio_disk() {  # wwn
+    local addr
+    addr=$(cat "/sys/kernel/config/target/loopback/$1/tpgt_1/address") \
+        || fail "no SCSI address for loopback target $1"
+    local dev=/sys/class/scsi_device/$addr:0/device
+    [ "$(cat "$dev/vendor" 2>/dev/null | tr -d ' ')" = "LIO-ORG" ] \
+        || fail "the disk at $addr:0 is not an LIO disk"
+    for blk in "$dev"/block/*; do
+        [ -e "$blk" ] && { echo "/dev/$(basename "$blk")"; return; }
+    done
+    fail "no disk for loopback target $1 at $addr:0"
+}
+
+make_file_drives() {  # size_mb...
+    command -v targetcli >/dev/null || fail "targetcli is not installed"
+    modprobe tcm_loop || fail "tcm_loop is not available"
+    install -d -m 0700 "$FILE_DRIVES"
+    DRIVES=()
+    local i=0 name file wwn dev
+    for size in "$@"; do
+        i=$((i + 1))
+        name="tk-test-$i"
+        file="$FILE_DRIVES/$name.img"
+        wwn=$(printf '%s%05x' "$LIO_WWN_PREFIX" "$i")
+        rm -f "$file"
+        truncate -s "${size}M" "$file"
+        # write_back=false: writes reach the file before they are
+        # acknowledged, as on a disk without a volatile cache.
+        targetcli /backstores/fileio create name="$name" file_or_dev="$file" \
+            write_back=false >/dev/null || fail "cannot create backstore $name"
+        targetcli /loopback create wwn="$wwn" >/dev/null \
+            || fail "cannot create loopback target $wwn"
+        targetcli "/loopback/$wwn/luns" create "/backstores/fileio/$name" >/dev/null \
+            || fail "cannot map $name to $wwn"
+        udevadm settle
+        dev=$(lio_disk "$wwn")
+        DRIVES+=("$dev")
+    done
+    targetcli saveconfig >/dev/null || fail "targetcli saveconfig failed"
+    systemctl enable target.service
+    udevadm settle
+    echo "drives: ${DRIVES[*]} (sizes MB: $*)"
+}
+
+remove_file_drives() {
+    local changed=
+    for t in /sys/kernel/config/target/loopback/"$LIO_WWN_PREFIX"*; do
+        [ -e "$t" ] || continue
+        targetcli /loopback delete "$(basename "$t")" >/dev/null || :
+        changed=1
+    done
+    for b in /sys/kernel/config/target/core/fileio_*/tk-test-*; do
+        [ -e "$b" ] || continue
+        targetcli /backstores/fileio delete "$(basename "$b")" >/dev/null || :
+        changed=1
+    done
+    if [ -n "$changed" ]; then
+        targetcli saveconfig >/dev/null || :
+        systemctl disable target.service 2>/dev/null || :
+    fi
+    rm -rf "$FILE_DRIVES"
+}
+
 start_engine() {
     [ "$(getenforce)" = "Enforcing" ] || fail "SELinux must be enforcing"
     install -d -m 0755 /etc/tamarack
@@ -92,4 +165,5 @@ cleanup() {
         [ -e "$m" ] && integritysetup close "$(basename "$m")"
     done
     modprobe -r scsi_debug 2>/dev/null || :
+    remove_file_drives
 }

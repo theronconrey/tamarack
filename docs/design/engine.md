@@ -191,6 +191,24 @@ UDisks2. Since step 6 the real runner is given to the engine only when
 timestamp in `/var/lib/tamarack`. Tamarack can't verify backups; the check
 makes skipping them a deliberate act.
 
+### Health (track 2)
+
+- **Scrub.** `tamarack-scrub.timer` runs `btrfs scrub` on the volume once a
+  month (`tamarack-scrub.service`, sandboxed, idle I/O priority). A create
+  plan enables it together with the mount unit.
+- **md check.** Fedora's own `raid-check.timer` (from mdadm, enabled by
+  default) checks every md array weekly, ours included.
+- **SMART.** `smartd` (from smartmontools, enabled by Fedora's presets)
+  watches the drives and runs their self-tests. The engine reads each pool
+  drive's SMART state from UDisks2: ATA `SmartFailing` and bad-sector
+  counts, NVMe critical warnings.
+- **Alerts.** Every minute the engine compares the pool's health with the
+  last check. A newly degraded layer, or a drive newly failing or missing,
+  is logged to the journal with an `ALERT:` prefix and emitted as
+  `ArrayDegraded` or `DriveFailing` on D-Bus. The first check after start
+  reports problems that already exist. `Manager.Health` holds the whole
+  picture as JSON for Cockpit and the CLI.
+
 ## 6. Steps become structured commands
 
 Today a `Step` holds shell strings for display. The engine needs more:
@@ -413,9 +431,24 @@ Added since then:
   back. The steps are written up for people in
   [docs/recovery.md](../recovery.md).
 
-Still to write: mixed sizes (`scsi_debug` gives every drive one size), and
-a real power cut and reboot (RAM drives don't survive one, so both need
-file-backed drives).
+Added after that:
+- **File-backed drives.** `scsi_debug` gives every drive one size and
+  keeps it in RAM, so `make_file_drives` in `tests/vm/lib.sh` also makes
+  drives of any size through the kernel's SCSI target (LIO, set up with
+  `targetcli`): a sparse file under `/var/tmp/tamarack-drives/`, a fileio
+  backstore named `tk-test-N` and a loopback (`tcm_loop`) target per drive,
+  so each is its own SCSI disk with its own WWN and serial. The
+  configuration is saved and `target.service` enabled, so the drives can
+  come back after a reboot. The client accepts these only when configfs
+  shows the disk is a `tk-test-*` fileio backstore on a file in that
+  directory.
+- **Mixed sizes.** Create on 2, 2 and 4 GB drives (one single-parity layer,
+  2 GB of the 4 GB drive unused), then add a second 4 GB drive: it widens
+  the parity layer and its other 2 GB pair with the unused space in a new
+  mirror layer, and the data, the layout records and a scrub stay clean.
+
+Still to write: a real power cut and reboot, on the file-backed drives
+(RAM drives don't survive one).
 
 ## 11. Implementation order
 

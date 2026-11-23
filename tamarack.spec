@@ -52,6 +52,9 @@ Requires:       device-mapper
 Requires:       btrfs-progs
 Requires:       util-linux-core
 Requires:       systemd
+# SMART monitoring (smartd, enabled by Fedora's presets) and the weekly md
+# check (raid-check.timer, from mdadm).
+Requires:       smartmontools
 Recommends:     upower
 # The engine's own SELinux domain, wherever the targeted policy is in use.
 Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
@@ -100,6 +103,8 @@ mv %{buildroot}%{_bindir}/tamarack-meta %{buildroot}%{_libexecdir}/tamarack-meta
 install -Dpm 0644 data/systemd/tamarack-engine.service \
     %{buildroot}%{_unitdir}/tamarack-engine.service
 install -Dpm 0644 data/systemd/srv-tamarack.mount %{buildroot}%{_unitdir}/srv-tamarack.mount
+install -Dpm 0644 data/systemd/tamarack-scrub.service %{buildroot}%{_unitdir}/tamarack-scrub.service
+install -Dpm 0644 data/systemd/tamarack-scrub.timer %{buildroot}%{_unitdir}/tamarack-scrub.timer
 install -Dpm 0644 data/dbus/com.borealislogistics.Tamarack1.conf \
     %{buildroot}%{_datadir}/dbus-1/system.d/com.borealislogistics.Tamarack1.conf
 install -Dpm 0644 data/dbus/com.borealislogistics.Tamarack1.service \
@@ -155,6 +160,8 @@ fi
 %{_libexecdir}/tamarack-meta
 %{_unitdir}/tamarack-engine.service
 %{_unitdir}/srv-tamarack.mount
+%{_unitdir}/tamarack-scrub.service
+%{_unitdir}/tamarack-scrub.timer
 %{_datadir}/dbus-1/system.d/com.borealislogistics.Tamarack1.conf
 %{_datadir}/dbus-1/system-services/com.borealislogistics.Tamarack1.service
 %{_datadir}/dbus-1/interfaces/com.borealislogistics.Tamarack1.xml

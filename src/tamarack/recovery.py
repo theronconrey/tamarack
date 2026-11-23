@@ -97,7 +97,7 @@ def rule_for(command: Command) -> Rule:
         return _probe("lvs", f"{args[-1]}/{name}")
     if program == "mkfs.btrfs":
         return _probe("blkid", "--match-token", "TYPE=btrfs", args[-1])
-    if program == "systemctl" and args[:2] == ("enable", "--now") and args[-1] == MOUNT_UNIT:
+    if program == "systemctl" and args[:2] == ("enable", "--now") and MOUNT_UNIT in args:
         return _probe("findmnt", "--mountpoint", MOUNT_POINT)
     if program == "btrfs":
         if args[:2] == ("subvolume", "create"):

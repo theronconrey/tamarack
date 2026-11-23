@@ -179,6 +179,10 @@ class DriveSource(Protocol):
         """The identity of the drive at each path now; missing paths are left out."""
         ...
 
+    def health(self, devices: list[str]) -> dict[str, tuple[str, str]]:
+        """SMART health per device: (ok|failing|unknown|missing, detail)."""
+        ...
+
 
 class MetaSource(Protocol):
     """The layout records on the drives' tk-meta partitions (read only)."""
@@ -457,6 +461,28 @@ class Engine:
     @property
     def degraded(self) -> bool:
         return bool(self.degraded_layers())
+
+    def health(self) -> dict[str, Any]:
+        """The pool's health in one place: arrays, then each drive's SMART state."""
+        layout = self._layout
+        devices = [d.device for d in layout.drives] if layout else []
+        try:
+            drives = self.drives.health(devices) if devices else {}
+        except EngineError as exc:
+            drives = {d: ("unknown", f"UDisks2: {exc}") for d in devices}
+        degraded = self.degraded_layers()
+        failing = sorted(d for d, (state, _) in drives.items() if state in ("failing", "missing"))
+        if degraded or failing:
+            status = "degraded" if degraded else "warning"
+        else:
+            status = "ok" if layout else "none"
+        return {
+            "status": status,
+            "degraded_layers": degraded,
+            "drives": [
+                {"device": d, "state": drives[d][0], "detail": drives[d][1]} for d in devices
+            ],
+        }
 
     @property
     def on_battery(self) -> bool:
