@@ -19,6 +19,9 @@
     <property name="Layout" type="s" access="read"/>
     <property name="DriveFailuresTolerated" type="u" access="read"/>
     <property name="UsableBytes" type="t" access="read"/>
+    <!-- JSON: {"size", "used", "free"} in bytes for the mounted volume, as df
+         reports them; "{}" when it isn't mounted. Refreshed every minute. -->
+    <property name="Space" type="s" access="read"/>
     <property name="Degraded" type="b" access="read"/>
     <!-- JSON: {"status": "none"|"ok"|"warning"|"degraded", "degraded_layers": [N],
          "drives": [{"device", "state": "ok"|"failing"|"unknown"|"missing",
