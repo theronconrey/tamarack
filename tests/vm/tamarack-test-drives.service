@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# VM tests only (reboot.sh): bring the LIO test drives back early in boot,
+# before the pool's integrity mappings are opened, as real disks would be.
+# target.service can't: it runs after sysinit and network.target, so the
+# mappings' device jobs had already timed out.
+
+[Unit]
+Description=Tamarack VM test drives (LIO)
+DefaultDependencies=no
+Requires=sys-kernel-config.mount
+After=sys-kernel-config.mount systemd-modules-load.service
+Before=integritysetup-pre.target cryptsetup-pre.target sysinit.target
+Wants=integritysetup-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/sbin/modprobe tcm_loop
+ExecStart=/usr/bin/targetctl restore
+
+[Install]
+WantedBy=sysinit.target

@@ -8,11 +8,38 @@
 . "$(dirname "$0")/lib.sh"
 
 STATE=/var/tmp/tamarack-reboot
+EARLY_DRIVES=tamarack-test-drives.service
+
+# What boot did with the pool's pieces, printed when the second half fails.
+boot_report() {
+    echo "=== boot: integritytab, devices, units ===" >&2
+    cat /etc/integritytab >&2 || :
+    lsblk -o NAME,SIZE,TYPE,PARTLABEL,PARTUUID >&2 || :
+    systemctl --no-pager status "$EARLY_DRIVES" target.service 'systemd-integritysetup@*' \
+        srv-tamarack.mount >&2 2>&1 || :
+    systemctl --no-pager list-units --failed >&2 || :
+    journalctl -b --no-pager -o short-precise -u "$EARLY_DRIVES" -u target.service \
+        -u 'systemd-integritysetup@*' -u srv-tamarack.mount | tail -80 >&2 || :
+    journalctl -b --no-pager -o short-precise -k | grep -Ei 'sd[a-z]|tcm_loop|md[0-9]|integrity' \
+        | tail -60 >&2 || :
+}
+
+boot_exit() {
+    local status=$?
+    [ "$status" -eq 0 ] || boot_report
+    systemctl disable "$EARLY_DRIVES" 2>/dev/null || :
+    rm -f "/etc/systemd/system/$EARLY_DRIVES"
+    cleanup "$status"
+}
 
 if [ "${TMT_REBOOT_COUNT:-0}" -eq 0 ]; then
-    trap cleanup EXIT
-    # File-backed drives: target.service brings them back after the reboot.
+    trap boot_exit EXIT
+    # File-backed drives, brought back early in the next boot (see the unit).
     make_file_drives 2048 2048 2048
+    systemctl disable target.service
+    install -m 0644 "$HERE/$EARLY_DRIVES" "/etc/systemd/system/$EARLY_DRIVES"
+    systemctl daemon-reload
+    systemctl enable "$EARLY_DRIVES"
     start_engine
     drive create "${DRIVES[@]}"
     findmnt /srv/tamarack >/dev/null || fail "not mounted"
@@ -29,11 +56,11 @@ if [ "${TMT_REBOOT_COUNT:-0}" -eq 0 ]; then
     fail "tmt-reboot returned"
 fi
 
-trap cleanup EXIT
+trap boot_exit EXIT
 START=$(cat "$STATE/start")
 
 # Everything below must have happened at boot, with no help from the test.
-systemctl is-active --quiet target.service || fail "target.service did not bring the drives back"
+systemctl is-active --quiet "$EARLY_DRIVES" || fail "the test drives did not come back"
 for name in $(sed -n 's/^\(tk-[^ ]*\) .*/\1/p' /etc/integritytab); do
     [ -e "/dev/mapper/$name" ] || fail "integrity device $name not opened at boot"
 done
