@@ -18,7 +18,7 @@ the smaller drives in a box one at a time therefore ends at the same layout a
 fresh build of the larger drives would have.
 
 A single drive that fails cannot be rebuilt: both copies were on it.
-Like the other planners, this only produces text.
+Like the other planners, this only produces data and text.
 """
 
 from __future__ import annotations
@@ -26,9 +26,9 @@ from __future__ import annotations
 from .commands import integrity_device_name, md_device
 from .layout import Disk, Layout
 from .model import Protection
+from .ops import Command, Step, cmd
 from .steps import (
     ChangePlan,
-    Step,
     expand,
     expansion_steps,
     health_check,
@@ -129,21 +129,21 @@ def _copy(drive: int, partition: int, layer: int) -> Step:
     return Step(
         f"Layer {layer}: copy onto the new drive",
         (
-            f"mdadm {md} --add {new}",
-            f"mdadm {md} --replace {old} --with {new}",
-            f"mdadm --wait {md}",
-            f"mdadm {md} --remove {old}",
+            cmd("mdadm", md, "--add", new),
+            cmd("mdadm", md, "--replace", old, "--with", new),
+            cmd("mdadm", "--wait", md),
+            cmd("mdadm", md, "--remove", old),
         ),
         "The old copy stays active until the new one is complete, so protection never drops.",
     )
 
 
 def _retire_old(drive: int, partitions: list[int]) -> Step:
-    commands: list[str] = []
+    commands: list[Command] = []
     for n in partitions:
         name = integrity_device_name(drive, n)
-        commands.append(f"integritysetup close {name}")
-        commands.append(f"dmsetup rename {name}{NEW_SUFFIX} {name}")
+        commands.append(cmd("integritysetup", "close", name))
+        commands.append(cmd("dmsetup", "rename", f"{name}{NEW_SUFFIX}", name))
     return Step(
         "Retire the old drive",
         tuple(commands),
@@ -153,14 +153,15 @@ def _retire_old(drive: int, partitions: list[int]) -> Step:
 
 
 def _remove_failed(layout: Layout, drive: int, held: list[tuple[int, int, int]]) -> Step:
-    commands: list[str] = []
+    commands: list[Command] = []
     for layer in sorted({layer for _, _, layer in held}):
         md = md_device(layer)
-        commands.append(f"mdadm {md} --remove failed")
-        commands.append(f"mdadm {md} --remove detached")
+        commands.append(cmd("mdadm", md, "--remove", "failed"))
+        commands.append(cmd("mdadm", md, "--remove", "detached"))
     for n, _, _ in held:
         # The mapping may already be gone with the drive; that is fine.
-        commands.append(f"integritysetup close {integrity_device_name(drive, n)} || :")
+        name = integrity_device_name(drive, n)
+        commands.append(cmd("integritysetup", "close", name, tolerate_failure=True))
     return Step(
         f"Remove the failed {layout.drives[drive].device} from its layers",
         tuple(commands),
@@ -171,7 +172,7 @@ def _rebuild(drive: int, partition: int, layer: int) -> Step:
     md = md_device(layer)
     return Step(
         f"Layer {layer}: rebuild onto the new drive",
-        (f"mdadm {md} --add {mapper(drive, partition)}", f"mdadm --wait {md}"),
+        (cmd("mdadm", md, "--add", mapper(drive, partition)), cmd("mdadm", "--wait", md)),
         "mdadm rebuilds this slice from the other drives. The layer is unprotected "
         "until it finishes.",
     )

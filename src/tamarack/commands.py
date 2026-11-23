@@ -1,16 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Render a Plan as the shell commands that would build it.
+"""Turn a Plan into the steps that would build it.
 
-This module only produces text. Nothing here runs a command: execution,
+Steps hold structured commands (see ``ops``); ``render`` shows them as a dry
+run. This module only produces data and text. Nothing here runs a command: execution,
 the step journal and resume logic come later, behind a mandatory dry run.
 """
 
 from __future__ import annotations
 
-import shlex
 from dataclasses import dataclass
 
 from .model import Layer, Level, Plan
+from .ops import Command, Step, cmd, render_steps
 from .units import MiB
 
 VG_NAME = "tamarack"
@@ -84,72 +85,93 @@ def md_path(layer: Layer) -> str:
     return md_device(layer.index)
 
 
-def _q(value: str) -> str:
-    return shlex.quote(value)
-
-
-def render(plan: Plan) -> list[str]:
-    """Return the command lines, with comments, that would build the plan."""
+def build_steps(plan: Plan) -> list[Step]:
+    """The steps, as structured commands, that would build the plan."""
     parts = partitions(plan)
-    lines: list[str] = [
-        "# tamarack dry run: nothing below has been executed.",
-        "# DESTRUCTIVE: these commands erase every listed drive.",
-        "set -euo pipefail",
-        "",
-        "# 1. Partition each drive",
-    ]
+    partition: list[Command] = []
     for i, drive in enumerate(plan.drives):
-        dev = _q(drive.device)
-        lines.append(f"sgdisk --zap-all {dev}")
+        dev = drive.device
+        partition.append(cmd("sgdisk", "--zap-all", dev))
         for part in (p for p in parts if p.drive == i):
             code = LINUX_FS_TYPE if part.layer == 0 else LINUX_RAID_TYPE
-            lines.append(
-                f"sgdisk -n {part.number}:0:+{part.size // MiB}M "
-                f"-t {part.number}:{code} -c {part.number}:{part.label} {dev}"
+            n = part.number
+            partition.append(
+                cmd(
+                    "sgdisk",
+                    "-n",
+                    f"{n}:0:+{part.size // MiB}M",
+                    "-t",
+                    f"{n}:{code}",
+                    "-c",
+                    f"{n}:{part.label}",
+                    dev,
+                )
             )
-        lines.append(f"partprobe {dev}")
+        partition.append(cmd("partprobe", dev))
 
-    lines += [
-        "",
-        "# 2. dm-integrity on every layer partition "
-        "(journal mode is integritysetup's default; bitmap mode stays off)",
-    ]
+    integrity: list[Command] = []
     for part in (p for p in parts if p.layer):
-        path = _q(partition_path(plan.drives[part.drive].device, part.number))
-        lines.append(f"integritysetup format --batch-mode --integrity crc32c {path}")
-        lines.append(f"integritysetup open --integrity crc32c {path} {integrity_name(part)}")
+        path = partition_path(plan.drives[part.drive].device, part.number)
+        integrity += [
+            cmd("integritysetup", "format", "--batch-mode", "--integrity", "crc32c", path),
+            cmd("integritysetup", "open", "--integrity", "crc32c", path, integrity_name(part)),
+        ]
 
-    lines += ["", "# 3. One md array per layer"]
+    arrays: list[Command] = []
     for layer in plan.used_layers:
-        members = " ".join(
-            f"/dev/mapper/{integrity_name(p)}" for p in parts if p.layer == layer.index
-        )
+        members = [f"/dev/mapper/{integrity_name(p)}" for p in parts if p.layer == layer.index]
         level = layer.level.value.removeprefix("raid")
         if layer.level is Level.RAID5:
             safety = "--consistency-policy=ppl"  # closes the RAID5 write hole
         else:
             safety = "--bitmap=internal"  # fast resync after a crash
-        lines.append(
-            f"mdadm --create {md_path(layer)} --run --metadata=1.2 "
-            f"--level={level} --raid-devices={layer.member_count} "
-            f"{safety} {members}"
+        arrays.append(
+            cmd(
+                "mdadm",
+                "--create",
+                md_path(layer),
+                "--run",
+                "--metadata=1.2",
+                f"--level={level}",
+                f"--raid-devices={layer.member_count}",
+                safety,
+                *members,
+            )
         )
 
-    mds = " ".join(md_path(layer) for layer in plan.used_layers)
-    lines += [
-        "",
-        "# 4. LVM joins the layers into one volume",
-        f"pvcreate {mds}",
-        f"vgcreate {VG_NAME} {mds}",
-        f"lvcreate --yes --extents 100%FREE --name {LV_NAME} {VG_NAME}",
-        "",
-        "# 5. Btrfs on top",
-        f"mkfs.btrfs --label {FS_LABEL} --metadata dup /dev/{VG_NAME}/{LV_NAME}",
-        f"mkdir -p {MOUNT_POINT}",
-        f"mount -o compress=zstd:1,noatime /dev/{VG_NAME}/{LV_NAME} {MOUNT_POINT}",
-        f"btrfs subvolume create {MOUNT_POINT}/shares",
-        f"btrfs subvolume create {MOUNT_POINT}/snapshots",
-        "",
-        "# 6. Layout metadata to the tk-meta partitions (not implemented yet)",
+    mds = [md_path(layer) for layer in plan.used_layers]
+    lv = f"/dev/{VG_NAME}/{LV_NAME}"
+    return [
+        Step("Partition each drive", tuple(partition)),
+        Step(
+            "dm-integrity on every layer partition "
+            "(journal mode is integritysetup's default; bitmap mode stays off)",
+            tuple(integrity),
+        ),
+        Step("One md array per layer", tuple(arrays)),
+        Step(
+            "LVM joins the layers into one volume",
+            (
+                cmd("pvcreate", *mds),
+                cmd("vgcreate", VG_NAME, *mds),
+                cmd("lvcreate", "--yes", "--extents", "100%FREE", "--name", LV_NAME, VG_NAME),
+            ),
+        ),
+        Step(
+            "Btrfs on top",
+            (
+                cmd("mkfs.btrfs", "--label", FS_LABEL, "--metadata", "dup", lv),
+                cmd("mkdir", "-p", MOUNT_POINT),
+                cmd("mount", "-o", "compress=zstd:1,noatime", lv, MOUNT_POINT),
+                cmd("btrfs", "subvolume", "create", f"{MOUNT_POINT}/shares"),
+                cmd("btrfs", "subvolume", "create", f"{MOUNT_POINT}/snapshots"),
+            ),
+        ),
+        Step(f"Layout metadata to the {META_PARTLABEL} partitions (not implemented yet)", ()),
     ]
-    return lines
+
+
+def render(plan: Plan) -> list[str]:
+    """Return the command lines, with comments, that would build the plan."""
+    warning = "# DESTRUCTIVE: these commands erase every listed drive."
+    return render_steps([warning], build_steps(plan))

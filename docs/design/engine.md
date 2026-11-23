@@ -143,6 +143,11 @@ class Command:
 that text). The engine runs `argv` lists only. This is the first
 implementation step, and it changes no output.
 
+Status: done in `tamarack.ops`. `Command` rejects programs outside a fixed
+allow list and arguments that are empty or contain NUL or newline; the dry
+run text is checked byte for byte against `tests/golden/`. `already_done`
+arrives with the journal (step 3), where resume needs it.
+
 ## 7. Step journal and resume
 
 Each job writes an append-only journal at
@@ -230,10 +235,16 @@ Nothing destructive is enabled outside these VMs until the matrix passes.
    the RPM.
 7. tmt VM matrix. Destructive execution stays disabled until it passes.
 
-## 12. Open questions
+## 12. Decided defaults
 
-- Plan expiry of 30 minutes and backup freshness of 7 days: right defaults?
-- Should `Job.Cancel` be allowed mid-reshape? (Proposed: no; cancel only
-  between steps, and reshapes always finish.)
+- Plans expire 30 minutes after they are made.
+- A backup counts as recent for 7 days.
+- `Job.Cancel` is refused while a reshape runs: cancel only takes effect
+  between steps, and reshapes always finish.
+
+These can be revisited with real use; each is one constant.
+
+## 13. Open questions
+
 - tmt on Testing Farm with several extra disks per VM: confirm the
   provisioning options before relying on them.
