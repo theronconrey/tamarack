@@ -442,6 +442,10 @@ What the first enforcing VM runs taught us:
   back to making `/dev/mdN` itself with `mknod`. `DevicePolicy=closed` with
   `DeviceAllow=block-md rw` refused that, so md arrays now get `rwm`; the
   same create worked from outside the sandbox.
+- `systemctl` runs in the engine's domain, so systemd checks the engine for
+  `enable` (a daemon reload) and for each unit it starts. Tamarack's mount,
+  scrub timer and scrub service are labelled `tamarack_unit_file_t`; the
+  engine may also start snapper's timers and `nfs-server.service`.
 
 ## 10. Testing on (virtual) disks
 

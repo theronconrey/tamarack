@@ -116,8 +116,39 @@ optional_policy(`
 ')
 
 # systemctl enable --now srv-tamarack.mount, after creating a pool.
+# systemctl runs in the engine's domain, so systemd checks the engine:
+# enabling reloads systemd, and each unit needs its own start/enable.
 optional_policy(`
+	gen_require(`
+		type init_t;
+		class system { reload status };
+	')
 	systemd_exec_systemctl(tamarack_engine_t)
+	allow tamarack_engine_t init_t:system { reload status };
+')
+
+# Tamarack's own units: the volume mount and the scrub timer and service.
+gen_require(`
+	class service { start stop status reload enable disable };
+')
+allow tamarack_engine_t tamarack_unit_file_t:service { start stop status reload enable disable };
+
+# snapper's timeline and cleanup timers.
+optional_policy(`
+	gen_require(`
+		type snapperd_unit_file_t;
+		class service { start status enable };
+	')
+	allow tamarack_engine_t snapperd_unit_file_t:service { start status enable };
+')
+
+# nfs-server.service, for NFS shares.
+optional_policy(`
+	gen_require(`
+		type nfsd_unit_file_t;
+		class service { start stop status reload enable disable };
+	')
+	allow tamarack_engine_t nfsd_unit_file_t:service { start stop status reload enable disable };
 ')
 
 # The storage tools run in their own domains.
