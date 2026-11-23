@@ -28,12 +28,22 @@ class Protection(StrEnum):
         return {"same-drive-mirror": 0, "one-drive": 1, "two-drive": 2}[self.value]
 
 
+class PlanKind(StrEnum):
+    """What a plan does. Each kind has its own polkit action."""
+
+    CREATE = "create"  # build a new layout, erasing every listed drive
+    ADD = "add"  # add one drive
+    REPLACE = "replace"  # swap a working drive for another
+    REBUILD = "rebuild"  # swap a failed drive for another
+
+
 @dataclass(frozen=True)
 class Drive:
     device: str  # e.g. /dev/disk/by-id/ata-WDC_..., or a placeholder
     size: int  # bytes, as reported by the drive
     usable: int  # bytes available for layers after reserved space
     bucket: int  # usable size after grouping near-equal drives
+    identity: str = ""  # wwn:... or serial:..., see tamarack.identity
 
 
 @dataclass(frozen=True)

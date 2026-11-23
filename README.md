@@ -91,6 +91,25 @@ tamarack grow --from 2.json --add /dev/sdc=4TB --commands
 
 The same format will be written to every `tk-meta` partition.
 
+## Drive identities and review
+
+Paths like `/dev/sdb` can point at a different drive after a reboot, so plans
+can record each drive's identity: `wwn:` plus its World Wide Name, or
+`serial:` plus its serial number. The engine will read these from UDisks2; on
+the command line, give them with `--id` for listed drives and `--new-id` for
+the drive being added or swapped in. Layout files keep them.
+
+`--review` prints the plan exactly as it will be approved: every drive and its
+role (`erase`, `keep`, `leave`, `failed`), every command as an argument list,
+and the warnings, with a SHA-256 digest over all of it. The engine will only
+run a plan whose digest matches the one that was reviewed.
+
+```sh
+tamarack replace /dev/sda=4TB /dev/sdb=4TB /dev/sdc=4TB \
+  --id /dev/sdb=wwn:0x5000c500a1b2c3d4 \
+  --old /dev/sdb --with /dev/sdb=4TB --failed --new-id serial:ZL2ABC --review
+```
+
 Without installing: `PYTHONPATH=src python3 -m tamarack plan 4TB 8TB`.
 
 ## How the layout is chosen

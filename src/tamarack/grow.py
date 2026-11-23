@@ -21,8 +21,9 @@ a power cut. Like the planner, this module only produces data and text.
 from __future__ import annotations
 
 from .commands import md_device
+from .identity import validate_identity
 from .layout import Disk, Layout, LayoutLayer, Member
-from .model import Level, Protection
+from .model import Level, PlanKind, Protection
 from .ops import Step, cmd
 from .policy import protection_for
 from .steps import (
@@ -55,23 +56,34 @@ __all__ = [
 ]
 
 
-def plan_add_drive(layout: Layout, new_size: int, new_device: str) -> ChangePlan:
-    """Plan adding one drive to ``layout``. Pure: never touches a disk."""
+def plan_add_drive(
+    layout: Layout, new_size: int, new_device: str, new_identity: str = ""
+) -> ChangePlan:
+    """Plan adding one drive to ``layout``. Pure: never touches a disk.
+
+    ``new_identity`` is the new drive's identity (see ``tamarack.identity``).
+    """
     if new_device in {d.device for d in layout.drives}:
         raise ValueError(f"{new_device} is already part of the layout")
+    if new_identity:
+        validate_identity(new_identity)
+    if new_identity and new_identity in {d.identity for d in layout.drives}:
+        raise ValueError(f"{new_device} is a drive already in the layout, under another path")
+    new = Disk(new_device, new_size, new_identity)
     if new_size < minimum_size_for(GiB, 1):
         raise ValueError(f"{new_device} is too small to use")
     if layout.protection is Protection.SAME_DRIVE_MIRROR:
-        return _single_to_mirror(layout, new_size, new_device)
+        return _single_to_mirror(layout, new)
     if protection_for(len(layout.drives) + 1) is Protection.TWO_DRIVE:
         raise UnsupportedChange(
             "growing to 5 or more drives (two-drive protection) is not supported yet; "
             "supported so far: 1 -> 2, 2 -> 3 and 3 -> 4 drives"
         )
-    return _add_to_parity(layout, new_size, new_device)
+    return _add_to_parity(layout, new)
 
 
-def _single_to_mirror(layout: Layout, new_size: int, new_device: str) -> ChangePlan:
+def _single_to_mirror(layout: Layout, new: Disk) -> ChangePlan:
+    new_device, new_size = new.device, new.size
     (layer,) = layout.layers
     old = layout.drives[0]
     half = layer.slice_size
@@ -83,7 +95,6 @@ def _single_to_mirror(layout: Layout, new_size: int, new_device: str) -> ChangeP
             f"{new_device} ({format_size(new_size)}) is too small: it needs at least "
             f"{format_size(minimum)} to mirror {old.device}"
         )
-    new = Disk(new_device, new_size)
     a_first, a_second = sorted(layer.members, key=lambda m: m.partition)
     b_first, b_second = Member(1, 2), Member(1, 3)
     l1, l2 = md_device(layer.index), md_device(layer.index + 1)
@@ -130,7 +141,9 @@ def _single_to_mirror(layout: Layout, new_size: int, new_device: str) -> ChangeP
         grow_volume(grown=[], created=[l2]),
         metadata_step(),
     ]
+    after.validate()
     return ChangePlan(
+        kind=PlanKind.ADD,
         before=layout,
         after=after,
         steps=steps,
@@ -139,9 +152,10 @@ def _single_to_mirror(layout: Layout, new_size: int, new_device: str) -> ChangeP
     )
 
 
-def _add_to_parity(layout: Layout, new_size: int, new_device: str) -> ChangePlan:
+def _add_to_parity(layout: Layout, new: Disk) -> ChangePlan:
+    new_device, new_size = new.device, new.size
     new_index = len(layout.drives)
-    base = Layout(drives=[*layout.drives, Disk(new_device, new_size)], layers=layout.layers)
+    base = Layout(drives=[*layout.drives, new], layers=layout.layers)
     exp = expand(base, new_index)
     if not exp.changed:
         smallest = min(layer.slice_size for layer in layout.layers)
@@ -169,5 +183,10 @@ def _add_to_parity(layout: Layout, new_size: int, new_device: str) -> ChangePlan
             f"{new_device} has no room left for {'them' if plural else 'it'}."
         )
     return ChangePlan(
-        before=layout, after=exp.after, steps=steps, warnings=warnings, erases=new_device
+        kind=PlanKind.ADD,
+        before=layout,
+        after=exp.after,
+        steps=steps,
+        warnings=warnings,
+        erases=new_device,
     )
