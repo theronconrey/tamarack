@@ -251,13 +251,14 @@ class Service:
 
         try:
             signature, value = work()
+            # Export new objects before replying, so the caller can use them at once.
+            self.sync_objects()
             invocation.return_value(GLib.Variant(signature, value) if signature else None)
         except EngineError as exc:
+            self.sync_objects()
             self._refuse(invocation, name, sender, exc)
         except Exception:
             self._crash(invocation, name, sender)
-        finally:
-            self.sync_objects()
 
     @staticmethod
     def _refuse(invocation: Any, name: str, sender: str, exc: EngineError) -> None:
