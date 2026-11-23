@@ -86,6 +86,17 @@ Confines the Tamarack storage engine to its own SELinux domain. The storage
 tools it starts keep running in the domains Fedora already gives them, so
 the engine is never granted their permissions.
 
+%package cockpit
+Summary:        Cockpit page for the Tamarack storage engine
+Requires:       %{name}-engine = %{version}-%{release}
+Requires:       cockpit-bridge
+
+%description cockpit
+The Tamarack page in Cockpit: whether your data is protected, the drives,
+the space and how your data is looked after, in plain words. It talks only
+to the Tamarack engine over D-Bus. This first version only shows; changes
+are still made with "tamarack engine".
+
 %prep
 %autosetup -p1 -n %{name}-%{version}
 
@@ -130,6 +141,10 @@ install -Dpm 0644 selinux/tamarack.pp.bz2 \
     %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/tamarack.pp.bz2
 install -Dpm 0644 selinux/tamarack.if \
     %{buildroot}%{_datadir}/selinux/devel/include/distributed/tamarack.if
+install -dm 0755 %{buildroot}%{_datadir}/cockpit/tamarack
+install -pm 0644 data/cockpit/tamarack/manifest.json data/cockpit/tamarack/index.html \
+    data/cockpit/tamarack/tamarack.css data/cockpit/tamarack/tamarack.js \
+    data/cockpit/tamarack/status.js %{buildroot}%{_datadir}/cockpit/tamarack/
 
 %check
 %pyproject_check_import
@@ -198,6 +213,10 @@ fi
 %{_datadir}/selinux/packages/%{selinuxtype}/tamarack.pp.bz2
 %{_datadir}/selinux/devel/include/distributed/tamarack.if
 %ghost %attr(0644,root,root) %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/tamarack
+
+%files cockpit
+%license LICENSE
+%{_datadir}/cockpit/tamarack/
 
 %changelog
 * Sun Nov 22 2026 Theron Conrey <theron@conrey.org> - 0.1.0-1

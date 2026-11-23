@@ -1,0 +1,18 @@
+{
+    "version": 0,
+    "name": "tamarack",
+    "requires": {
+        "cockpit": "300"
+    },
+    "menu": {
+        "index": {
+            "label": "Tamarack",
+            "order": 35,
+            "keywords": [
+                {
+                    "matches": ["storage", "pool", "drives", "disks", "raid", "nas", "snapshots", "shares"]
+                }
+            ]
+        }
+    }
+}

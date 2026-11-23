@@ -34,7 +34,7 @@ from .boot import INTEGRITYTAB, BootError
 from .boot import lines as boot_lines
 from .boot import members as boot_members
 from .boot import merge as merge_integritytab
-from .commands import build_steps
+from .commands import MOUNT_POINT, build_steps
 from .grow import plan_add_drive
 from .identity import DriveChanged as IdentityChanged
 from .identity import verify
@@ -458,6 +458,22 @@ class Engine:
             return self._running
         unfinished = self.unfinished_jobs()
         return unfinished[0] if unfinished else ""
+
+    def space(self) -> dict[str, int]:
+        """Bytes in the mounted volume: size, used and free; empty when not mounted.
+
+        Free is what a non-root user could still write (f_bavail), as df shows.
+        """
+        mount = self._host_path(MOUNT_POINT)
+        if not self._layout or not os.path.ismount(mount):
+            return {}
+        try:
+            st = os.statvfs(mount)
+        except OSError:
+            return {}
+        size = st.f_blocks * st.f_frsize
+        free = st.f_bavail * st.f_frsize
+        return {"size": size, "used": size - st.f_bfree * st.f_frsize, "free": free}
 
     def degraded_layers(self) -> list[int]:
         """Layers whose md array is missing or has missing members (from sysfs)."""

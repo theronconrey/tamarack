@@ -163,6 +163,7 @@ class Service:
         self._jobs: dict[str, int] = {}  # job id -> registration id
         self._threads: list[threading.Thread] = []
         self._last_health: dict[str, Any] | None = None
+        self._last_space: dict[str, int] | None = None
         self.sync_objects()
 
     # --- bus plumbing --------------------------------------------------------
@@ -469,6 +470,10 @@ class Service:
         except Exception:
             log.exception("health check failed")
             return True
+        space = self.engine.space()
+        if space != self._last_space:
+            self._last_space = space
+            self._manager_changed("Space")
         # The first check compares against a clean slate, so a pool that is
         # already degraded when the engine starts is reported too.
         before = self._last_health or {"status": "none", "degraded_layers": [], "drives": []}
@@ -530,6 +535,7 @@ class Service:
             "Layout": lambda: e.layout_json,
             "DriveFailuresTolerated": lambda: e.drive_failures_tolerated,
             "UsableBytes": lambda: e.usable_bytes,
+            "Space": lambda: json.dumps(e.space(), sort_keys=True),
             "Degraded": lambda: e.degraded,
             "Health": lambda: json.dumps(e.health(), sort_keys=True),
             "OnBattery": lambda: e.on_battery,

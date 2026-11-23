@@ -1,0 +1,189 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * The Tamarack page's look: close to Cockpit's own (PatternFly-style
+ * colours, Red Hat fonts when Cockpit ships them). Status is never colour
+ * alone: every tone also has an icon and words. No inline styles anywhere,
+ * because Cockpit's content security policy refuses them.
+ */
+
+:root {
+    --tk-text: #151515;
+    --tk-muted: #5a5d61;
+    --tk-line: #d2d2d2;
+    --tk-page: #f2f2f2;
+    --tk-card: #ffffff;
+    --tk-blue: #0066cc;
+    --tk-ok: #3e8635;
+    --tk-ok-bg: #f3faf2;
+    --tk-ok-text: #1e4f18;
+    --tk-warn: #c58c00;
+    --tk-warn-bg: #fdf7e7;
+    --tk-warn-text: #5c4200;
+    --tk-danger: #c9190b;
+    --tk-danger-bg: #faeae8;
+    --tk-danger-text: #7d1007;
+    --tk-info-bg: #e7f1fa;
+    --tk-info-text: #003d7a;
+}
+
+body {
+    margin: 0;
+    background: var(--tk-page);
+    color: var(--tk-text);
+    font-family: "Red Hat Text", "RedHatText", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.45;
+}
+
+h1, h2, .tk-banner-title, .tk-free-number {
+    font-family: "Red Hat Display", "RedHatDisplay", system-ui, sans-serif;
+}
+
+h1 { margin: 0; font-size: 30px; line-height: 1.2; }
+h2 { margin: 0; font-size: 19px; }
+
+a { color: var(--tk-blue); }
+a:hover { color: #004080; }
+
+.tk-page {
+    max-width: 1120px;
+    padding: 28px 32px 40px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.tk-muted { color: var(--tk-muted); }
+.tk-small { font-size: 13px; }
+
+.tk-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 12px;
+}
+.tk-head p { margin: 4px 0 0; }
+
+/* --- the banner: one sentence, one action --- */
+
+.tk-banner {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 16px 20px;
+    border: 1px solid;
+    border-radius: 10px;
+    padding: 20px 24px;
+}
+.tk-banner-icon {
+    width: 36px;
+    height: 36px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex: none;
+}
+.tk-banner-words { flex: 1 1 360px; display: flex; flex-direction: column; gap: 2px; }
+.tk-banner-title { font-size: 20px; }
+
+.tk-banner.tk-tone-ok { background: var(--tk-ok-bg); border-color: var(--tk-ok); color: var(--tk-ok-text); }
+.tk-banner.tk-tone-warning { background: var(--tk-warn-bg); border-color: var(--tk-warn); color: var(--tk-warn-text); }
+.tk-banner.tk-tone-danger { background: var(--tk-danger-bg); border-color: var(--tk-danger); color: var(--tk-danger-text); }
+.tk-banner.tk-tone-working { background: var(--tk-info-bg); border-color: var(--tk-blue); color: var(--tk-info-text); }
+.tk-banner.tk-tone-neutral { background: var(--tk-card); border-color: var(--tk-line); color: var(--tk-text); }
+
+.tk-button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 20px;
+    border-radius: 8px;
+    background: var(--tk-blue);
+    color: #ffffff;
+    text-decoration: none;
+    font-weight: 700;
+}
+.tk-button:hover { color: #ffffff; background: #004080; }
+.tk-tone-danger .tk-button { background: var(--tk-danger); }
+
+.tk-progress {
+    flex: 1 1 100%;
+    height: 10px;
+    border-radius: 5px;
+    background: #ffffff;
+    border: 1px solid #8bb8e8;
+    overflow: hidden;
+}
+.tk-progress-fill { height: 100%; background: var(--tk-blue); }
+
+/* --- cards --- */
+
+.tk-columns { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.tk-stack { flex: 1 1 380px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.tk-card {
+    background: var(--tk-card);
+    border: 1px solid var(--tk-line);
+    border-radius: 10px;
+    padding: 20px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.tk-wide { flex: 1 1 440px; min-width: 0; }
+.tk-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+
+/* --- drives --- */
+
+.tk-drives { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.tk-drive {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--tk-line);
+    border-radius: 8px;
+}
+.tk-drive-danger { border: 2px solid var(--tk-danger); }
+.tk-drive-warning { border-color: var(--tk-warn); }
+.tk-drive-label { width: 64px; font-size: 13px; color: var(--tk-muted); }
+.tk-drive-size { flex: 1 1 auto; font-weight: 700; font-size: 17px; }
+
+.tk-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 500;
+}
+.tk-pill.tk-tone-ok { background: var(--tk-ok-bg); color: var(--tk-ok-text); }
+.tk-pill.tk-tone-warning { background: var(--tk-warn-bg); color: var(--tk-warn-text); border: 1px solid var(--tk-warn); }
+.tk-pill.tk-tone-danger { background: var(--tk-danger); color: #ffffff; font-weight: 700; }
+.tk-pill.tk-tone-neutral { background: #f0f0f0; color: var(--tk-muted); }
+
+/* --- space --- */
+
+.tk-free { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+.tk-free-number { font-weight: 700; font-size: 34px; line-height: 1; }
+.tk-bar { display: flex; height: 18px; border-radius: 6px; overflow: hidden; background: #e0e0e0; }
+.tk-seg-used { background: var(--tk-blue); }
+.tk-seg-free { background: #a2d9f7; }
+.tk-seg-protection { background: #6a6e73; }
+.tk-seg-waiting { background: #ffffff; outline: 1px dashed #6a6e73; outline-offset: -1px; }
+.tk-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px 16px; font-size: 14px; }
+.tk-key { display: flex; align-items: center; gap: 8px; }
+.tk-swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+
+/* --- looking after your data --- */
+
+.tk-care { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; }
+.tk-care dt { font-weight: 500; }
+.tk-care dd { margin: 0; text-align: right; }
+
+@media (max-width: 640px) {
+    .tk-page { padding: 16px; }
+    .tk-care dd { text-align: left; }
+}

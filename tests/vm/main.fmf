@@ -7,6 +7,7 @@ require:
   - python3-gobject-base
   - nfs-utils  # the NFS client side of the nfs test
   - targetcli  # file-backed drives through LIO (tcm_loop)
+  - nodejs  # runs the Cockpit page's own logic (cockpit.sh)
 
 /create-grow:
     summary: Create on two drives, grow to four
@@ -47,6 +48,10 @@ require:
 /ppl-cost:
     summary: Write speed with and without md's partial parity log
     test: ./ppl-cost.sh
+
+/cockpit:
+    summary: The Cockpit page reads a real pool as an ordinary user
+    test: ./cockpit.sh
 
 /reboot:
     summary: The pool comes back by itself after a reboot

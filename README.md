@@ -21,6 +21,9 @@ Pre-alpha. Not for drives holding data you care about.
   degraded arrays, UPS, recent backup), and runs approved plans step by step
   with a power-cut-safe journal. **Execution is off** unless
   `/etc/tamarack/engine.conf` turns it on (see [Packaging](#packaging)).
+- **Cockpit page** (`tamarack-cockpit`): the Overview, read-only: whether
+  your data is protected, the drives, the space and how your data is looked
+  after, in plain words ([design](docs/design/cockpit.md)).
 - **Testing**: unit and D-Bus tests in Fedora CI on every pull request, and
   Packit Copr builds plus a tmt VM matrix ([`plans/`](plans),
   [`tests/vm/`](tests/vm)) that runs on Testing Farm with SELinux
@@ -31,7 +34,8 @@ Pre-alpha. Not for drives holding data you care about.
 
 ## Roadmap
 
-Next: a Cockpit page as the everyday client, then a Fedora bootc image and
+Next: the rest of the Cockpit page (the other tabs, then the guided changes),
+then a Fedora bootc image and
 bring-up on the TerraMaster F4-425 Pro. After that, roughly in order:
 
 - automatic checks after an unclean or degraded start, with a plain-words

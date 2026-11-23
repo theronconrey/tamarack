@@ -24,6 +24,7 @@ prepare:
       - tamarack
       - tamarack-engine
       - tamarack-selinux
+      - tamarack-cockpit
       - python3-gobject-base
 execute:
     how: tmt
