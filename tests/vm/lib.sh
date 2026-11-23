@@ -241,5 +241,10 @@ cleanup() {
         lsblk -o NAME,TYPE,SIZE,MOUNTPOINTS >&2 || :
     fi
     remove_file_drives
+    # The snapper config outlives the volume; the next pool makes a new one.
+    rm -f /etc/snapper/configs/tamarack
+    if [ -f /etc/sysconfig/snapper ]; then
+        sed -i -E 's/^(SNAPPER_CONFIGS="[^"]*)\btamarack\b ?/\1/' /etc/sysconfig/snapper
+    fi
     auditctl -D -k tamarack-md >/dev/null 2>&1 || :
 }

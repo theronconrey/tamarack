@@ -183,13 +183,14 @@ gen_require(`
 ')
 allow tamarack_engine_t tamarack_unit_file_t:service { start stop status reload enable disable };
 
-# snapper's timeline and cleanup timers.
+# snapper's timeline and cleanup timers carry Fedora's generic unit label
+# (systemd_unit_file_t). systemctl --now asks for their status after
+# queueing them; status only, not start or enable, for generic units.
 optional_policy(`
 	gen_require(`
-		type snapperd_unit_file_t;
-		class service { start status enable };
+		type systemd_unit_file_t;
 	')
-	allow tamarack_engine_t snapperd_unit_file_t:service { start status enable };
+	allow tamarack_engine_t systemd_unit_file_t:service status;
 ')
 
 # nfs-server.service, for NFS shares.
@@ -268,5 +269,7 @@ miscfiles_read_generic_certs(tamarack_meta_t)
 kernel_read_system_state(tamarack_meta_t)
 dev_read_sysfs(tamarack_meta_t)
 dev_list_all_dev_nodes(tamarack_meta_t)
+# The partition's name, when the kernel has none, from udev's database.
+udev_read_db(tamarack_meta_t)
 storage_raw_read_fixed_disk(tamarack_meta_t)
 storage_raw_write_fixed_disk(tamarack_meta_t)

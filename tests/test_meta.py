@@ -68,6 +68,19 @@ def test_only_tk_meta_partitions_are_written(tmp_path: Path) -> None:
     assert device.read_bytes() == before
 
 
+def test_partition_name_from_udev_when_the_kernel_has_none(tmp_path: Path) -> None:
+    # parted adds partitions with BLKPG, so the kernel's uevent has no PARTNAME.
+    device = fake_partition(tmp_path, "sdb1", "")
+    db = tmp_path / "run" / "udev" / "data" / "b8:1"
+    db.parent.mkdir(parents=True)
+    db.write_text("S:disk/by-partlabel/tk-meta\nE:ID_PART_ENTRY_NAME=tk-meta\n")
+    write(str(device), compact(LAYOUT), sys_root=str(tmp_path))
+    assert Layout.from_json(read(str(device))) == LAYOUT
+    db.write_text("E:ID_PART_ENTRY_NAME=tk-l1\n")
+    with pytest.raises(MetaError, match="not a tk-meta partition"):
+        write(str(device), compact(LAYOUT), sys_root=str(tmp_path))
+
+
 def test_only_valid_layouts_are_written(tmp_path: Path) -> None:
     device = fake_partition(tmp_path)
     with pytest.raises(ValueError):

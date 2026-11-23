@@ -477,6 +477,11 @@ What the first enforcing VM runs taught us:
   `rootcontext=` and inherited by everything below; the engine and snapperd
   may manage it. A private type rather than `public_content_rw_t`, so
   services allowed to read public content cannot read the shares.
+- Partitions that parted adds one at a time have no `PARTNAME` in the
+  kernel's uevent, so `tamarack-meta` refused to write the layout. It now
+  falls back to udev's `ID_PART_ENTRY_NAME`.
+- snapper's timers carry the generic `systemd_unit_file_t` label; the engine
+  may ask for their status, not start or enable other generic units.
 
 ## 10. Testing on (virtual) disks
 
