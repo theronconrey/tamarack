@@ -3,7 +3,8 @@
 set -euo pipefail
 
 # 1. Check every layer is healthy
-#    Stops here if an array is degraded: a second problem must be fixed first.
+#    Waits for any resync still running (a new array's first one, say), then stops here if an array is degraded: a second problem must be fixed first.
+mdadm --wait /dev/md/tk-l1 || :
 mdadm --detail --test /dev/md/tk-l1
 
 # 2. Partition /dev/sdb
@@ -23,7 +24,7 @@ integritysetup open --integrity crc32c /dev/sdb3 tk-d2-p3
 #    The old copy stays active until the new one is complete, so protection never drops during the move.
 mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d2-p2
 mdadm /dev/md/tk-l1 --replace /dev/mapper/tk-d1-p3 --with /dev/mapper/tk-d2-p2
-mdadm --wait /dev/md/tk-l1
+mdadm --wait /dev/md/tk-l1 || :
 mdadm /dev/md/tk-l1 --remove /dev/mapper/tk-d1-p3
 
 # 5. Free the second half of /dev/sda

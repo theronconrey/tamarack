@@ -3,7 +3,8 @@
 set -euo pipefail
 
 # 1. Check every layer is healthy
-#    Stops here if an array is degraded: a second problem must be fixed first.
+#    Waits for any resync still running (a new array's first one, say), then stops here if an array is degraded: a second problem must be fixed first.
+mdadm --wait /dev/md/tk-l1 || :
 mdadm --detail --test /dev/md/tk-l1
 
 # 2. Partition /dev/sdc
@@ -22,7 +23,7 @@ mdadm --grow /dev/md/tk-l1 --bitmap=none
 mdadm --grow /dev/md/tk-l1 --level=5
 mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d3-p2
 mdadm --grow /dev/md/tk-l1 --raid-devices=3
-mdadm --wait /dev/md/tk-l1
+mdadm --wait /dev/md/tk-l1 || :
 mdadm --grow /dev/md/tk-l1 --consistency-policy=ppl
 
 # 5. Grow the volume and file system

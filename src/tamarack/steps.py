@@ -186,12 +186,27 @@ def layers_from_free_space(
 # --- steps -------------------------------------------------------------------
 
 
+def wait_idle(md: str) -> Command:
+    """Wait for md's resync, recovery or reshape to finish.
+
+    md refuses to reshape, replace or drop the bitmap of an array that is
+    still syncing. ``mdadm --wait`` exits 1 when there was nothing to wait
+    for, which is not a failure here.
+    """
+    return cmd("mdadm", "--wait", md, tolerate_failure=True)
+
+
 def health_check(layout: Layout, skip: set[int] | None = None) -> Step:
     indexes = [layer.index for layer in layout.layers if not (skip and layer.index in skip)]
     return Step(
         "Check the other layers are healthy" if skip else "Check every layer is healthy",
-        tuple(cmd("mdadm", "--detail", "--test", md_device(i)) for i in indexes),
-        "Stops here if an array is degraded: a second problem must be fixed first.",
+        tuple(
+            c
+            for i in indexes
+            for c in (wait_idle(md_device(i)), cmd("mdadm", "--detail", "--test", md_device(i)))
+        ),
+        "Waits for any resync still running (a new array's first one, say), then stops "
+        "here if an array is degraded: a second problem must be fixed first.",
     )
 
 
@@ -242,7 +257,7 @@ def widen_step(before: LayoutLayer, after: LayoutLayer) -> Step:
                 cmd("mdadm", "--grow", md, "--level=5"),
                 cmd("mdadm", md, "--add", added),
                 cmd("mdadm", "--grow", md, f"--raid-devices={width}"),
-                cmd("mdadm", "--wait", md),
+                wait_idle(md),
                 cmd("mdadm", "--grow", md, "--consistency-policy=ppl"),
             ),
             "A two-drive mirror converts to single parity in place, then reshapes onto "
@@ -255,7 +270,7 @@ def widen_step(before: LayoutLayer, after: LayoutLayer) -> Step:
             cmd("mdadm", "--grow", md, "--consistency-policy=resync"),
             cmd("mdadm", md, "--add", added),
             cmd("mdadm", "--grow", md, f"--raid-devices={width}"),
-            cmd("mdadm", "--wait", md),
+            wait_idle(md),
             cmd("mdadm", "--grow", md, "--consistency-policy=ppl"),
         ),
         "PPL is paused for the reshape and switched back on afterwards. The data stays "

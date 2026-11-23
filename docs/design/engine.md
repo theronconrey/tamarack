@@ -480,6 +480,10 @@ What the first enforcing VM runs taught us:
 - Partitions that parted adds one at a time have no `PARTNAME` in the
   kernel's uevent, so `tamarack-meta` refused to write the layout. It now
   falls back to udev's `ID_PART_ENTRY_NAME`.
+- md refuses to reshape, replace a member or drop the bitmap while an array
+  is still syncing, and a new array starts with a full resync. Every health
+  check now runs `mdadm --wait` first; `--wait` exits 1 when there was
+  nothing to wait for, so its failure is tolerated everywhere.
 - snapper's timers carry the generic `systemd_unit_file_t` label; the engine
   may ask for their status, not start or enable other generic units.
 

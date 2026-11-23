@@ -91,10 +91,10 @@ def test_device_with_space_stays_one_argument() -> None:
     assert ("parted", "--script", "/dev/x y", "mklabel", "gpt") in argvs
 
 
-def test_only_closing_a_failed_drive_tolerates_failure() -> None:
+def test_only_closing_a_failed_drive_and_waiting_tolerate_failure() -> None:
+    # mdadm --wait exits 1 when there was nothing to wait for.
     tolerant = [c for step in _all_steps() for c in step.commands if c.tolerate_failure]
-    assert tolerant
-    assert all(c.argv[:2] == ("integritysetup", "close") for c in tolerant)
+    assert {c.argv[:2] for c in tolerant} == {("integritysetup", "close"), ("mdadm", "--wait")}
 
 
 @pytest.mark.parametrize(

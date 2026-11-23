@@ -41,6 +41,7 @@ from .steps import (
     minimum_size_for,
     partition_drive,
     render,
+    wait_idle,
 )
 from .units import GiB, format_size
 
@@ -116,7 +117,7 @@ def _single_to_mirror(layout: Layout, new: Disk) -> ChangePlan:
             (
                 cmd("mdadm", l1, "--add", b2),
                 cmd("mdadm", l1, "--replace", a3, "--with", b2),
-                cmd("mdadm", "--wait", l1),
+                wait_idle(l1),
                 cmd("mdadm", l1, "--remove", a3),
             ),
             "The old copy stays active until the new one is complete, so protection "

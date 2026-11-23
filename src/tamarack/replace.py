@@ -39,6 +39,7 @@ from .steps import (
     metadata_step,
     minimum_size_for_bytes,
     partition_drive,
+    wait_idle,
 )
 from .units import format_size
 
@@ -148,7 +149,7 @@ def _copy(drive: int, partition: int, layer: int) -> Step:
         (
             cmd("mdadm", md, "--add", new),
             cmd("mdadm", md, "--replace", old, "--with", new),
-            cmd("mdadm", "--wait", md),
+            wait_idle(md),
             cmd("mdadm", md, "--remove", old),
         ),
         "The old copy stays active until the new one is complete, so protection never drops.",
@@ -189,7 +190,7 @@ def _rebuild(drive: int, partition: int, layer: int) -> Step:
     md = md_device(layer)
     return Step(
         f"Layer {layer}: rebuild onto the new drive",
-        (cmd("mdadm", md, "--add", mapper(drive, partition)), cmd("mdadm", "--wait", md)),
+        (cmd("mdadm", md, "--add", mapper(drive, partition)), wait_idle(md)),
         "mdadm rebuilds this slice from the other drives. The layer is unprotected "
         "until it finishes.",
     )

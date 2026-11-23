@@ -20,7 +20,7 @@ integritysetup open --integrity crc32c /dev/sdb2 tk-d2-p2
 # 4. Layer 1: rebuild onto the new drive
 #    mdadm rebuilds this slice from the other drives. The layer is unprotected until it finishes.
 mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d2-p2
-mdadm --wait /dev/md/tk-l1
+mdadm --wait /dev/md/tk-l1 || :
 
 # 5. Write the new layout to every tk-meta partition
 #    Each drive carries the whole layout, so the box can be read from any of them.

@@ -25,7 +25,9 @@ def upgrade(layout: Layout, old: str, new: str, size_tb: float) -> ChangePlan:
 
 
 def first(lines: list[str], prefix: str) -> int:
-    return next(i for i, line in enumerate(lines) if line.startswith(prefix))
+    """First line starting with ``prefix``, past the health check's waits."""
+    checks = {i - 1 for i, line in enumerate(lines) if line.startswith("mdadm --detail --test")}
+    return next(i for i, line in enumerate(lines) if line.startswith(prefix) and i not in checks)
 
 
 # --- upgrades ---

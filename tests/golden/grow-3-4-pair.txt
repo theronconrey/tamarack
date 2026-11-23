@@ -3,7 +3,8 @@
 set -euo pipefail
 
 # 1. Check every layer is healthy
-#    Stops here if an array is degraded: a second problem must be fixed first.
+#    Waits for any resync still running (a new array's first one, say), then stops here if an array is degraded: a second problem must be fixed first.
+mdadm --wait /dev/md/tk-l1 || :
 mdadm --detail --test /dev/md/tk-l1
 
 # 2. Partition /dev/sdd
@@ -24,7 +25,7 @@ integritysetup open --integrity crc32c /dev/sdd3 tk-d4-p3
 mdadm --grow /dev/md/tk-l1 --consistency-policy=resync
 mdadm /dev/md/tk-l1 --add /dev/mapper/tk-d4-p2
 mdadm --grow /dev/md/tk-l1 --raid-devices=4
-mdadm --wait /dev/md/tk-l1
+mdadm --wait /dev/md/tk-l1 || :
 mdadm --grow /dev/md/tk-l1 --consistency-policy=ppl
 
 # 5. Add partitions in free space on /dev/sdc
