@@ -16,7 +16,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
 BUS_NAME = "com.borealislogistics.Tamarack1"
-API = DATA / "dbus" / f"{BUS_NAME}.xml"
+API = ROOT / "src" / "tamarack" / f"{BUS_NAME}.xml"
 BUS_POLICY = DATA / "dbus" / f"{BUS_NAME}.conf"
 ACTIVATION = DATA / "dbus" / f"{BUS_NAME}.service"
 POLKIT = DATA / "polkit" / "com.borealislogistics.tamarack.policy"

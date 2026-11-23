@@ -46,7 +46,7 @@ the D-Bus specification recommends. The trailing `1` is the API version and
 changes only on incompatible changes. Object paths and polkit action IDs use
 the same prefix (`/com/borealislogistics/Tamarack1`,
 `com.borealislogistics.tamarack.*`). The full interface is in
-[`data/dbus/com.borealislogistics.Tamarack1.xml`](../../data/dbus/com.borealislogistics.Tamarack1.xml).
+[`src/tamarack/com.borealislogistics.Tamarack1.xml`](../../src/tamarack/com.borealislogistics.Tamarack1.xml) (inside the package, so the engine loads the same file it is documented by).
 
 Objects:
 
@@ -92,6 +92,33 @@ review document and digest (step 2). Each drive in the document has a role:
 until it is retired) or `failed` (not expected). `identity.verify` checks
 every drive but the failed ones against what UDisks2 reports; plan time and
 expiry stay outside the digest, so the same inputs always give the same one.
+
+### Status (step 4)
+
+`tamarack.service` serves the Manager and Plan objects with GDBus from
+PyGObject (`python3-gobject-base`), registering them straight from the
+shipped XML so the documented interface is the served one. The engine core
+(`tamarack.engine`) has no D-Bus code and is tested on its own; the service
+is tested on a private `dbus-daemon` with a fake UDisks2 beside it, in CI
+and in the RPM's `%check`.
+
+- Drives are looked up in one UDisks2 `GetManagedObjects` call. A drive to
+  be erased must be a whole, writable, physical drive with a WWN or serial,
+  and neither it nor any partition on it may be mounted, active swap, an md
+  member, an unlocked encrypted volume or an LVM physical volume. This is
+  what keeps the boot drive out of every plan.
+- The current layout is read from `/var/lib/tamarack/layout.json` until
+  the `tk-meta` partitions are written. If that file exists but can't be
+  read, every `Plan*` call fails with `LayoutUnreadable` rather than
+  treating the box as empty.
+- Planning is refused with `Busy` while any job journal lacks a `job-end`.
+- `Degraded` comes from sysfs (`/sys/block/mdN/md/degraded` behind
+  `/dev/md/tk-lN`); a layer whose array is not assembled counts as degraded.
+  `OnBattery` comes from UPower and is false when UPower is not running.
+- At most 16 plans wait at once; each expires 30 minutes after it is made
+  and its object is removed.
+- `Execute` and `ConfirmBackup` answer `NotSupported`, and no Job objects
+  are exported, until step 5.
 
 ## 4. polkit actions
 
