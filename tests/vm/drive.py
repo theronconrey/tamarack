@@ -6,7 +6,7 @@ so it cannot erase a real drive even if run on the wrong machine.
 
     drive.py create DEV...      drive.py add DEV
     drive.py replace OLD NEW    drive.py rebuild FAILED NEW
-    drive.py confirm-backup     drive.py tolerated
+    drive.py confirm-backup     drive.py tolerated     drive.py degraded
 """
 
 from __future__ import annotations
@@ -87,6 +87,8 @@ def main(argv: list[str]) -> None:
         call(ROOT, MANAGER, "ConfirmBackup")
     elif command == "tolerated":
         print(get(ROOT, MANAGER, "DriveFailuresTolerated"))
+    elif command == "degraded":
+        print(get(ROOT, MANAGER, "Degraded"))
     else:
         sys.exit(f"drive.py: unknown command {command}")
 

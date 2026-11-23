@@ -28,7 +28,7 @@ lvcreate --yes --extents 100%FREE --name data tamarack
 
 # 5. Btrfs on top
 mkfs.btrfs --label tamarack --metadata dup /dev/tamarack/data
-systemd-mount --options=compress=zstd:1,noatime /dev/tamarack/data /srv/tamarack
+systemctl enable --now srv-tamarack.mount
 btrfs subvolume create /srv/tamarack/shares
 btrfs subvolume create /srv/tamarack/snapshots
 

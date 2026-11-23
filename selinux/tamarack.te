@@ -91,6 +91,11 @@ optional_policy(`
 	init_dbus_chat(tamarack_engine_t)
 ')
 
+# systemctl enable --now srv-tamarack.mount, after creating a pool.
+optional_policy(`
+	systemd_exec_systemctl(tamarack_engine_t)
+')
+
 # The storage tools run in their own domains.
 optional_policy(`
 	raid_domtrans_mdadm(tamarack_engine_t)
