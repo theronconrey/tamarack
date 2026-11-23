@@ -32,6 +32,8 @@ diagnostics() {
     cat /proc/mdstat >&2 || :
     lsmod | grep -E '^(raid1|raid456|dm_integrity|md_mod) ' >&2 || echo "md/dm modules: none loaded" >&2
     ls -lZ /dev/md* /sys/module/md_mod/parameters/new_array >&2 2>&1 || :
+    echo "=== failed system calls in mdadm_t ===" >&2
+    ausearch -k tamarack-md -i 2>/dev/null | grep -E 'type=SYSCALL|type=PATH' | tail -40 >&2 || :
     sandbox_probe
     return "$status"
 }
@@ -156,6 +158,11 @@ start_engine() {
         /etc/polkit-1/rules.d/50-tamarack-test.rules
     systemctl restart polkit
     rm -rf /var/lib/tamarack
+    # Record every failed system call made in mdadm's domain, with its
+    # error number: mdadm --create fails with no AVC and no kernel message.
+    auditctl -D -k tamarack-md >/dev/null 2>&1 || :
+    auditctl -a always,exit -F arch=b64 -S openat,mknodat,write,ioctl \
+        -F subj_type=mdadm_t -F success=0 -k tamarack-md >/dev/null 2>&1 || :
     systemctl restart tamarack-engine
     START=$(date '+%m/%d/%Y %H:%M:%S')
     ps -eo label,comm | grep -q '^system_u:system_r:tamarack_engine_t:s0 *tamarack-engine' \
@@ -213,4 +220,5 @@ cleanup() {
         echo "WARNING: scsi_debug is still in use; the next test may see these drives" >&2
     fi
     remove_file_drives
+    auditctl -D -k tamarack-md >/dev/null 2>&1 || :
 }
