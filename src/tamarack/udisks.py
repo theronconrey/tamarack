@@ -84,6 +84,19 @@ def find_drive(objects: Objects, device: str, unused: bool) -> DriveInfo:
     return DriveInfo(device=device, size=int(block.get("Size", 0)), identity=identity)
 
 
+def find_present(objects: Objects, devices: Iterable[str]) -> dict[str, str]:
+    """Identity of the whole drive at each of ``devices`` now; absent paths are left out."""
+    present = {}
+    for device in devices:
+        try:
+            info = find_drive(objects, device, unused=False)
+        except (NoSuchDrive, InvalidArgument):
+            continue
+        if info.identity:
+            present[device] = info.identity
+    return present
+
+
 class UDisksDrives:
     """``DriveSource`` backed by UDisks2 on the given GDBus connection."""
 
@@ -113,3 +126,6 @@ class UDisksDrives:
 
     def lookup(self, device: str, unused: bool) -> DriveInfo:
         return find_drive(self.objects(), device, unused)
+
+    def present(self, devices: list[str]) -> dict[str, str]:
+        return find_present(self.objects(), devices)
