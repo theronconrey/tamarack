@@ -4,6 +4,7 @@
 /usr/lib/systemd/system/tamarack-engine\.service	--	gen_context(system_u:object_r:tamarack_unit_file_t,s0)
 /usr/lib/systemd/system/tamarack-scrub\.(service|timer)	--	gen_context(system_u:object_r:tamarack_unit_file_t,s0)
 /usr/lib/systemd/system/srv-tamarack\.mount	--	gen_context(system_u:object_r:tamarack_unit_file_t,s0)
+/srv/tamarack(/.*)?		gen_context(system_u:object_r:tamarack_data_t,s0)
 /var/lib/tamarack(/.*)?		gen_context(system_u:object_r:tamarack_var_lib_t,s0)
 /etc/tamarack(/.*)?		gen_context(system_u:object_r:tamarack_etc_t,s0)
 /etc/integritytab	--	gen_context(system_u:object_r:tamarack_integritytab_t,s0)

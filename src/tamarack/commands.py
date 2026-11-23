@@ -18,7 +18,10 @@ from .units import MiB
 VG_NAME = "tamarack"
 LV_NAME = "data"
 MOUNT_POINT = "/srv/tamarack"
-MOUNT_OPTIONS = "compress=zstd:1,noatime"
+# The volume's SELinux label (selinux/tamarack.te): rootcontext labels the
+# root of the new, unlabelled filesystem, and all below inherits it.
+DATA_CONTEXT = "system_u:object_r:tamarack_data_t:s0"
+MOUNT_OPTIONS = f"compress=zstd:1,noatime,rootcontext={DATA_CONTEXT}"
 MOUNT_UNIT = "srv-tamarack.mount"  # data/systemd/srv-tamarack.mount
 SCRUB_TIMER = "tamarack-scrub.timer"  # data/systemd/tamarack-scrub.timer
 SNAPPER_CONFIG = "tamarack"  # data/snapper/tamarack is its template

@@ -29,6 +29,12 @@ systemd_unit_file(tamarack_unit_file_t)
 type tamarack_var_lib_t;
 files_type(tamarack_var_lib_t)
 
+# /srv/tamarack: the volume and everything on it (the shares). Its own
+# type, not public_content_rw_t, so services that may read public content
+# (a web server, say) cannot read the shares unless given access.
+type tamarack_data_t;
+files_type(tamarack_data_t)
+
 # /etc/tamarack: the administrator's engine.conf.
 type tamarack_etc_t;
 files_config_file(tamarack_etc_t)
@@ -54,6 +60,13 @@ role system_r types tamarack_meta_t;
 allow tamarack_engine_t self:fifo_file rw_fifo_file_perms;
 allow tamarack_engine_t self:unix_stream_socket create_stream_socket_perms;
 allow tamarack_engine_t self:process { getsched signal_perms };
+
+# btrfs (bin_t, so in this domain) makes subvolumes on the volume; the
+# engine makes share folders and gives them their owner.
+manage_dirs_pattern(tamarack_engine_t, tamarack_data_t, tamarack_data_t)
+read_files_pattern(tamarack_engine_t, tamarack_data_t, tamarack_data_t)
+allow tamarack_engine_t tamarack_data_t:dir { setattr ioctl };
+allow tamarack_engine_t tamarack_data_t:filesystem getattr;
 
 manage_dirs_pattern(tamarack_engine_t, tamarack_var_lib_t, tamarack_var_lib_t)
 manage_files_pattern(tamarack_engine_t, tamarack_var_lib_t, tamarack_var_lib_t)
@@ -124,6 +137,18 @@ optional_policy(`
 	')
 	allow tamarack_engine_t firewalld_t:dbus send_msg;
 	allow firewalld_t tamarack_engine_t:dbus send_msg;
+')
+
+# snapperd makes .snapshots in the shares subvolume and snapshots there.
+optional_policy(`
+	gen_require(`
+		type snapperd_t;
+	')
+	manage_dirs_pattern(snapperd_t, tamarack_data_t, tamarack_data_t)
+	manage_files_pattern(snapperd_t, tamarack_data_t, tamarack_data_t)
+	manage_lnk_files_pattern(snapperd_t, tamarack_data_t, tamarack_data_t)
+	allow snapperd_t tamarack_data_t:dir ioctl;
+	allow snapperd_t tamarack_data_t:filesystem getattr;
 ')
 
 # snapper is a D-Bus client of snapperd, which makes and prunes snapshots.

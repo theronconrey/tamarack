@@ -472,6 +472,11 @@ What the first enforcing VM runs taught us:
   `enable` (a daemon reload) and for each unit it starts. Tamarack's mount,
   scrub timer and scrub service are labelled `tamarack_unit_file_t`; the
   engine may also start snapper's timers and `nfs-server.service`.
+- A new btrfs filesystem's root has no label (`unlabeled_t`). The volume now
+  has its own type, `tamarack_data_t`, set at every mount with
+  `rootcontext=` and inherited by everything below; the engine and snapperd
+  may manage it. A private type rather than `public_content_rw_t`, so
+  services allowed to read public content cannot read the shares.
 
 ## 10. Testing on (virtual) disks
 
