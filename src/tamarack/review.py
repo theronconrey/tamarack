@@ -4,7 +4,7 @@
 What a person approves must be exactly what runs. Every plan, create or
 change, is turned into one review document: its kind, the layout before and
 after, each drive and its role, the drives to be erased, every step with every
-command's argv, and the warnings. ``digest`` is SHA-256 over that document's
+command's argv and resume rule, and the warnings. ``digest`` is SHA-256 over that document's
 canonical JSON. The engine exports the digest with the plan; ``Execute`` must
 send it back and is refused if it differs from the plan the engine holds.
 
@@ -24,6 +24,7 @@ from .identity import ExpectedDrive
 from .layout import Disk, layout_from_plan
 from .model import Plan, PlanKind
 from .ops import Step
+from .recovery import rule_for
 from .steps import ChangePlan
 
 FORMAT = "tamarack-plan"
@@ -43,7 +44,11 @@ def _steps(steps: list[Step]) -> list[dict[str, Any]]:
             "title": step.title,
             "note": step.note,
             "commands": [
-                {"argv": list(c.argv), "tolerate_failure": c.tolerate_failure}
+                {
+                    "argv": list(c.argv),
+                    "tolerate_failure": c.tolerate_failure,
+                    **rule_for(c).to_dict(),
+                }
                 for c in step.commands
             ],
         }
