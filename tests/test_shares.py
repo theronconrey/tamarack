@@ -101,6 +101,11 @@ def test_state_round_trip() -> None:
 # --- the engine --------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def no_real_chown(chowns: list[tuple[str, int, int]]) -> list[tuple[str, int, int]]:
+    return chowns
+
+
 def nfs_engine(tmp_path: Path, runner: Any = None) -> Any:
     e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"], runner=runner or FakeRunner())
     root = Path(e.root)
@@ -109,13 +114,16 @@ def nfs_engine(tmp_path: Path, runner: Any = None) -> Any:
     return e
 
 
-def test_first_share_starts_nfs_and_opens_the_firewall(tmp_path: Path) -> None:
+def test_first_share_starts_nfs_and_opens_the_firewall(
+    tmp_path: Path, chowns: list[tuple[str, int, int]]
+) -> None:
     e = nfs_engine(tmp_path)
     options = {"clients": ["192.168.1.0/24"], "uid": 1000, "gid": 1000}
     assert e.authorize_share("media", options) == "com.borealislogistics.tamarack.share"
     share = e.set_share("media", options)
     folder = Path(e.root) / "srv/tamarack/shares/media"
     assert folder.is_dir() and oct(folder.stat().st_mode & 0o7777) == "0o2775"
+    assert chowns == [(str(folder), 1000, 1000)]
     exported = (Path(e.root) / "etc/exports.d/tamarack.exports").read_text()
     assert "/srv/tamarack/shares/media 192.168.1.0/24(rw," in exported
     assert e.runner.calls == [
@@ -178,13 +186,16 @@ def test_share_paths_cannot_escape(tmp_path: Path) -> None:
             e.set_share(name, {"clients": ["10.0.0.1"]})
 
 
-def test_existing_folders_are_left_as_they_are(tmp_path: Path) -> None:
+def test_existing_folders_are_left_as_they_are(
+    tmp_path: Path, chowns: list[tuple[str, int, int]]
+) -> None:
     e = nfs_engine(tmp_path)
     folder = Path(e.root) / "srv/tamarack/shares/media"
     folder.mkdir()
     folder.chmod(0o700)
     e.set_share("media", {"clients": ["10.0.0.1"], "uid": 1000})
     assert oct(folder.stat().st_mode & 0o777) == "0o700"
+    assert chowns == []
 
 
 def test_share_round_trip_type() -> None:

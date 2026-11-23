@@ -603,7 +603,7 @@ def test_snapshot_schedule_over_the_bus(runner_harness: tuple[Harness, FakeRunne
     assert name == ERR + "InvalidArgument"
 
 
-def test_shares_over_the_bus(bus: str, tmp_path: Path) -> None:
+def test_shares_over_the_bus(bus: str, tmp_path: Path, chowns: list[tuple[str, int, int]]) -> None:
     state, root = tmp_path / "state", tmp_path / "root"
     state.mkdir()
     (root / "srv" / "tamarack" / "shares").mkdir(parents=True)
