@@ -303,11 +303,11 @@ ships, and every remaining exposure is either fixed or explained.
 - **Execution is off by default.** The engine gets the runner only if
   `/etc/tamarack/engine.conf` contains `[execution]` `enabled = yes`. Nothing
   ships that file. Until the step 7 matrix passes it is for test VMs only.
-- **Mounting goes through `systemd-mount`.** The unit has its own mount
-  namespace, so a `mount` inside it would never reach the host; systemd
-  mounts the volume in the host's namespace instead. The create plan's dry
-  run changed accordingly. Mounting at boot (a shipped mount unit) is still
-  to do.
+- **systemd mounts the volume.** The unit has its own mount namespace, so a
+  `mount` inside it would never reach the host. The package ships
+  `srv-tamarack.mount` (not enabled), and a create plan ends its file
+  system step with `systemctl enable --now srv-tamarack.mount`: systemd
+  mounts it in the host's namespace now and at every boot.
 - **Sandbox paths** the tools need are writable: `/run/mdadm`, `/run/lvm`,
   `/run/lock/lvm`, `/run/cryptsetup` and `/etc/lvm/{archive,backup,devices}`.
 
@@ -320,11 +320,8 @@ ships, and every remaining exposure is either fixed or explained.
   as a layout. It runs in its own SELinux domain, `tamarack_meta_t`, which
   is the only Tamarack code with raw-disk access.
 
-Still to do: mounting at boot. The create plan mounts with `systemd-mount`,
-which lasts until reboot; a shipped `srv-tamarack.mount` that the engine
-enables after a create is the likely answer, and the VM matrix will settle
-it. The engine also does not yet read the `tk-meta` records back (it reads
-`/var/lib/tamarack/layout.json`). `systemd-analyze security` rates the unit 2.6
+Still to do: the engine does not yet read the `tk-meta` records back (it
+reads `/var/lib/tamarack/layout.json`). `systemd-analyze security` rates the unit 2.6
 ("OK"); the remaining exposures are the ones a storage service needs: root,
 raw block devices, `CAP_SYS_ADMIN`, writable md sysfs.
 
@@ -374,8 +371,14 @@ each has its own WWN), and the client refuses any drive that is not one.
 Packit runs the plan on Testing Farm once its GitHub app is installed; CI
 runs `tmt lint` on it meanwhile.
 
-Still to write: the failed-drive, single-drive and mixed-size cases, power
-cut mid-reshape, silent corruption, and recovery on a stock Fedora VM.
+Added since: a single drive grown to two, and a drive that disappears
+mid-use (deleted from the SCSI layer) rebuilt onto a spare while the data
+stays readable.
+
+Still to write: mixed sizes (`scsi_debug` gives every drive one size),
+mounting again after a reboot (RAM drives don't survive one; it needs
+file-backed drives), power cut mid-reshape, silent corruption, and recovery
+on a stock Fedora VM.
 
 ## 11. Implementation order
 

@@ -7,9 +7,17 @@ require:
   - python3-gobject-base
 
 /create-grow:
-    summary: Create on two drives, add a third and a fourth, data intact throughout
+    summary: Create on two drives, grow to four
     test: ./create-grow.sh
 
+/single:
+    summary: One drive, then a second
+    test: ./single.sh
+
 /replace:
-    summary: Swap a drive for a larger one while the data stays online
+    summary: Swap a working drive while online
     test: ./replace.sh
+
+/failed:
+    summary: Rebuild after a drive disappears
+    test: ./failed.sh
