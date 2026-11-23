@@ -89,7 +89,9 @@ tamarack grow --from 1.json --add /dev/sdb=4TB --layout-out 2.json
 tamarack grow --from 2.json --add /dev/sdc=4TB --commands
 ```
 
-The same format will be written to every `tk-meta` partition.
+Every plan ends by writing the same layout, framed with a checksum, to the
+small `tk-meta` partition at the start of each drive, so the box can be read
+from any one of its drives.
 
 ## Drive identities and review
 

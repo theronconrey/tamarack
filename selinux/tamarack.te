@@ -29,6 +29,14 @@ files_type(tamarack_var_lib_t)
 type tamarack_etc_t;
 files_config_file(tamarack_etc_t)
 
+# tamarack-meta: writes the layout record to tk-meta partitions. The only
+# Tamarack code with raw-disk access; it checks the partition label first.
+type tamarack_meta_t;
+type tamarack_meta_exec_t;
+domain_type(tamarack_meta_t)
+domain_entry_file(tamarack_meta_t, tamarack_meta_exec_t)
+role system_r types tamarack_meta_t;
+
 ########################################
 #
 # The engine
@@ -95,3 +103,24 @@ optional_policy(`
 optional_policy(`
 	fstools_domtrans(tamarack_engine_t)
 ')
+
+domtrans_pattern(tamarack_engine_t, tamarack_meta_exec_t, tamarack_meta_t)
+
+########################################
+#
+# tamarack-meta
+#
+
+allow tamarack_meta_t self:fifo_file rw_fifo_file_perms;
+allow tamarack_meta_t tamarack_engine_t:fd use;
+allow tamarack_meta_t tamarack_engine_t:fifo_file rw_fifo_file_perms;
+
+corecmd_exec_bin(tamarack_meta_t)
+files_read_usr_files(tamarack_meta_t)
+files_read_etc_files(tamarack_meta_t)
+miscfiles_read_localization(tamarack_meta_t)
+kernel_read_system_state(tamarack_meta_t)
+dev_read_sysfs(tamarack_meta_t)
+dev_list_all_dev_nodes(tamarack_meta_t)
+storage_raw_read_fixed_disk(tamarack_meta_t)
+storage_raw_write_fixed_disk(tamarack_meta_t)

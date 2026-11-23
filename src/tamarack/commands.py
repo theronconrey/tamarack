@@ -169,8 +169,19 @@ def build_steps(plan: Plan) -> list[Step]:
                 cmd("btrfs", "subvolume", "create", f"{MOUNT_POINT}/snapshots"),
             ),
         ),
-        Step(f"Layout metadata to the {META_PARTLABEL} partitions (not implemented yet)", ()),
+        Step(
+            f"Write the layout to every {META_PARTLABEL} partition",
+            _metadata(plan),
+            "Each drive carries the whole layout, so the box can be read from any of them.",
+        ),
     ]
+
+
+def _metadata(plan: Plan) -> tuple[Command, ...]:
+    from .layout import layout_from_plan
+    from .steps import metadata_commands
+
+    return metadata_commands(layout_from_plan(plan))
 
 
 def render(plan: Plan) -> list[str]:

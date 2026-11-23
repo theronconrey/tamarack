@@ -139,7 +139,7 @@ def _single_to_mirror(layout: Layout, new: Disk) -> ChangePlan:
             (create_array(l2, Level.RAID1, [a3, b3]),),
         ),
         grow_volume(grown=[], created=[l2]),
-        metadata_step(),
+        metadata_step(after),
     ]
     after.validate()
     return ChangePlan(
@@ -172,7 +172,7 @@ def _add_to_parity(layout: Layout, new: Disk) -> ChangePlan:
             tuple(integrity_open(new_device, new_index, [n for n, _, _ in own])),
         ),
         *expansion_steps(base, exp, new_index),
-        metadata_step(),
+        metadata_step(exp.after),
     ]
     warnings = leftover_warnings(exp.after)
     if exp.kept:

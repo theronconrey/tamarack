@@ -323,11 +323,22 @@ def grow_volume(grown: list[str], created: list[str]) -> Step:
     return Step("Grow the volume and file system", tuple(commands))
 
 
-def metadata_step() -> Step:
+def metadata_commands(layout: Layout) -> tuple[Command, ...]:
+    """Write ``layout`` to the tk-meta partition of each of its drives."""
+    from .meta import compact
+
+    record = compact(layout)
+    return tuple(
+        cmd("tamarack-meta", "write", partition_path(disk.device, 1), record)
+        for disk in layout.drives
+    )
+
+
+def metadata_step(after: Layout) -> Step:
     return Step(
         f"Write the new layout to every {META_PARTLABEL} partition",
-        (),
-        "Not implemented yet; --layout-out FILE saves it meanwhile.",
+        metadata_commands(after),
+        "Each drive carries the whole layout, so the box can be read from any of them.",
     )
 
 
