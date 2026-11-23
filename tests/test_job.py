@@ -376,7 +376,7 @@ def test_journal_path() -> None:
             ("lvs", "tamarack/data"),
         ),
         (
-            ("systemd-mount", "--options=noatime", "/dev/tamarack/data", "/srv/tamarack"),
+            ("systemctl", "enable", "--now", "srv-tamarack.mount"),
             "probe",
             ("findmnt", "--mountpoint", "/srv/tamarack"),
         ),

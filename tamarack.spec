@@ -100,6 +100,7 @@ mv %{buildroot}%{_bindir}/tamarack-engine %{buildroot}%{_libexecdir}/tamarack-en
 mv %{buildroot}%{_bindir}/tamarack-meta %{buildroot}%{_libexecdir}/tamarack-meta
 install -Dpm 0644 data/systemd/tamarack-engine.service \
     %{buildroot}%{_unitdir}/tamarack-engine.service
+install -Dpm 0644 data/systemd/srv-tamarack.mount %{buildroot}%{_unitdir}/srv-tamarack.mount
 install -Dpm 0644 data/dbus/com.borealislogistics.Tamarack1.conf \
     %{buildroot}%{_datadir}/dbus-1/system.d/com.borealislogistics.Tamarack1.conf
 install -Dpm 0644 data/dbus/com.borealislogistics.Tamarack1.service \
@@ -154,6 +155,7 @@ fi
 %{_libexecdir}/tamarack-engine
 %{_libexecdir}/tamarack-meta
 %{_unitdir}/tamarack-engine.service
+%{_unitdir}/srv-tamarack.mount
 %{_datadir}/dbus-1/system.d/com.borealislogistics.Tamarack1.conf
 %{_datadir}/dbus-1/system-services/com.borealislogistics.Tamarack1.service
 %{_datadir}/dbus-1/interfaces/com.borealislogistics.Tamarack1.xml

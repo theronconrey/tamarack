@@ -190,3 +190,19 @@ def test_selinux_policy_is_enforcing_and_named() -> None:
     assert "sys_rawio" not in te
     raw = [line for line in code if "fixed_disk" in line]
     assert raw and all("(tamarack_meta_t)" in line for line in raw)
+
+
+def test_mount_unit_matches_what_the_planner_builds() -> None:
+    from tamarack.commands import LV_NAME, MOUNT_OPTIONS, MOUNT_POINT, MOUNT_UNIT, VG_NAME
+
+    unit = DATA / "systemd" / MOUNT_UNIT
+    parser = configparser.ConfigParser()
+    parser.optionxform = str  # type: ignore[assignment,method-assign]
+    parser.read(unit)
+    mount = parser["Mount"]
+    assert mount["What"] == f"/dev/{VG_NAME}/{LV_NAME}"
+    assert mount["Where"] == MOUNT_POINT
+    assert mount["Type"] == "btrfs"
+    assert mount["Options"] == MOUNT_OPTIONS
+    # systemd requires a mount unit to be named after its mount point.
+    assert MOUNT_POINT.strip("/").replace("/", "-") + ".mount" == MOUNT_UNIT

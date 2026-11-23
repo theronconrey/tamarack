@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# The Tamarack volume. Not enabled by the package: the engine enables and
+# starts it (systemctl enable --now) as the last step of creating a pool,
+# so it mounts at every boot from then on. Mounted by systemd in the host's
+# namespace, not by the sandboxed engine.
+
+[Unit]
+Description=Tamarack storage volume
+Documentation=https://github.com/theronconrey/tamarack
+
+[Mount]
+What=/dev/tamarack/data
+Where=/srv/tamarack
+Type=btrfs
+Options=compress=zstd:1,noatime
+
+[Install]
+WantedBy=multi-user.target

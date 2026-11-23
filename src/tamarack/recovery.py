@@ -22,6 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from .commands import MOUNT_POINT, MOUNT_UNIT
 from .ops import Command
 
 # Read-only programs a probe may call, in the forms used below.
@@ -96,8 +97,8 @@ def rule_for(command: Command) -> Rule:
         return _probe("lvs", f"{args[-1]}/{name}")
     if program == "mkfs.btrfs":
         return _probe("blkid", "--match-token", "TYPE=btrfs", args[-1])
-    if program == "systemd-mount":
-        return _probe("findmnt", "--mountpoint", args[-1])
+    if program == "systemctl" and args[:2] == ("enable", "--now") and args[-1] == MOUNT_UNIT:
+        return _probe("findmnt", "--mountpoint", MOUNT_POINT)
     if program == "btrfs":
         if args[:2] == ("subvolume", "create"):
             return _probe("btrfs", "subvolume", "show", args[2])
