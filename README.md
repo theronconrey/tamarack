@@ -11,10 +11,22 @@ Command: `tamarack`. Python package: `tamarack-nas`.
 
 ## Status
 
-Phase 1: **the planner**, **grow** from one drive up to four, and **replace**
-(upgrades and failed drives). Both are pure
-functions with dry-run command output. Nothing in this repository
-writes to a disk yet.
+Pre-alpha. Not for drives holding data you care about.
+
+- **Planner**: the `tamarack` command plans a fresh layout, growing from one
+  drive up to four, and replacing a drive (upgrade or failed). It only
+  prints: layouts, layout files and dry-run commands.
+- **Engine**: a sandboxed, SELinux-confined system service on D-Bus. It
+  plans, has polkit authorize each change, checks safety (drive identity,
+  degraded arrays, UPS, recent backup), and runs approved plans step by step
+  with a power-cut-safe journal. **Execution is off** unless
+  `/etc/tamarack/engine.conf` turns it on (see [Packaging](#packaging)).
+- **Testing**: unit and D-Bus tests in Fedora CI on every pull request; a
+  tmt VM matrix ([`plans/`](plans), [`tests/vm/`](tests/vm)) that runs with
+  SELinux enforcing on Testing Farm once the Packit app is installed.
+  Execution stays for throwaway VMs until that matrix passes.
+
+The full design and its status: [docs/design/engine.md](docs/design/engine.md).
 
 ## Try it
 
