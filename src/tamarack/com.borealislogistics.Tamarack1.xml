@@ -36,6 +36,22 @@
     <!-- JSON list of NFS shares: name, path, clients, read_only, squash, uid,
          gid, and "security": plain statements of who can do what -->
     <property name="Shares" type="s" access="read"/>
+    <!-- JSON list, in the layout's order, of the pool drives that are
+         attached: {"device", "model", "serial", "size", "kind": "hdd"|"ssd"|"",
+         "temperature_c", "power_on_hours"} (null when the drive doesn't say),
+         from UDisks2. Refreshed every minute. -->
+    <property name="Drives" type="s" access="read"/>
+    <!-- Upgrade advisor, JSON: {"usable", "add": {"size", "usable_after"} or
+         null, "replace": [{"device", "size", "usable_after"}], best first}.
+         Worked out with the real add and replace planners; "{}" with no pool. -->
+    <property name="Upgrades" type="s" access="read"/>
+    <!-- JSON list of jobs, newest first (at most 50): {"id", "kind",
+         "started", "ended" (UTC, "" while unfinished), "result" (a Job State,
+         or "unreadable"), "message", "step", "steps", "erases",
+         "usable_before", "usable_after"} -->
+    <property name="JobHistory" type="s" access="read"/>
+    <!-- This machine's host name, for the address clients connect to -->
+    <property name="HostName" type="s" access="read"/>
     <!-- The running or paused job, or "/" -->
     <property name="ActiveJob" type="o" access="read"/>
 

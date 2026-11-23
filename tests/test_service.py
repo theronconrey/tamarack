@@ -294,6 +294,10 @@ def test_manager_properties(engine_bus: tuple[Any, Path]) -> None:
     assert get(client, "ActiveJob") == "/"
     assert get(client, "Degraded") is False
     assert get(client, "LastBackupConfirmed") == 0
+    assert json.loads(get(client, "Drives")) == []
+    assert json.loads(get(client, "Upgrades")) == {}
+    assert json.loads(get(client, "JobHistory")) == []
+    assert get(client, "HostName")
 
 
 def test_introspection_matches_the_shipped_xml(engine_bus: tuple[Any, Path]) -> None:
@@ -453,6 +457,10 @@ def test_execute_runs_the_job_and_records_the_layout(
     assert json.loads(get(h.client, "Layout"))["format"] == "tamarack-layout"
     assert get(h.client, "DriveFailuresTolerated") == 1
     assert get(h.client, "State") == "idle"
+    (done,) = json.loads(get(h.client, "JobHistory"))
+    assert done["kind"] == "create" and done["result"] == "completed"
+    assert [d["device"] for d in json.loads(get(h.client, "Drives"))] == devices
+    assert json.loads(get(h.client, "Upgrades"))["usable"] > 0
     # Execute was authorized with the create action, naming the drives.
     assert (
         h.client.get_unique_name(),

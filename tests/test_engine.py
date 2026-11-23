@@ -41,7 +41,7 @@ from tamarack.journal import load
 from tamarack.layout import Layout, layout_from_plan
 from tamarack.planner import make_plan
 from tamarack.review import digest, document
-from tamarack.udisks import find_drive
+from tamarack.udisks import find_details, find_drive
 
 TB = 10**12
 
@@ -59,6 +59,20 @@ class FakeDrives:
         return {
             d: self.smart.get(d, ("ok", "")) if d in self.drives else ("missing", "not attached")
             for d in devices
+        }
+
+    def details(self, devices: list[str]) -> dict[str, dict[str, Any]]:
+        return {
+            d: {
+                "model": "Disk",
+                "serial": self.drives[d][1],
+                "size": self.drives[d][0],
+                "kind": "hdd",
+                "temperature_c": 35,
+                "power_on_hours": 1000,
+            }
+            for d in devices
+            if d in self.drives
         }
 
     def partition_uuids(self, device: str) -> dict[int, str]:
@@ -885,3 +899,105 @@ def test_space_reports_the_mounted_volume_like_df(
     monkeypatch.setattr(os, "statvfs", lambda p: fake)
     # size = blocks; used = blocks - bfree; free = bavail (what users can write)
     assert e.space() == {"size": 4096000, "used": 2457600, "free": 1433600}
+
+
+# --- drives tab, upgrade advisor, history -------------------------------------
+
+
+def test_drive_details_in_layout_order_without_missing_drives(tmp_path: Path) -> None:
+    e = engine(tmp_path, ["/dev/sdc", "/dev/sda"])
+    assert [d["device"] for d in e.drive_details()] == ["/dev/sdc", "/dev/sda"]
+    assert e.drive_details()[0]["size"] == 8 * TB
+    del e.drives.drives["/dev/sdc"]  # type: ignore[attr-defined]
+    assert [d["device"] for d in e.drive_details()] == ["/dev/sda"]
+    assert engine(tmp_path / "x").drive_details() == []
+
+
+def test_find_details_reads_ata_and_nvme_smart() -> None:
+    objects = {
+        "/d/a": {
+            "org.freedesktop.UDisks2.Drive": {
+                "Vendor": "",
+                "Model": "WDC WD40EFRX",
+                "Serial": "WD-1",
+                "Size": 4 * TB,
+                "RotationRate": 5400,
+            },
+            "org.freedesktop.UDisks2.Drive.Ata": {
+                "SmartSupported": True,
+                "SmartEnabled": True,
+                "SmartTemperature": 309.15,
+                "SmartPowerOnSeconds": 7200 * 3600,
+            },
+        },
+        "/b/a": {"org.freedesktop.UDisks2.Block": {"Device": b"/dev/sda\0", "Drive": "/d/a"}},
+        "/d/n": {
+            "org.freedesktop.UDisks2.Drive": {"Model": "Fast", "Size": 2 * TB, "RotationRate": 0},
+            "org.freedesktop.UDisks2.NVMe.Controller": {
+                "SmartTemperature": 0,
+                "SmartPowerOnHours": 12,
+            },
+        },
+        "/b/n": {"org.freedesktop.UDisks2.Block": {"Device": b"/dev/nvme0n1\0", "Drive": "/d/n"}},
+    }
+    found = find_details(objects, ["/dev/sda", "/dev/nvme0n1", "/dev/gone"])
+    assert found["/dev/sda"] == {
+        "model": "WDC WD40EFRX",
+        "serial": "WD-1",
+        "size": 4 * TB,
+        "kind": "hdd",
+        "temperature_c": 36,
+        "power_on_hours": 7200,
+    }
+    assert found["/dev/nvme0n1"]["kind"] == "ssd"
+    assert found["/dev/nvme0n1"]["temperature_c"] is None  # 0 K: not reported
+    assert found["/dev/nvme0n1"]["power_on_hours"] == 12
+    assert "/dev/gone" not in found
+
+
+def test_upgrades_offer_matching_the_largest_drive(tmp_path: Path) -> None:
+    e = engine(tmp_path, ["/dev/sda", "/dev/sdb", "/dev/sdc"])  # 4, 4, 8 TB
+    up = e.upgrades()
+    assert up["usable"] == e.usable_bytes
+    assert [r["device"] for r in up["replace"]] == ["/dev/sda", "/dev/sdb"]
+    assert all(r["size"] == 8 * TB and r["usable_after"] > up["usable"] for r in up["replace"])
+    assert up["add"]["size"] == 8 * TB and up["add"]["usable_after"] > up["usable"]
+
+
+def test_upgrades_match_the_real_replace_plan(tmp_path: Path) -> None:
+    e = engine(tmp_path, ["/dev/sda", "/dev/sdb", "/dev/sdc"])
+    best = e.upgrades()["replace"][0]
+    real = e.plan_replace(best["device"], "/dev/sdd")  # an 8 TB drive
+    assert json.loads(real.summary_json)["after"]["usable_bytes_nominal"] == best["usable_after"]
+
+
+def test_upgrades_when_all_drives_match_only_offer_adding(tmp_path: Path) -> None:
+    e = engine(tmp_path, ["/dev/sda", "/dev/sdb"])  # 4, 4 TB
+    assert e.upgrades()["replace"] == []
+    assert e.upgrades()["add"]["size"] == 4 * TB
+    (tmp_path / "4").mkdir()
+    four = engine(tmp_path / "4", ["/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd"])
+    assert four.upgrades()["add"] is None  # a fifth drive isn't supported yet
+    assert engine(tmp_path / "none").upgrades() == {}
+
+
+def test_job_history_newest_first(tmp_path: Path) -> None:
+    e = run_engine(tmp_path)
+    assert e.job_history() == []
+    plan = e.plan_create(["/dev/sda", "/dev/sdb"])
+    run = e.execute(plan.id, plan.digest, opts(plan))
+    e.job_finished("1", run.run())
+    plan = e.plan_add("/dev/sdc")
+    jobs = tmp_path / "state" / "jobs"
+    start(plan.document, "2", str(jobs / "2.jsonl"), FakeRunner(), gate=lambda n: "stop")
+    (jobs / "3.jsonl").write_text("garbage\n")
+    history = e.job_history()
+    assert [h["id"] for h in history] == ["3", "2", "1"]
+    assert history[0]["result"] == "unreadable"
+    assert history[1]["kind"] == "add" and history[1]["result"] == "paused"
+    assert history[1]["ended"] == "" and history[1]["erases"] == ["/dev/sdc"]
+    assert history[1]["usable_after"] > history[1]["usable_before"] > 0
+    first = history[2]
+    assert first["kind"] == "create" and first["result"] == "completed"
+    assert first["ended"].endswith("Z") and first["usable_before"] == 0
+    assert first["step"] == first["steps"] > 0
