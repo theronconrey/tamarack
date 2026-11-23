@@ -363,6 +363,20 @@ virtual disks:
 
 Nothing destructive is enabled outside these VMs until the matrix passes.
 
+Status (step 7, first part): [`plans/storage.fmf`](../../plans/storage.fmf)
+and [`tests/vm/`](../../tests/vm) hold the first tests: create on two
+drives then add a third and a fourth, and swap a drive while the data stays
+online. Each checks a checksum manifest after every change, that every
+drive carries the layout record, that a Btrfs scrub is clean and that there
+were no AVC denials, with SELinux enforcing. The drives are RAM-backed
+`scsi_debug` disks made inside the VM (one host and store per drive, so
+each has its own WWN), and the client refuses any drive that is not one.
+Packit runs the plan on Testing Farm once its GitHub app is installed; CI
+runs `tmt lint` on it meanwhile.
+
+Still to write: the failed-drive, single-drive and mixed-size cases, power
+cut mid-reshape, silent corruption, and recovery on a stock Fedora VM.
+
 ## 11. Implementation order
 
 1. `Command` with `argv` (section 6), no behaviour change.
