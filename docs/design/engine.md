@@ -288,6 +288,32 @@ every plan kind. Details settled while building it:
 `systemd-analyze security tamarack-engine.service` runs in CI once the unit
 ships, and every remaining exposure is either fixed or explained.
 
+### Status (step 6, first part)
+
+- **Packaged** as the `tamarack-engine` subpackage: `/usr/libexec/tamarack-engine`,
+  the unit, the bus policy and activation file, the interface XML in
+  `/usr/share/dbus-1/interfaces`, the polkit policy and the modules-load
+  file. It requires the storage tools it runs. CI installs it, runs
+  `systemd-analyze verify` on the unit and prints `systemd-analyze
+  security --offline`.
+- **The real runner** (`tamarack.runner`) runs only allowed programs, resolved
+  under `/usr` and refused unless root-owned and writable only by root, with
+  an argument list, stdin from `/dev/null`, a fixed `PATH` and `LC_ALL`, and
+  no shell.
+- **Execution is off by default.** The engine gets the runner only if
+  `/etc/tamarack/engine.conf` contains `[execution]` `enabled = yes`. Nothing
+  ships that file. Until the step 7 matrix passes it is for test VMs only.
+- **Mounting goes through `systemd-mount`.** The unit has its own mount
+  namespace, so a `mount` inside it would never reach the host; systemd
+  mounts the volume in the host's namespace instead. The create plan's dry
+  run changed accordingly. Mounting at boot (a shipped mount unit) is still
+  to do.
+- **Sandbox paths** the tools need are writable: `/run/mdadm`, `/run/lvm`,
+  `/run/lock/lvm`, `/run/cryptsetup` and `/etc/lvm/{archive,backup,devices}`.
+
+Still to do in step 6: the SELinux module and writing the layout to the
+`tk-meta` partitions.
+
 ## 9. SELinux
 
 The engine runs in its own domain, `tamarack_engine_t`, from the
