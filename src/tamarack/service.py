@@ -618,6 +618,7 @@ class Service:
             "Upgrades": lambda: json.dumps(e.upgrades(), sort_keys=True),
             "JobHistory": lambda: json.dumps(e.job_history(), sort_keys=True),
             "HostName": lambda: e.host_name,
+            "Candidates": lambda: json.dumps(e.candidates(), sort_keys=True),
             "Snapshots": lambda: json.dumps(e.snapshots(), sort_keys=True),
         }
 

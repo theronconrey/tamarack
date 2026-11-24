@@ -178,7 +178,10 @@ Drives are cut into layers at each size step, SHR / BeyondRAID style. Example,
 | 2 | the two 8 TB | 4 TB | single parity on two drives (two copies) | 4 TB |
 
 A slice that exists on only one drive stays unallocated until a matching drive
-arrives. Drives within 1 GiB or 0.5% of each other count as equal.
+arrives. With two-drive protection (5+ drives) a layer needs at least four
+drives, so space only two or three drives share also waits: one weaker layer
+would leave the whole pool surviving only one failure. Drives within 1 GiB or
+0.5% of each other count as equal.
 
 Per layer, under the hood:
 
@@ -190,7 +193,10 @@ Per layer, under the hood:
   missing, md replays the log and the pool starts on its own. A mirror can't
   keep PPL once it becomes parity (mdadm has no room for it next to the bad
   block log), which is why two-drive layers are not mirrors. RAID6 layers use
-  an internal write-intent bitmap;
+  an internal write-intent bitmap, because PPL covers RAID5 only: a RAID6
+  layer is exposed to the write hole only if the power is cut while a drive
+  is already missing, so pools of 5+ drives need a UPS, and such a layer
+  waits for a person instead of starting on its own;
 - **LVM** joins the layers into one volume; **Btrfs** sits on top with
   metadata DUP, zstd compression and snapshots.
 

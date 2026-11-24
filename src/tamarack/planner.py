@@ -146,17 +146,18 @@ def _warnings(plan: Plan) -> list[str]:
             "drive. Add a second drive to protect against that."
         )
     for layer in plan.layers:
-        if layer.level is Level.UNUSED:
+        if layer.level is Level.UNUSED and len(layer.members) == 1:
             warnings.append(
                 f"{format_size(layer.slice_size)} on "
                 f"{plan.drives[layer.members[0]].device} is unused "
                 "until another drive at least that large is added."
             )
-        elif plan.protection is Protection.TWO_DRIVE and layer.drive_failures_tolerated < 2:
+        elif layer.level is Level.UNUSED:
+            names = " and ".join(plan.drives[m].device for m in layer.members)
             warnings.append(
-                f"Layer {layer.index} spans only "
-                f"{layer.member_count} drives, so it survives one "
-                "drive failure, not two."
+                f"{format_size(layer.slice_size)} on each of {names} is unused "
+                "until four drives at least that large can share it, so that it "
+                "survives two drive failures like the rest of the pool."
             )
     largest = max(d.size for d in plan.drives)
     if largest >= REBUILD_RISK_DRIVE_SIZE:
