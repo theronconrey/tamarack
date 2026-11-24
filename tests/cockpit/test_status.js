@@ -249,3 +249,57 @@ test("activity lists jobs in words, newest first, with what changed", () => {
     assert.equal(S.ago("2026-11-22T11:00:00Z", now), "yesterday");
     assert.equal(S.ago("", now), "");
 });
+
+// --- changing shares ---------------------------------------------------------------
+
+test("the share form checks the name and the clients before asking the engine", () => {
+    const model = S.read(props({ Shares: JSON.stringify([{ name: "photos", clients: ["192.0.2.0/24"] }]) }));
+    assert.deepEqual(Object.keys(S.checkShare({ name: "Photos!", clients: "" }, model, null)), ["name", "clients"]);
+    assert.match(S.checkShare({ name: "photos", clients: "nas" }, model, null).name, /already a share/);
+    assert.deepEqual(S.checkShare({ name: "docs", clients: "192.0.2.0/24" }, model, null), {});
+    // An edit keeps its name, so only the clients are checked.
+    assert.deepEqual(S.checkShare({ name: "", clients: "laptop" }, model, { name: "photos" }), {});
+});
+
+test("clients split on lines, commas and spaces; wide ones are flagged", () => {
+    assert.deepEqual(S.splitClients(" 192.0.2.1,\n laptop  192.0.2.0/24\n"), ["192.0.2.1", "laptop", "192.0.2.0/24"]);
+    for (const c of ["*", "0.0.0.0/0", "10.0.0.0/8", "*.lan", "2001:db8::/32"]) assert.equal(S.isWide(c), true, c);
+    for (const c of ["192.168.1.0/24", "192.168.0.0/16", "laptop", "2001:db8::/64"]) assert.equal(S.isWide(c), false, c);
+});
+
+test("the preview says who is trusted, like the share card will", () => {
+    const narrow = S.trustPreview({ clients: "192.168.1.0/24", readOnly: true }, null);
+    assert.equal(narrow.tone, "ok");
+    assert.deepEqual(narrow.notes.slice(1), [
+        "Read-only for every client.",
+        "Root on a client is treated as the anonymous user nobody.",
+    ]);
+    const wide = S.trustPreview({ clients: "*", readOnly: false }, null);
+    assert.equal(wide.tone, "warning");
+    assert.equal(wide.notes[3], "Open to a wide range of addresses; consider narrowing it.");
+});
+
+test("a new share belongs to the signed-in user; an edit keeps its owner", () => {
+    const fresh = S.shareRequest({ name: "docs", clients: "192.0.2.0/24 laptop", readOnly: false }, { id: 1000, gid: 1000 }, null);
+    assert.deepEqual(fresh, {
+        name: "docs",
+        options: {
+            clients: { t: "as", v: ["192.0.2.0/24", "laptop"] },
+            "read-only": { t: "b", v: false },
+            squash: { t: "s", v: "root" },
+            uid: { t: "u", v: 1000 },
+            gid: { t: "u", v: 1000 },
+        },
+    });
+    const existing = { name: "media", squash: "all", uid: 2000, gid: 3000, clients: ["*"], read_only: true };
+    const edit = S.shareRequest({ name: "ignored", clients: "192.0.2.9", readOnly: true }, { id: 1000 }, existing);
+    assert.equal(edit.name, "media");
+    assert.deepEqual([edit.options.squash.v, edit.options.uid.v, edit.options.gid.v], ["all", 2000, 3000]);
+});
+
+test("engine errors come back in words", () => {
+    assert.match(S.changeError({ name: "org.freedesktop.DBus.Error.AccessDenied", message: "not authorized" }),
+                 /administrative access/);
+    assert.equal(S.changeError({ name: "x.InvalidArgument", message: "not an address, network or host name: 'a b'" }),
+                 "Not an address, network or host name: 'a b'.");
+});
