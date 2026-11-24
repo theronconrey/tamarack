@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import re
+import socket
 import tempfile
 import threading
 import time
@@ -51,7 +52,7 @@ from .shares import EXPORTS_FILE, Share, ShareError, make_share
 from .shares import dump as dump_shares
 from .shares import exports as render_exports
 from .shares import load as load_shares
-from .steps import ChangePlan
+from .steps import ChangePlan, UnsupportedChange
 
 T = TypeVar("T")
 log = logging.getLogger("tamarack-engine")
@@ -77,6 +78,10 @@ SNAPSHOT_PERIODS = ("hourly", "daily", "weekly", "monthly")
 DEFAULT_SCHEDULE = {"hourly": 24, "daily": 7, "weekly": 4, "monthly": 6}
 MAX_KEPT = 1000
 JOBS_SUBDIR = "jobs"
+HISTORY_LIMIT = 50  # jobs listed in JobHistory, newest first
+# The path a what-if plan uses for a drive that isn't there (upgrade advisor).
+UPGRADE_DEVICE = "/dev/tamarack-upgrade"
+WORTH_UPGRADING = 10**9  # gains below 1 GB aren't offered
 
 # Paths UDisks2 and udev create: /dev/sdb, /dev/nvme0n1, /dev/disk/by-id/...
 _DEVICE_PATH = re.compile(r"/dev/[A-Za-z0-9._:+@-]+(/[A-Za-z0-9._:+@-]+)*")
@@ -201,6 +206,14 @@ class DriveSource(Protocol):
         """GPT partition number -> partition UUID on the drive at ``device``."""
         ...
 
+    def details(self, devices: list[str]) -> dict[str, dict[str, Any]]:
+        """Model, serial, size, kind, temperature and age per attached device.
+
+        Missing devices are left out; unknown values are None (see
+        ``tamarack.udisks.find_details``).
+        """
+        ...
+
 
 class MetaSource(Protocol):
     """The layout records on the drives' tk-meta partitions (read only)."""
@@ -313,6 +326,16 @@ def _side(layout: Layout) -> dict[str, Any]:
         "drive_failures_tolerated": layout.drive_failures_tolerated,
         "usable_bytes_nominal": layout.usable_nominal,
     }
+
+
+def _usable(layout: Any) -> int:
+    """Usable bytes of a layout dict from a plan document; 0 if there is none."""
+    if not layout:
+        return 0
+    try:
+        return Layout.from_dict(layout).usable_nominal
+    except (ValueError, KeyError, TypeError):
+        return 0
 
 
 class Engine:
@@ -517,6 +540,100 @@ class Engine:
                 {"device": d, "state": drives[d][0], "detail": drives[d][1]} for d in devices
             ],
         }
+
+    def drive_details(self) -> list[dict[str, Any]]:
+        """What UDisks2 knows about each pool drive, in the layout's order.
+
+        Drives that are not attached are left out: Health says they are missing.
+        """
+        layout = self._layout
+        if not layout:
+            return []
+        devices = [d.device for d in layout.drives]
+        try:
+            details = self.drives.details(devices)
+        except EngineError as exc:
+            log.warning("drive details unavailable: %s", exc)
+            return []
+        return [{"device": d, **details[d]} for d in devices if d in details]
+
+    def upgrades(self) -> dict[str, Any]:
+        """The upgrade advisor: what adding or swapping one drive would give.
+
+        Worked out with the same planners a real add or replace uses, on a
+        drive that isn't there, so the numbers are what the plan would say.
+        The size offered is the pool's largest drive: in this layout, space
+        on a drive beyond the second-largest waits for a partner, so a
+        bigger drive than that adds nothing more by itself.
+        """
+        layout = self._layout
+        if not layout:
+            return {}
+        usable = layout.usable_nominal
+        largest = max(d.size for d in layout.drives)
+        replace: list[dict[str, Any]] = []
+        for disk in layout.drives:
+            if disk.size >= largest:
+                continue
+            try:
+                after = plan_replace(layout, disk.device, largest, UPGRADE_DEVICE).usable_after
+            except ValueError:  # includes UnsupportedChange
+                continue
+            if after - usable >= WORTH_UPGRADING:
+                replace.append({"device": disk.device, "size": largest, "usable_after": after})
+        replace.sort(key=lambda r: (-r["usable_after"], r["device"]))
+        add: dict[str, int] | None = None
+        try:
+            after = plan_add_drive(layout, largest, UPGRADE_DEVICE).usable_after
+        except (ValueError, UnsupportedChange):
+            after = 0
+        if after - usable >= WORTH_UPGRADING:
+            add = {"size": largest, "usable_after": after}
+        return {"usable": usable, "add": add, "replace": replace}
+
+    def job_history(self) -> list[dict[str, Any]]:
+        """Jobs from their journals, newest first: what ran, when and how it ended."""
+        directory = os.path.join(self.state_dir, JOBS_SUBDIR)
+        try:
+            names = os.listdir(directory)
+        except FileNotFoundError:
+            return []
+        ids = sorted(
+            (n.removesuffix(".jsonl") for n in names if n.endswith(".jsonl")),
+            key=lambda i: int(i) if i.isdigit() else -1,
+            reverse=True,
+        )
+        history = []
+        for job_id in ids[:HISTORY_LIMIT]:
+            if not job_id.isdigit():
+                continue
+            entry: dict[str, Any] = {"id": job_id}
+            try:
+                state = load(os.path.join(directory, f"{job_id}.jsonl"))
+            except (OSError, JournalError) as exc:
+                entry.update(result="unreadable", message=f"the journal cannot be read: {exc}")
+                history.append(entry)
+                continue
+            status = self.job_status(job_id)
+            entry.update(
+                kind=str(state.plan.get("kind", "")),
+                started=state.started,
+                ended=state.ended_at,
+                result=status.state,
+                message=state.message,
+                step=status.step,
+                steps=status.step_count,
+                erases=list(state.plan.get("erases", [])),
+                usable_before=_usable(state.plan.get("before")),
+                usable_after=_usable(state.plan.get("after")),
+            )
+            history.append(entry)
+        return history
+
+    @property
+    def host_name(self) -> str:
+        """This machine's name, as NFS clients would use it to connect."""
+        return socket.gethostname()
 
     @property
     def on_battery(self) -> bool:

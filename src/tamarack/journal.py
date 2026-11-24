@@ -150,6 +150,7 @@ class JobState:
     result: str = ""  # set once the job has ended
     failed: bool = False  # a command failed; job-end may not be written yet
     message: str = ""  # last pause reason, failure or end message
+    ended_at: str = ""  # job-end time, UTC "YYYY-MM-DDTHH:MM:SSZ"
 
     @property
     def steps(self) -> list[dict[str, Any]]:
@@ -248,6 +249,7 @@ def apply(state: JobState, r: dict[str, Any], number: int = 0) -> None:
             raise bad("cancelled inside a step")
         state.result = r["result"]
         state.message = str(r.get("message", ""))
+        state.ended_at = str(r.get("at", ""))
     else:
         raise bad("unknown record type")
 

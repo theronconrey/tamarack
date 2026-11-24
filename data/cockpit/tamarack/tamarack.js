@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The Tamarack page in Cockpit: the Overview, read-only. It talks only to
+// The Tamarack page in Cockpit, read-only: the Overview and the Drives,
+// Shares and Activity tabs. It talks only to
 // the engine (com.borealislogistics.Tamarack1 on the system bus) and draws
 // what status.js works out. Every text from the engine goes in with
 // textContent, never as HTML.
@@ -58,13 +59,7 @@ function drawBanner(b) {
     if (b.action) {
         const a = el("a", "tk-button", b.action.label);
         a.href = b.action.href;
-        if (b.action.href.startsWith("/")) {
-            // Another Cockpit page: move the whole shell, not this frame.
-            a.addEventListener("click", event => {
-                event.preventDefault();
-                cockpit.jump(b.action.href);
-            });
-        }
+        link(a, b.action.href);
         section.append(a);
     }
     if (b.progress !== undefined) {
@@ -127,6 +122,129 @@ function drawCapacity(cap) {
     replace("tk-capacity", head, bar, legend);
 }
 
+// A link to another Cockpit page moves the whole shell, not this frame; a
+// "#name" link opens one of this page's tabs.
+function link(a, href) {
+    if (href.startsWith("/")) {
+        a.addEventListener("click", event => {
+            event.preventDefault();
+            cockpit.jump(href);
+        });
+    } else if (href.startsWith("#")) {
+        a.addEventListener("click", event => {
+            event.preventDefault();
+            goTab(href.replace(/^#\/?/, ""));
+        });
+    }
+}
+
+function drawDriveCards(cards, advice) {
+    const list = [];
+    for (const c of cards) {
+        const card = el("section", "tk-card tk-drive-card tk-drive-" + c.tone);
+        const head = el("div", "tk-card-head");
+        const title = el("h3", "", c.label + " · " + c.size);
+        head.append(title, el("span", "tk-pill tk-tone-" + c.tone, c.stateText));
+        card.append(head);
+        const facts = el("dl", "tk-facts");
+        const add = (label, value) => {
+            if (value) facts.append(el("dt", "", label), el("dd", "", value));
+        };
+        add("Model", [c.kind, c.model].filter(Boolean).join(" · "));
+        add("Serial number", c.serial);
+        add("Temperature", c.temperature);
+        add("Age", c.age);
+        add("Holds", c.holds.replace(/^Holds /, ""));
+        add("Device", c.device);
+        card.append(facts);
+        if (c.waiting) card.append(el("p", "tk-muted tk-small", c.waiting));
+        if (c.detail) card.append(el("p", "tk-small", c.detail));
+        list.push(card);
+    }
+    replace("tk-drive-cards", ...list);
+
+    if (!advice) {
+        replace("tk-upgrade");
+        return;
+    }
+    const parts = [];
+    if (advice.best) {
+        const best = el("div", "tk-upgrade-best");
+        best.append(el("strong", "", advice.best.text), el("span", "tk-gain", advice.best.gainText));
+        parts.push(best);
+        if (advice.others.length) {
+            const others = el("ul", "tk-upgrade-others");
+            for (const o of advice.others) {
+                const item = el("li");
+                item.append(el("span", "", o.text), el("span", "tk-muted", " · " + o.gainText));
+                others.append(item);
+            }
+            parts.push(others);
+        }
+    }
+    parts.push(el("p", "tk-muted tk-small", advice.text));
+    replace("tk-upgrade", ...parts);
+}
+
+function drawShareCards(cards) {
+    if (!cards.length) {
+        const empty = el("section", "tk-card");
+        empty.append(el("h2", "", "No shares yet"),
+                     el("p", "tk-muted", "Create one from a terminal for now: " +
+                        "tamarack engine share set NAME --client ADDRESS."));
+        replace("tk-share-cards", empty);
+        return;
+    }
+    const list = [];
+    for (const c of cards) {
+        const card = el("section", "tk-card");
+        const head = el("div", "tk-card-head");
+        head.append(el("h3", "", c.name), el("span", "tk-pill tk-tone-neutral", c.access));
+        const chips = el("div", "tk-chips");
+        for (const w of c.ways) {
+            const chip = el("span", "tk-chip", w.label);
+            chip.title = w.detail;
+            chips.append(chip);
+        }
+        const facts = el("dl", "tk-facts");
+        facts.append(el("dt", "", "Connect to"), el("dd", "tk-mono", c.address),
+                     el("dt", "", "Who can connect"), el("dd", "", c.who));
+        const trust = el("div", "tk-trust tk-tone-" + c.tone);
+        trust.append(el("strong", "", "Who you are trusting"));
+        const notes = el("ul");
+        for (const t of c.trust) notes.append(el("li", "", t));
+        trust.append(notes);
+        card.append(head, chips, facts, trust);
+        list.push(card);
+    }
+    replace("tk-share-cards", ...list);
+}
+
+function historyList(entries) {
+    const list = el("ol", "tk-history");
+    for (const e of entries) {
+        const item = el("li", "tk-history-item");
+        const head = el("div", "tk-history-head");
+        const when = el("span", "tk-muted tk-small", e.when);
+        when.title = e.exact;
+        head.append(el("strong", "", e.title), when,
+                    el("span", "tk-pill tk-tone-" + (e.tone === "working" ? "neutral" : e.tone), e.resultText));
+        item.append(head);
+        for (const line of e.lines) item.append(el("p", "tk-small tk-muted", line));
+        list.append(item);
+    }
+    return list;
+}
+
+function drawActivity(act) {
+    document.getElementById("tk-waiting-card").hidden = !act.waiting.length;
+    replace("tk-waiting", historyList(act.waiting));
+    replace("tk-history", act.entries.length
+        ? historyList(act.entries)
+        : el("p", "tk-muted", "Nothing has happened yet."));
+    document.getElementById("tk-alerts").textContent = act.alerts;
+}
+
 function drawCare(lines) {
     const list = el("dl", "tk-care");
     for (const line of lines) list.append(el("dt", "", line.label), el("dd", "tk-muted", line.value));
@@ -154,16 +272,50 @@ function properties(proxy) {
     return out;
 }
 
+// --- tabs --------------------------------------------------------------------
+
+const TABS = ["overview", "drives", "shares", "activity"];
+
+function currentTab() {
+    const tab = cockpit.location.path[0];
+    return TABS.includes(tab) ? tab : "overview";
+}
+
+function goTab(tab) {
+    cockpit.location.go(tab === "overview" || !TABS.includes(tab) ? [] : [tab]);
+}
+
+function showTab(hasPool) {
+    const tab = currentTab();
+    document.getElementById("tk-tabs").hidden = !hasPool;
+    for (const a of document.querySelectorAll("#tk-tabs a")) {
+        if (a.dataset.tab === tab) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+    }
+    for (const panel of document.querySelectorAll("[data-panel]")) {
+        panel.hidden = !hasPool || panel.dataset.panel !== tab;
+    }
+}
+
+for (const a of document.querySelectorAll("#tk-tabs a")) link(a, "#" + a.dataset.tab);
+link(document.getElementById("tk-logs"), "/system/logs");
+
 function render() {
     const model = S.read(properties(manager));
     const jobProps = job && job.valid ? properties(job) : null;
+    const now = Date.now() / 1000;
     drawSummary(model);
     drawBanner(S.banner(model, jobProps));
     drawDrives(S.drives(model));
     drawCapacity(S.capacity(model));
-    drawCare(S.care(model, Date.now() / 1000));
-    document.getElementById("tk-content").hidden = !model.layout;
+    drawCare(S.care(model, now));
+    drawDriveCards(S.driveCards(model), S.upgradeAdvice(model));
+    drawShareCards(S.shareCards(model));
+    drawActivity(S.activity(model, now));
+    showTab(!!model.layout);
 }
+
+cockpit.addEventListener("locationchanged", render);
 
 function followJob() {
     const path = manager.ActiveJob;
@@ -183,7 +335,7 @@ function unreachable() {
             "your files are not affected by it.",
         action: { label: "Open the service", href: "/system/services#/tamarack-engine.service" },
     });
-    document.getElementById("tk-content").hidden = true;
+    showTab(false);
 }
 
 manager.addEventListener("changed", () => {

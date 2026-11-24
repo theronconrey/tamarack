@@ -150,3 +150,102 @@ test("the care lines say what is looked after, in words", () => {
     const off = S.care(S.read(props({ SnapshotSchedule: { hourly: 0, daily: 0, weekly: 0, monthly: 0 } })), now);
     assert.equal(off[0].value, "off");
 });
+
+// --- the Drives tab ----------------------------------------------------------
+
+test("drive cards add what UDisks2 knows and what each drive holds", () => {
+    const details = JSON.stringify([
+        { device: "/dev/sda", model: "WDC WD80EFZZ", serial: "WD-A", size: 8 * TB, kind: "hdd",
+          temperature_c: 38, power_on_hours: 3 * 8766 },
+        { device: "/dev/sdc", model: "Fast SSD", serial: "S-C", size: 4 * TB, kind: "ssd",
+          temperature_c: null, power_on_hours: 100 },
+    ]);
+    const cards = S.driveCards(S.read(props({ Drives: details })));
+    assert.equal(cards.length, 4);
+    assert.equal(cards[0].kind, "Hard drive");
+    assert.equal(cards[0].temperature, "38 °C");
+    assert.equal(cards[0].age, "about 3 years of use");
+    assert.equal(cards[0].holds, "Holds 8 TB of your pool");
+    assert.equal(cards[0].waiting, "");
+    assert.equal(cards[2].kind, "SSD");
+    assert.equal(cards[2].temperature, "");
+    assert.equal(cards[2].age, "less than a month of use");
+    assert.equal(cards[1].model, "");  // no details for /dev/sdb: the card still shows
+});
+
+test("a drive with unpaired space says so", () => {
+    const l = JSON.parse(layout());
+    l.layers.pop();
+    const cards = S.driveCards(S.read(props({ Layout: JSON.stringify(l) })));
+    assert.equal(cards[0].waiting, "4 TB waiting for a partner drive");
+    assert.equal(cards[2].waiting, "");
+});
+
+test("hot drives are called out, by kind", () => {
+    assert.deepEqual(S.temperature(56, "hdd"), { text: "56 °C, running hot", hot: true });
+    assert.deepEqual(S.temperature(56, "ssd"), { text: "56 °C", hot: false });
+    assert.equal(S.age(20 * 24 * 30.44).startsWith("20 months"), true);
+});
+
+test("the upgrade advisor puts the biggest gain first", () => {
+    const upgrades = JSON.stringify({
+        usable: 16 * TB,
+        add: { size: 8 * TB, usable_after: 20 * TB },
+        replace: [{ device: "/dev/sdc", size: 8 * TB, usable_after: 24 * TB }],
+    });
+    const advice = S.upgradeAdvice(S.read(props({ Upgrades: upgrades })));
+    assert.equal(advice.best.text, "Replace Drive 3 (4 TB) with a drive of 8 TB");
+    assert.equal(advice.best.gainText, "+8 TB for your files");
+    assert.equal(advice.others[0].text, "Add a drive of 8 TB, if there is a free bay");
+});
+
+test("with every drive the same size, the advisor explains why one isn't enough", () => {
+    const advice = S.upgradeAdvice(S.read(props({ Upgrades: JSON.stringify({ usable: 16 * TB, add: null, replace: [] }) })));
+    assert.equal(advice.best, null);
+    assert.match(advice.text, /second larger drive/);
+    assert.equal(S.upgradeAdvice(S.read(props({ Upgrades: "{}" }))), null);
+});
+
+// --- the Shares tab ------------------------------------------------------------
+
+test("share cards say who can connect and who is trusted", () => {
+    const shares = JSON.stringify([{
+        name: "photos", path: "/srv/tamarack/shares/photos", clients: ["192.168.1.0/24"],
+        read_only: false, squash: "root", uid: 0, gid: 0,
+        security: ["sec=sys trusts the user IDs each client sends", "clients can change files"],
+    }, {
+        name: "open", path: "/srv/tamarack/shares/open", clients: ["*"], read_only: true,
+        security: ["open to a wide range of addresses; consider narrowing it"],
+    }]);
+    const cards = S.shareCards(S.read(props({ Shares: shares, HostName: "nas" })));
+    assert.equal(cards[0].address, "nas:/srv/tamarack/shares/photos");
+    assert.equal(cards[0].access, "Can change files");
+    assert.equal(cards[0].who, "192.168.1.0/24");
+    assert.equal(cards[0].trust[1], "Clients can change files.");
+    assert.deepEqual(cards[0].ways.map(w => w.label), ["Linux computers"]);
+    assert.equal(cards[0].tone, "ok");
+    assert.equal(cards[1].access, "Read only");
+    assert.equal(cards[1].tone, "warning");
+});
+
+// --- the Activity tab ------------------------------------------------------------
+
+test("activity lists jobs in words, newest first, with what changed", () => {
+    const now = Date.parse("2026-11-23T12:00:00Z") / 1000;
+    const history = JSON.stringify([
+        { id: "2", kind: "add", started: "2026-11-23T11:00:00Z", ended: "", result: "paused",
+          message: "a command was cut off", step: 3, steps: 7, usable_before: 4 * TB, usable_after: 8 * TB },
+        { id: "1", kind: "create", started: "2026-11-20T09:00:00Z", ended: "2026-11-20T09:05:00Z",
+          result: "completed", message: "", step: 7, steps: 7, usable_before: 0, usable_after: 4 * TB },
+    ]);
+    const act = S.activity(S.read(props({ JobHistory: history })), now);
+    assert.deepEqual(act.entries.map(e => [e.title, e.when, e.resultText]), [
+        ["Added a drive", "1 hour ago", "Waiting for you"],
+        ["Set up the pool", "3 days ago", "Done"],
+    ]);
+    assert.deepEqual(act.entries[0].lines, ["Step 3 of 7", "a command was cut off"]);
+    assert.deepEqual(act.entries[1].lines, ["Space for your files: 4 TB"]);
+    assert.equal(act.waiting.length, 1);
+    assert.equal(S.ago("2026-11-22T11:00:00Z", now), "yesterday");
+    assert.equal(S.ago("", now), "");
+});

@@ -22,8 +22,15 @@
 
     <div id="tk-banner"></div>
 
-    <div id="tk-content" class="tk-columns" hidden>
-        <section id="drives" class="tk-card tk-wide" aria-labelledby="drives-h">
+    <nav id="tk-tabs" class="tk-tabs" aria-label="Storage sections" hidden>
+        <a href="#/" data-tab="overview">Overview</a>
+        <a href="#/drives" data-tab="drives">Drives</a>
+        <a href="#/shares" data-tab="shares">Shares</a>
+        <a href="#/activity" data-tab="activity">Activity</a>
+    </nav>
+
+    <div id="tk-content" class="tk-columns" data-panel="overview" hidden>
+        <section class="tk-card tk-wide" aria-labelledby="drives-h">
             <div class="tk-card-head">
                 <h2 id="drives-h">Drives</h2>
                 <span id="tk-drive-count" class="tk-muted tk-small"></span>
@@ -41,6 +48,34 @@
                 <div id="tk-care"></div>
             </section>
         </div>
+    </div>
+
+    <div class="tk-panel" data-panel="drives" hidden>
+        <section class="tk-card" aria-labelledby="upgrade-h">
+            <h2 id="upgrade-h">Best next upgrade</h2>
+            <div id="tk-upgrade"></div>
+        </section>
+        <div id="tk-drive-cards" class="tk-grid"></div>
+    </div>
+
+    <div class="tk-panel" data-panel="shares" hidden>
+        <div id="tk-share-cards" class="tk-grid"></div>
+    </div>
+
+    <div class="tk-panel" data-panel="activity" hidden>
+        <section id="tk-waiting-card" class="tk-card" aria-labelledby="waiting-h" hidden>
+            <h2 id="waiting-h">Waiting for you</h2>
+            <div id="tk-waiting"></div>
+        </section>
+        <section class="tk-card" aria-labelledby="history-h">
+            <h2 id="history-h">History</h2>
+            <div id="tk-history"></div>
+        </section>
+        <section class="tk-card" aria-labelledby="alerts-h">
+            <h2 id="alerts-h">Alerts</h2>
+            <p id="tk-alerts" class="tk-muted"></p>
+            <a id="tk-logs" class="tk-link" href="/system/logs">Open the system log</a>
+        </section>
     </div>
 </main>
 </body>

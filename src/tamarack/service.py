@@ -164,6 +164,7 @@ class Service:
         self._threads: list[threading.Thread] = []
         self._last_health: dict[str, Any] | None = None
         self._last_space: dict[str, int] | None = None
+        self._last_drives: list[dict[str, Any]] | None = None
         self.sync_objects()
 
     # --- bus plumbing --------------------------------------------------------
@@ -407,7 +408,7 @@ class Service:
 
     def _launch(self, run: JobRun) -> None:
         self.sync_objects()
-        self._manager_changed("State", "ActiveJob")
+        self._manager_changed("State", "ActiveJob", "JobHistory")
 
         def observer(record: dict[str, Any], state: JobState) -> None:
             # Runs on the worker thread: take what is needed, then hand over.
@@ -447,7 +448,13 @@ class Service:
             log.info("job %s %s: %s", job_id, final.state, final.message)
             self._job_ended(job_id, final)
         self._manager_changed(
-            "State", "ActiveJob", "Layout", "DriveFailuresTolerated", "UsableBytes"
+            "State",
+            "ActiveJob",
+            "Layout",
+            "DriveFailuresTolerated",
+            "UsableBytes",
+            "Upgrades",
+            "JobHistory",
         )
         return False  # GLib.SOURCE_REMOVE
 
@@ -474,6 +481,10 @@ class Service:
         if space != self._last_space:
             self._last_space = space
             self._manager_changed("Space")
+        drives = self.engine.drive_details()
+        if drives != self._last_drives:
+            self._last_drives = drives
+            self._manager_changed("Drives")
         # The first check compares against a clean slate, so a pool that is
         # already degraded when the engine starts is reported too.
         before = self._last_health or {"status": "none", "degraded_layers": [], "drives": []}
@@ -543,6 +554,10 @@ class Service:
             "SnapshotSchedule": lambda: e.snapshot_schedule,
             "Shares": lambda: json.dumps([s.to_dict() for s in e.shares], sort_keys=True),
             "ActiveJob": lambda: job_path(e.active_job) if e.active_job else "/",
+            "Drives": lambda: json.dumps(e.drive_details(), sort_keys=True),
+            "Upgrades": lambda: json.dumps(e.upgrades(), sort_keys=True),
+            "JobHistory": lambda: json.dumps(e.job_history(), sort_keys=True),
+            "HostName": lambda: e.host_name,
         }
 
     def _plan_properties(self, path: str) -> dict[str, Callable[[], Any]]:

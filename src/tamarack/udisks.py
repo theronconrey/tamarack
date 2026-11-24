@@ -154,6 +154,47 @@ def find_health(objects: Objects, devices: Iterable[str]) -> dict[str, tuple[str
     return health
 
 
+def _kelvin_to_celsius(kelvin: float) -> int | None:
+    """UDisks2 reports temperatures in kelvin, 0 when unknown."""
+    return round(kelvin - 273.15) if kelvin > 0 else None
+
+
+def find_details(objects: Objects, devices: Iterable[str]) -> dict[str, dict[str, Any]]:
+    """What the Drives tab shows about each attached drive.
+
+    model, serial, size (bytes), kind ("hdd", "ssd" or "" if unknown),
+    temperature_c and power_on_hours (None when the drive doesn't say).
+    Devices that aren't attached are left out.
+    """
+    details: dict[str, dict[str, Any]] = {}
+    for device in devices:
+        matches = [i[BLOCK] for i in objects.values() if BLOCK in i and device in _paths(i[BLOCK])]
+        if not matches:
+            continue
+        drive_object = objects.get(str(matches[0].get("Drive", "/")), {})
+        drive = drive_object.get(DRIVE, {})
+        ata, nvme = drive_object.get(ATA), drive_object.get(NVME)
+        rate = int(drive.get("RotationRate", -1))
+        temperature: int | None = None
+        hours: int | None = None
+        if ata is not None and ata.get("SmartSupported") and ata.get("SmartEnabled"):
+            temperature = _kelvin_to_celsius(float(ata.get("SmartTemperature", 0)))
+            seconds = int(ata.get("SmartPowerOnSeconds", 0))
+            hours = seconds // 3600 if seconds else None
+        elif nvme is not None:
+            temperature = _kelvin_to_celsius(float(nvme.get("SmartTemperature", 0)))
+            hours = int(nvme["SmartPowerOnHours"]) if "SmartPowerOnHours" in nvme else None
+        details[device] = {
+            "model": " ".join(str(drive.get(k, "")) for k in ("Vendor", "Model")).strip(),
+            "serial": str(drive.get("Serial", "")),
+            "size": int(drive.get("Size", 0)) or int(matches[0].get("Size", 0)),
+            "kind": "hdd" if rate > 0 else "ssd" if rate == 0 else "",
+            "temperature_c": temperature,
+            "power_on_hours": hours,
+        }
+    return details
+
+
 class UDisksDrives:
     """``DriveSource`` backed by UDisks2 on the given GDBus connection."""
 
@@ -192,6 +233,9 @@ class UDisksDrives:
 
     def partition_uuids(self, device: str) -> dict[int, str]:
         return find_partition_uuids(self.objects(), device)
+
+    def details(self, devices: list[str]) -> dict[str, dict[str, Any]]:
+        return find_details(self.objects(), devices)
 
 
 class DriveRecords:
