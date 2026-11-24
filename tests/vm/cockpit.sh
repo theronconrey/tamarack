@@ -44,7 +44,9 @@ echo "$tabs" | python3 -c '
 import json, sys
 t = json.load(sys.stdin)
 assert [d["label"] for d in t["drives"]] == ["Drive 1", "Drive 2"], t["drives"]
-assert all(d["state"] == "Healthy" and d["model"] and d["holds"] for d in t["drives"]), t["drives"]
+# scsi_debug and LIO drives report no SMART data: "Health unknown", not "Healthy".
+assert all(d["state"] in ("Healthy", "Health unknown") for d in t["drives"]), t["drives"]
+assert all(d["model"] and d["holds"] for d in t["drives"]), t["drives"]
 assert t["advice"] is not None, "no upgrade advice"
 assert [s["name"] for s in t["shares"]] == ["photos"], t["shares"]
 assert t["shares"][0]["address"].endswith(":/srv/tamarack/shares/photos"), t["shares"]
