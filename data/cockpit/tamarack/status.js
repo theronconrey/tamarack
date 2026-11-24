@@ -16,7 +16,9 @@ const GB = 1e9;
 function formatSize(bytes) {
     if (bytes >= TB) return trim(bytes / TB) + " TB";
     if (bytes >= GB) return trim(bytes / GB) + " GB";
-    return Math.round(bytes / 1e6) + " MB";
+    if (bytes >= 1e6) return Math.round(bytes / 1e6) + " MB";
+    if (bytes >= 1e3) return Math.round(bytes / 1e3) + " KB";
+    return bytes === 1 ? "1 byte" : bytes + " bytes";
 }
 
 function trim(n) {
@@ -493,6 +495,48 @@ function scheduleRequest(values) {
     return out;
 }
 
+// --- browsing a snapshot --------------------------------------------------
+
+// Where you are in a snapshot, as links back up: "Shares › photos › 2025".
+function breadcrumb(path) {
+    const parts = String(path || "").split("/").filter(Boolean);
+    const crumbs = [{ label: "Shares", path: "" }];
+    parts.forEach((part, i) => crumbs.push({ label: part, path: parts.slice(0, i + 1).join("/") }));
+    return crumbs;
+}
+
+function joinPath(folder, name) {
+    return folder ? folder + "/" + name : name;
+}
+
+// One folder of a snapshot, from BrowseSnapshot's JSON.
+function browseRows(listing, folder) {
+    const data = parse(listing, { entries: [], truncated: false });
+    const rows = (data.entries || []).map(e => ({
+        name: e.name,
+        path: joinPath(folder, e.name),
+        kind: e.kind,
+        detail: e.kind === "folder" ? "Folder"
+            : e.kind === "file" ? formatSize(e.size)
+                : e.kind === "link" ? "Link (not restored on its own)" : "Not a file",
+        canOpen: e.kind === "folder",
+        canRestore: e.kind === "folder" || e.kind === "file",
+    }));
+    return {
+        rows,
+        empty: rows.length ? "" : "This folder was empty.",
+        truncated: data.truncated ? "Only the first 5000 entries are shown." : "",
+    };
+}
+
+function restoredMessage(path) {
+    const parts = String(path).split("/");
+    const name = parts.pop();
+    return "Restored as “" + name + "”" +
+        (parts.length ? " in " + parts.join("/") : " at the top of your shares") +
+        ", next to the original. Nothing was overwritten.";
+}
+
 // --- the Activity tab -----------------------------------------------------
 
 const JOB_TITLES = {
@@ -559,6 +603,7 @@ const api = {
     splitClients, isWide, trustPreview, checkShare, shareRequest, changeError,
     SEC_SYS_NOTE, WIDE_NOTE,
     PERIODS, scheduleSentence, snapshotSummary, snapshotRows, checkSchedule, scheduleRequest,
+    breadcrumb, browseRows, restoredMessage,
 };
 if (typeof module !== "undefined" && module.exports) {
     module.exports = api;

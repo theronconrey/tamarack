@@ -648,3 +648,37 @@ def test_shares_over_the_bus(bus: str, tmp_path: Path, chowns: list[tuple[str, i
         assert json.loads(get(h.client, "Shares")) == []
     finally:
         h.stop()
+
+
+def test_browse_and_restore_over_the_bus(bus: str, tmp_path: Path) -> None:
+    state, root = tmp_path / "state", tmp_path / "root"
+    state.mkdir()
+    plan = make_plan(
+        [4 * TB, 4 * TB],
+        ["/dev/sda", "/dev/sdb"],
+        ["wwn:0x5000000000000001", "wwn:0x5000000000000002"],
+    )
+    (state / "layout.json").write_text(layout_from_plan(plan).to_json())
+    snap = root / "srv/tamarack/shares/.snapshots/3"
+    (snap / "snapshot").mkdir(parents=True)
+    (snap / "snapshot" / "notes.txt").write_text("v1")
+    (snap / "info.xml").write_text(
+        "<snapshot><type>single</type><num>3</num><date>2026-11-20 14:00:00</date>"
+        "<description>timeline</description><cleanup>timeline</cleanup></snapshot>"
+    )
+    h = Harness(bus, state, root=str(root))
+    try:
+        (listing,) = call(h.client, "BrowseSnapshot", GLib.Variant("(us)", (3, "")))
+        assert [e["name"] for e in json.loads(listing)["entries"]] == ["notes.txt"]
+        (restored,) = call(h.client, "RestoreFromSnapshot", GLib.Variant("(us)", (3, "notes.txt")))
+        assert (root / "srv/tamarack/shares" / restored).read_text() == "v1"
+        assert ("com.borealislogistics.tamarack.restore") in [a for _, a, _ in h.fakes.checks]
+        name, _ = error_of(
+            lambda: call(h.client, "RestoreFromSnapshot", GLib.Variant("(us)", (3, "gone.txt")))
+        )
+        assert name == ERR + "InvalidArgument"
+        h.fakes.denied.add("com.borealislogistics.tamarack.restore")
+        name, _ = error_of(lambda: call(h.client, "BrowseSnapshot", GLib.Variant("(us)", (3, ""))))
+        assert name == "org.freedesktop.DBus.Error.AccessDenied"
+    finally:
+        h.stop()

@@ -141,6 +141,7 @@ Defined in
 | `…tamarack.confirm-backup` | `Manager.ConfirmBackup` | no / no / `auth_admin_keep` |
 | `…tamarack.share` | `Manager.SetShare`, `Manager.RemoveShare` | no / no / `auth_admin_keep` |
 | `…tamarack.configure` | `Manager.SetSnapshotSchedule` (and later settings) | no / no / `auth_admin_keep` |
+| `…tamarack.restore` | `Manager.BrowseSnapshot`, `Manager.RestoreFromSnapshot` | no / no / `auth_admin_keep` |
 
 Destructive actions use `auth_admin`, not `auth_admin_keep`: every change
 asks for the admin password again. Each check passes polkit the plan's
@@ -224,6 +225,19 @@ makes skipping them a deliberate act.
   and `snapper-cleanup.timer`. The separate `snapshots` subvolume from the
   first design is gone: snapper keeps them in `shares/.snapshots`, which
   read-only NFS access can expose as "previous versions" later.
+- **`Manager.BrowseSnapshot`** and **`Manager.RestoreFromSnapshot`**
+  (polkit `…tamarack.restore`, admin, kept for a few minutes). Browsing
+  needs it too: a snapshot holds every user's files. A restore copies a
+  file or folder back next to the original as `name (from 2026-11-20
+  14.00).ext` and never overwrites anything (`tamarack.restore`). The live
+  shares are changed by NFS clients, so every path is walked component by
+  component with `O_NOFOLLOW` from a folder descriptor and new files are
+  made with `O_EXCL`: a symlink swapped in by a client stops the restore
+  instead of steering the engine, which runs as root, elsewhere. Data is
+  cloned on btrfs (`FICLONE`), so a restore costs no space until changed.
+  Reading files their owners keep private needs `CAP_DAC_READ_SEARCH`
+  (read and search only, never write), in the unit and in the SELinux
+  module. A restore runs on its own thread and replies when it is done.
 - **`Manager.SetSnapshotSchedule`** (polkit `…tamarack.configure`, admin,
   remembered for a few minutes) changes the four limits, or turns timeline
   snapshots off when all are zero, through `snapper set-config`.

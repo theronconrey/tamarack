@@ -1060,3 +1060,26 @@ def test_snapshots_read_from_snapper_info_files(tmp_path: Path) -> None:
     }
     (tmp_path / "none").mkdir()
     assert run_engine(tmp_path / "none").snapshots() == []  # no pool
+
+
+def test_browse_and_restore_through_the_engine(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    shares = Path(e.root) / "srv/tamarack/shares"
+    snap = shares / ".snapshots" / "7"
+    (snap / "snapshot" / "docs").mkdir(parents=True)
+    (snap / "snapshot" / "docs" / "plan.txt").write_text("v1")
+    (snap / "info.xml").write_text(
+        SNAPPER_INFO.format(num=7, date="2026-11-20 14:00:00", description="timeline")
+    )
+    (shares / "docs").mkdir()
+    assert e.authorize_restore(7, "docs/plan.txt") == "com.borealislogistics.tamarack.restore"
+    for number, path in ((8, "docs"), (0, "docs"), (7, "../etc")):
+        with pytest.raises(InvalidArgument):
+            e.authorize_restore(number, path)
+    listing = e.browse_snapshot(7, "docs")
+    assert [x["name"] for x in listing["entries"]] == ["plan.txt"]
+    new = e.restore_from_snapshot(7, "docs/plan.txt")
+    assert new.startswith("docs/plan (from 2026-11-2") and new.endswith(").txt")
+    assert (shares / new).read_text() == "v1"
+    with pytest.raises(InvalidArgument, match="not in this snapshot"):
+        e.restore_from_snapshot(7, "docs/missing.txt")

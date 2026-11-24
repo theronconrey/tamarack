@@ -100,4 +100,14 @@
       <allow_active>auth_admin_keep</allow_active>
     </defaults>
   </action>
+
+  <action id="com.borealislogistics.tamarack.restore">
+    <description>Look inside snapshots and restore files from them</description>
+    <message>Authentication is required to look inside snapshots and restore files</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
 </policyconfig>

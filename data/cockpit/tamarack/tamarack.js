@@ -2,7 +2,7 @@
 //
 // The Tamarack page in Cockpit: the Overview and the Drives, Shares, Snapshots and
 // Activity tabs. The changes it makes so far: shares, the snapshot schedule,
-// and continuing or cancelling a paused job. It talks only to
+// restoring from a snapshot, and continuing or cancelling a paused job. It talks only to
 // the engine (com.borealislogistics.Tamarack1 on the system bus) and draws
 // what status.js works out. Every text from the engine goes in with
 // textContent, never as HTML.
@@ -466,10 +466,120 @@ function drawSnapshots(summary, rows) {
         const when = el("strong", "", r.when);
         when.title = r.exact;
         head.append(when, el("span", "tk-muted tk-small", r.label + " · #" + r.number));
+        const look = el("button", "tk-button tk-secondary tk-small-button", "Look inside");
+        look.type = "button";
+        look.addEventListener("click", () => openSnapshot(r, ""));
+        head.append(look);
         item.append(head);
         list.append(item);
     }
     replace("tk-snapshot-list", list);
+}
+
+// --- browsing a snapshot and restoring from it -----------------------------------
+
+let browsing = null;  // {snapshot: row, folder, listing, message, error, busy}
+
+function openSnapshot(row, folder) {
+    browsing = { snapshot: row, folder, listing: null, message: "", error: "", busy: true };
+    drawBrowser();
+    document.getElementById("tk-browser").scrollIntoView({ block: "start" });
+    admin.call(ROOT, MANAGER, "BrowseSnapshot", [row.number, folder], { type: "us" })
+        .then(([listing]) => {
+            if (!browsing || browsing.snapshot !== row || browsing.folder !== folder) return;
+            browsing.listing = listing;
+        })
+        .catch(error => {
+            if (browsing) browsing.error = S.changeError(error);
+        })
+        .finally(() => {
+            if (browsing) browsing.busy = false;
+            drawBrowser();
+        });
+}
+
+function restoreItem(path) {
+    const b = browsing;
+    b.busy = true;
+    b.message = "";
+    b.error = "";
+    drawBrowser();
+    admin.call(ROOT, MANAGER, "RestoreFromSnapshot", [b.snapshot.number, path], { type: "us" })
+        .then(([restored]) => { b.message = S.restoredMessage(restored); })
+        .catch(error => { b.error = S.changeError(error); })
+        .finally(() => {
+            b.busy = false;
+            drawBrowser();
+        });
+}
+
+function drawBrowser() {
+    const box = document.getElementById("tk-browser");
+    if (!browsing) {
+        box.hidden = true;
+        box.replaceChildren();
+        return;
+    }
+    const b = browsing;
+    box.hidden = false;
+    const head = el("div", "tk-card-head");
+    const title = el("h2", "", "Snapshot from " + b.snapshot.when);
+    title.id = "browser-h";
+    const close = el("button", "tk-button tk-secondary", "Close");
+    close.type = "button";
+    close.addEventListener("click", () => {
+        browsing = null;
+        drawBrowser();
+    });
+    head.append(title, close);
+
+    const crumbs = el("nav", "tk-crumbs");
+    crumbs.setAttribute("aria-label", "Folder");
+    for (const c of S.breadcrumb(b.folder)) {
+        if (c.path === b.folder) {
+            crumbs.append(el("span", "tk-crumb-here", c.label));
+        } else {
+            const a = el("button", "tk-crumb", c.label);
+            a.type = "button";
+            a.addEventListener("click", () => openSnapshot(b.snapshot, c.path));
+            crumbs.append(a, el("span", "tk-muted", " › "));
+        }
+    }
+
+    const parts = [head, el("p", "tk-muted tk-small",
+        "Restoring puts a copy next to the original, named with the snapshot's time. " +
+        "Nothing is overwritten."), crumbs];
+    if (b.message) parts.push(el("p", "tk-ok-text", b.message));
+    if (b.error) parts.push(el("p", "tk-error", b.error));
+    if (b.busy) parts.push(el("p", "tk-muted", b.listing === null ? "Opening…" : "Restoring…"));
+    if (b.listing !== null) {
+        const view = S.browseRows(b.listing, b.folder);
+        const list = el("ul", "tk-files");
+        for (const r of view.rows) {
+            const item = el("li", "tk-file");
+            let name;
+            if (r.canOpen) {
+                name = el("button", "tk-file-name tk-crumb", r.name);
+                name.type = "button";
+                name.addEventListener("click", () => openSnapshot(b.snapshot, r.path));
+            } else {
+                name = el("span", "tk-file-name", r.name);
+            }
+            item.append(name, el("span", "tk-muted tk-small", r.detail));
+            if (r.canRestore) {
+                const restore = el("button", "tk-button tk-secondary tk-small-button", "Restore");
+                restore.type = "button";
+                restore.disabled = b.busy;
+                restore.addEventListener("click", () => restoreItem(r.path));
+                item.append(restore);
+            }
+            list.append(item);
+        }
+        parts.push(list);
+        if (view.empty) parts.push(el("p", "tk-muted", view.empty));
+        if (view.truncated) parts.push(el("p", "tk-muted tk-small", view.truncated));
+    }
+    box.replaceChildren(...parts);
 }
 
 function openScheduleForm() {
