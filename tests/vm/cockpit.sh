@@ -38,6 +38,8 @@ echo '{"form": {"name": "photos", "clients": "192.0.2.0/24\n198.51.100.7", "read
 grep -q "^/srv/tamarack/shares/photos .*198.51.100.7/32(rw," /etc/exports.d/tamarack.exports \
     || { cat /etc/exports.d/tamarack.exports >&2; fail "photos not exported as the form asked"; }
 
+snapper --config tamarack create --description "before the test" || fail "snapper could not take a snapshot"
+
 cockpit-bridge --packages | grep -qw tamarack || fail "Cockpit does not list the tamarack page"
 
 id tk-viewer >/dev/null 2>&1 || useradd --no-create-home --shell /sbin/nologin tk-viewer
@@ -74,6 +76,8 @@ assert t["advice"] is not None, "no upgrade advice"
 assert [s["name"] for s in t["shares"]] == ["photos"], t["shares"]
 assert t["shares"][0]["address"].endswith(":/srv/tamarack/shares/photos"), t["shares"]
 assert t["history"][0]["title"] == "Set up the pool" and t["history"][0]["result"] == "Done", t["history"]
+assert t["snapshots"] and t["snapshots"][0]["label"] == "before the test", t["snapshots"]
+assert t["schedule"].startswith("A snapshot of your shares every hour"), t["schedule"]
 ' || fail "the Drives, Shares or Activity tab is wrong"
 
 # Edit: the page sends the share it read, with only "what they can do" changed.
@@ -86,6 +90,23 @@ print(json.dumps({"form": {"clients": "\n".join(share["clients"]), "readOnly": T
 grep -q "^/srv/tamarack/shares/photos .*198.51.100.7/32(ro," /etc/exports.d/tamarack.exports \
     || { cat /etc/exports.d/tamarack.exports >&2; fail "photos should be read-only now"; }
 [ "$(stat -c %u:%g /srv/tamarack/shares/photos)" = 1000:1000 ] || fail "an edit changed the owner"
+
+# The schedule form: what the page sends, as root (administrative access).
+node -e '
+const S = require("/usr/share/cockpit/tamarack/status.js");
+process.stdout.write(JSON.stringify(S.scheduleRequest({ hourly: "48", daily: "7", weekly: "0", monthly: "12" })));
+' | python3 -c '
+import json, sys
+import gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+Gio.bus_get_sync(Gio.BusType.SYSTEM, None).call_sync(
+    "com.borealislogistics.Tamarack1", "/com/borealislogistics/Tamarack1",
+    "com.borealislogistics.Tamarack1.Manager", "SetSnapshotSchedule",
+    GLib.Variant("(a{su})", (json.load(sys.stdin),)), None, 0, 60_000, None)
+' || fail "the page's schedule request was refused"
+snapper --config tamarack get-config | grep -Eq "^TIMELINE_LIMIT_HOURLY[[:space:]]*[|][[:space:]]*48[[:space:]]*$" \
+    || { snapper --config tamarack get-config >&2; fail "snapper did not get the new schedule"; }
 
 # Stop sharing: the export goes, the files stay.
 gdbus call --system --dest com.borealislogistics.Tamarack1 --object-path /com/borealislogistics/Tamarack1 \

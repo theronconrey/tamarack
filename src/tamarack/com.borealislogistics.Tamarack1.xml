@@ -50,6 +50,11 @@
          or "unreadable"), "message", "step", "steps", "erases",
          "usable_before", "usable_after"} -->
     <property name="JobHistory" type="s" access="read"/>
+    <!-- JSON list of the shares' snapshots, newest first, from snapper's
+         info.xml files: {"number", "date" (UTC), "kind" ("single", "pre" or
+         "post"), "cleanup" ("timeline" for scheduled ones), "description"}.
+         Refreshed every minute. -->
+    <property name="Snapshots" type="s" access="read"/>
     <!-- This machine's host name, for the address clients connect to -->
     <property name="HostName" type="s" access="read"/>
     <!-- The running or paused job, or "/" -->

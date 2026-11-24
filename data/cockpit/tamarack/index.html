@@ -26,6 +26,7 @@
         <a href="#/" data-tab="overview">Overview</a>
         <a href="#/drives" data-tab="drives">Drives</a>
         <a href="#/shares" data-tab="shares">Shares</a>
+        <a href="#/snapshots" data-tab="snapshots">Snapshots</a>
         <a href="#/activity" data-tab="activity">Activity</a>
     </nav>
 
@@ -65,6 +66,26 @@
         </div>
         <section id="tk-share-form" class="tk-card tk-form" aria-labelledby="share-form-h" hidden></section>
         <div id="tk-share-cards" class="tk-grid"></div>
+    </div>
+
+    <div class="tk-panel" data-panel="snapshots" hidden>
+        <section class="tk-card" aria-labelledby="schedule-h">
+            <div class="tk-card-head">
+                <h2 id="schedule-h">Schedule</h2>
+                <button id="tk-schedule-change" class="tk-button tk-secondary" type="button">Change</button>
+            </div>
+            <p id="tk-schedule-sentence"></p>
+            <div id="tk-schedule-form" hidden></div>
+        </section>
+        <section class="tk-card" aria-labelledby="snapshots-h">
+            <div class="tk-card-head">
+                <h2 id="snapshots-h">Snapshots</h2>
+                <span id="tk-snapshot-count" class="tk-muted tk-small"></span>
+            </div>
+            <p class="tk-muted tk-small">Each snapshot is your shares as they were at that moment.
+                Snapshots live on the same drives, so they are not a backup.</p>
+            <div id="tk-snapshot-list"></div>
+        </section>
     </div>
 
     <div class="tk-panel" data-panel="activity" hidden>

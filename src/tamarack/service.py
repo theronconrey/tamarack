@@ -165,6 +165,7 @@ class Service:
         self._last_health: dict[str, Any] | None = None
         self._last_space: dict[str, int] | None = None
         self._last_drives: list[dict[str, Any]] | None = None
+        self._last_snapshots: list[dict[str, Any]] | None = None
         self.sync_objects()
 
     # --- bus plumbing --------------------------------------------------------
@@ -485,6 +486,10 @@ class Service:
         if drives != self._last_drives:
             self._last_drives = drives
             self._manager_changed("Drives")
+        snapshots = self.engine.snapshots()
+        if snapshots != self._last_snapshots:
+            self._last_snapshots = snapshots
+            self._manager_changed("Snapshots")
         # The first check compares against a clean slate, so a pool that is
         # already degraded when the engine starts is reported too.
         before = self._last_health or {"status": "none", "degraded_layers": [], "drives": []}
@@ -558,6 +563,7 @@ class Service:
             "Upgrades": lambda: json.dumps(e.upgrades(), sort_keys=True),
             "JobHistory": lambda: json.dumps(e.job_history(), sort_keys=True),
             "HostName": lambda: e.host_name,
+            "Snapshots": lambda: json.dumps(e.snapshots(), sort_keys=True),
         }
 
     def _plan_properties(self, path: str) -> dict[str, Callable[[], Any]]:

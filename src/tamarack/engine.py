@@ -26,6 +26,7 @@ import socket
 import tempfile
 import threading
 import time
+import xml.etree.ElementTree as ElementTree
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
@@ -35,7 +36,7 @@ from .boot import INTEGRITYTAB, BootError
 from .boot import lines as boot_lines
 from .boot import members as boot_members
 from .boot import merge as merge_integritytab
-from .commands import MOUNT_POINT, build_steps
+from .commands import MOUNT_POINT, SHARES, build_steps
 from .grow import plan_add_drive
 from .identity import DriveChanged as IdentityChanged
 from .identity import verify
@@ -84,6 +85,7 @@ JOBS_SUBDIR = "jobs"
 HISTORY_LIMIT = 50  # jobs listed in JobHistory, newest first
 # The path a what-if plan uses for a drive that isn't there (upgrade advisor).
 UPGRADE_DEVICE = "/dev/tamarack-upgrade"
+SNAPSHOTS_DIR = f"{SHARES}/.snapshots"  # snapper's, one numbered folder per snapshot
 WORTH_UPGRADING = 10**9  # gains below 1 GB aren't offered
 
 # Paths UDisks2 and udev create: /dev/sdb, /dev/nvme0n1, /dev/disk/by-id/...
@@ -333,6 +335,32 @@ def _side(layout: Layout) -> dict[str, Any]:
         "drives": [d.device for d in layout.drives],
         "drive_failures_tolerated": layout.drive_failures_tolerated,
         "usable_bytes_nominal": layout.usable_nominal,
+    }
+
+
+def _snapshot_info(path: str) -> dict[str, Any] | None:
+    """One snapper info.xml: number, date, kind and description; None if unreadable."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(65536)
+        root = ElementTree.fromstring(data)
+    except (OSError, ElementTree.ParseError):
+        return None
+    if root.tag != "snapshot":
+        return None
+    try:
+        number = int(root.findtext("num", ""))
+    except ValueError:
+        return None
+    date = root.findtext("date", "")  # "2026-11-24 03:00:01", UTC
+    if not re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", date):
+        return None
+    return {
+        "number": number,
+        "date": date.replace(" ", "T") + "Z",
+        "kind": root.findtext("type", ""),  # single, pre or post
+        "cleanup": root.findtext("cleanup", ""),  # "timeline" for the schedule's
+        "description": root.findtext("description", ""),
     }
 
 
@@ -850,6 +878,30 @@ class Engine:
             os.path.join(self.state_dir, SCHEDULE_FILE), json.dumps(wanted, sort_keys=True) + "\n"
         )
         return wanted
+
+    def snapshots(self) -> list[dict[str, Any]]:
+        """Snapper's snapshots of the shares, newest first, from their info.xml.
+
+        Read straight from ``shares/.snapshots/N/info.xml`` (snapper's own
+        record of each snapshot), so no command runs and nothing changes.
+        Dates are UTC, "YYYY-MM-DDTHH:MM:SSZ".
+        """
+        directory = self._host_path(SNAPSHOTS_DIR)
+        if not self._layout:
+            return []
+        try:
+            names = os.listdir(directory)
+        except OSError:
+            return []
+        found = []
+        for name in names:
+            if not name.isdigit():
+                continue
+            info = _snapshot_info(os.path.join(directory, name, "info.xml"))
+            if info is not None and info["number"] == int(name):
+                found.append(info)
+        found.sort(key=lambda i: i["number"], reverse=True)
+        return found
 
     @staticmethod
     def _valid_schedule(schedule: dict[str, Any]) -> dict[str, int]:

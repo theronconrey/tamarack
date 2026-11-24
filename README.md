@@ -25,7 +25,8 @@ Pre-alpha. Not for drives holding data you care about.
   (whether your data is protected, the drives, the space and how your data
   is looked after), Drives (each drive's health, temperature and age, and
   the best next upgrade), Shares (create, change and stop sharing; how to
-  connect and who you are trusting)
+  connect and who you are trusting), Snapshots (the schedule, which you can
+  change, and the list)
   and Activity (what ran and how it ended), in plain words
   ([design](docs/design/cockpit.md)).
 - **Testing**: unit and D-Bus tests in Fedora CI on every pull request, and
@@ -39,7 +40,8 @@ Pre-alpha. Not for drives holding data you care about.
 
 ## Roadmap
 
-Next: the rest of the Cockpit page (Snapshots, then the guided changes),
+Next: the rest of the Cockpit page (restoring from snapshots, then the
+guided drive changes),
 then a Fedora bootc image and
 bring-up on the TerraMaster F4-425 Pro. After that, roughly in order:
 

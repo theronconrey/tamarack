@@ -15,6 +15,8 @@ process.stdin.on("end", () => {
         advice: S.upgradeAdvice(model),
         shares: S.shareCards(model).map(c => ({ name: c.name, address: c.address })),
         history: S.activity(model, now).entries.map(e => ({ title: e.title, result: e.resultText, when: e.when })),
+        snapshots: S.snapshotRows(model, now).map(r => ({ label: r.label, when: r.when })),
+        schedule: S.snapshotSummary(model, now).sentence,
     };
     process.stdout.write(JSON.stringify(out) + "\n");
 });
