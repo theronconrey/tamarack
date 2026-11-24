@@ -46,6 +46,30 @@ def from_udisks(wwn: str, serial: str) -> str:
     return ""
 
 
+def _set(value: str) -> str:
+    """An NVMe identifier, or "" when it is all zeros (the drive doesn't set it)."""
+    value = value.strip().lower()
+    return "" if not value.strip("0-:.") else value
+
+
+def from_nvme_namespace(wwn: str, nguid: str, eui64: str, serial: str, nsid: int) -> str:
+    """The identity of one NVMe namespace (UDisks2 ``NVMe.Namespace``).
+
+    ``Drive.WWN`` is empty for NVMe and the serial is the controller's, which
+    every namespace on it shares. So: the namespace's WWN, else its NGUID,
+    else its EUI-64, else the controller serial with the namespace number.
+    """
+    if _set(wwn):
+        return validate_identity(f"wwn:{_set(wwn)}")
+    if _set(nguid):
+        return validate_identity(f"wwn:nguid.{_set(nguid)}")
+    if _set(eui64):
+        return validate_identity(f"wwn:eui.{_set(eui64)}")
+    if serial.strip():
+        return validate_identity(f"serial:{serial.strip()}:n{nsid}")
+    return ""
+
+
 @dataclass(frozen=True)
 class ExpectedDrive:
     device: str

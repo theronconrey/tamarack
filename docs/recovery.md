@@ -40,8 +40,8 @@ This is what the `recover-by-hand` VM test does, step by step.
    sudo mount -o ro /dev/tamarack/data /mnt/rescue
    ```
 
-Your files are under `/mnt/rescue/shares`, and snapshots under
-`/mnt/rescue/snapshots`.
+Your files are under `/mnt/rescue/shares`, and snapper's snapshots of them under
+`/mnt/rescue/shares/.snapshots/N/snapshot` (one numbered folder per snapshot).
 
 To see how the volume was laid out, read the record on any drive's first
 partition: it starts with a `TAMARACK-META` line, followed by the layout as

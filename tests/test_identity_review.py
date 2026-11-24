@@ -10,7 +10,14 @@ import pytest
 
 from tamarack.cli import main
 from tamarack.grow import plan_add_drive
-from tamarack.identity import DriveChanged, ExpectedDrive, from_udisks, validate_identity, verify
+from tamarack.identity import (
+    DriveChanged,
+    ExpectedDrive,
+    from_nvme_namespace,
+    from_udisks,
+    validate_identity,
+    verify,
+)
 from tamarack.layout import Disk, Layout, layout_from_plan
 from tamarack.model import PlanKind
 from tamarack.ops import cmd
@@ -223,3 +230,19 @@ def test_cli_refuses_id_for_a_drive_it_was_not_given(capsys: pytest.CaptureFixtu
 def test_cli_id_needs_device_and_identity(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["plan", "/dev/sda=4TB", "--id", "wwn:0x1"]) == 2
     assert "DEVICE=IDENTITY" in capsys.readouterr().err
+
+
+def test_nvme_identity_comes_from_the_namespace() -> None:
+    # Drive.WWN is empty for NVMe and the serial belongs to the controller.
+    assert from_nvme_namespace("eui.0025385B71B07E2F", "", "", "S6P", 1) == (
+        "wwn:eui.0025385b71b07e2f"
+    )
+    nguid = "e8238fa6bf530001001b448b45d8b4d1"
+    assert from_nvme_namespace("", nguid.upper(), "", "S6P", 1) == f"wwn:nguid.{nguid}"
+    assert from_nvme_namespace("", "0" * 32, "0025385b71b07e2f", "S6P", 1) == (
+        "wwn:eui.0025385b71b07e2f"
+    )
+    # Nothing unique set: two namespaces on one controller still differ.
+    assert from_nvme_namespace("", "", "0000000000000000", "S6P", 1) == "serial:S6P:n1"
+    assert from_nvme_namespace("", "", "", "S6P", 2) == "serial:S6P:n2"
+    assert from_nvme_namespace("", "", "", "", 1) == ""

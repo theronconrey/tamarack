@@ -1020,3 +1020,36 @@ def test_job_status_says_whether_a_person_must_check_or_can_cancel(tmp_path: Pat
         start(plan.document, "2", str(jobs / "2.jsonl"), FakeRunner(cut=cut))
     stuck = e.job_status("2")
     assert stuck.state == "paused" and stuck.needs_check and not stuck.can_cancel
+
+
+def test_find_drive_tells_nvme_namespaces_apart() -> None:
+    controller = {
+        "org.freedesktop.UDisks2.Drive": {"WWN": "", "Serial": "S6P", "Size": 2 * TB},
+    }
+    objects: dict[str, Any] = {"/d/n": controller}
+    for nsid in (1, 2):
+        objects[f"/b/n{nsid}"] = {
+            "org.freedesktop.UDisks2.Block": {
+                "Device": f"/dev/nvme0n{nsid}\0".encode(),
+                "Drive": "/d/n",
+                "Size": TB,
+            },
+            "org.freedesktop.UDisks2.NVMe.Namespace": {"NSID": nsid, "NGUID": "", "EUI64": ""},
+        }
+    one = find_drive(objects, "/dev/nvme0n1", unused=False).identity
+    two = find_drive(objects, "/dev/nvme0n2", unused=False).identity
+    assert (one, two) == ("serial:S6P:n1", "serial:S6P:n2")
+
+
+def test_rotation_rate_minus_one_is_a_hard_drive() -> None:
+    def drive(**extra: Any) -> dict[str, Any]:
+        return {
+            "/d/a": {"org.freedesktop.UDisks2.Drive": {"Model": "M", "Size": TB, **extra}},
+            "/b/a": {"org.freedesktop.UDisks2.Block": {"Device": b"/dev/sda\0", "Drive": "/d/a"}},
+        }
+
+    kinds = [
+        find_details(drive(**rate), ["/dev/sda"])["/dev/sda"]["kind"]
+        for rate in ({"RotationRate": -1}, {"RotationRate": 7200}, {"RotationRate": 0}, {})
+    ]
+    assert kinds == ["hdd", "hdd", "ssd", ""]

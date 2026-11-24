@@ -13,7 +13,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from .engine import DriveInfo, InvalidArgument, NoSuchDrive
-from .identity import from_udisks
+from .identity import from_nvme_namespace, from_udisks
 
 BUS_NAME = "org.freedesktop.UDisks2"
 ROOT = "/org/freedesktop/UDisks2"
@@ -26,6 +26,7 @@ ENCRYPTED = "org.freedesktop.UDisks2.Encrypted"
 PHYSICAL_VOLUME = "org.freedesktop.UDisks2.PhysicalVolume"  # UDisks2 LVM2 module
 ATA = "org.freedesktop.UDisks2.Drive.Ata"
 NVME = "org.freedesktop.UDisks2.NVMe.Controller"
+NVME_NAMESPACE = "org.freedesktop.UDisks2.NVMe.Namespace"
 
 Objects = Mapping[str, Mapping[str, Mapping[str, Any]]]
 
@@ -82,7 +83,17 @@ def find_drive(objects: Objects, device: str, unused: bool) -> DriveInfo:
             if why:
                 name = _path(member[BLOCK].get("Device", b"")) or member_path
                 raise InvalidArgument(f"{device} is in use: {name} {why}")
-    identity = from_udisks(str(drive.get("WWN", "")), str(drive.get("Serial", "")))
+    namespace = interfaces.get(NVME_NAMESPACE)
+    if namespace is not None:
+        identity = from_nvme_namespace(
+            str(namespace.get("WWN", "")),
+            str(namespace.get("NGUID", "")),
+            str(namespace.get("EUI64", "")),
+            str(drive.get("Serial", "")),
+            int(namespace.get("NSID", 0)),
+        )
+    else:
+        identity = from_udisks(str(drive.get("WWN", "")), str(drive.get("Serial", "")))
     return DriveInfo(device=device, size=int(block.get("Size", 0)), identity=identity)
 
 
@@ -174,7 +185,8 @@ def find_details(objects: Objects, devices: Iterable[str]) -> dict[str, dict[str
         drive_object = objects.get(str(matches[0].get("Drive", "/")), {})
         drive = drive_object.get(DRIVE, {})
         ata, nvme = drive_object.get(ATA), drive_object.get(NVME)
-        rate = int(drive.get("RotationRate", -1))
+        # -1 is "rotating, rate unknown", 0 is solid state; absent is unknown.
+        rate = int(drive["RotationRate"]) if "RotationRate" in drive else None
         temperature: int | None = None
         hours: int | None = None
         if ata is not None and ata.get("SmartSupported") and ata.get("SmartEnabled"):
@@ -188,7 +200,7 @@ def find_details(objects: Objects, devices: Iterable[str]) -> dict[str, dict[str
             "model": " ".join(str(drive.get(k, "")) for k in ("Vendor", "Model")).strip(),
             "serial": str(drive.get("Serial", "")),
             "size": int(drive.get("Size", 0)) or int(matches[0].get("Size", 0)),
-            "kind": "hdd" if rate > 0 else "ssd" if rate == 0 else "",
+            "kind": "" if rate is None else "ssd" if rate == 0 else "hdd",
             "temperature_c": temperature,
             "power_on_hours": hours,
         }

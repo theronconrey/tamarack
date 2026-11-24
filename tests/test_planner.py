@@ -41,8 +41,8 @@ def test_policy_rejects_zero_drives() -> None:
         (2, Protection.ONE_DRIVE, Level.RAID5),
         (3, Protection.ONE_DRIVE, Level.RAID5),
         (4, Protection.ONE_DRIVE, Level.RAID5),
-        (2, Protection.TWO_DRIVE, Level.RAID1),
-        (3, Protection.TWO_DRIVE, Level.RAID1),
+        (2, Protection.TWO_DRIVE, Level.UNUSED),  # never weaker than the pool
+        (3, Protection.TWO_DRIVE, Level.UNUSED),
         (4, Protection.TWO_DRIVE, Level.RAID6),
     ],
 )
@@ -91,11 +91,14 @@ def test_five_drives_switch_to_two_drive_protection() -> None:
     assert plan.drive_failures_tolerated == 2
 
 
-def test_two_drive_protection_flags_thin_layers() -> None:
+def test_two_drive_protection_leaves_thin_layers_waiting() -> None:
     plan = make_plan([4 * TB, 4 * TB, 4 * TB, 8 * TB, 8 * TB])
-    assert [layer.level for layer in plan.layers] == [Level.RAID6, Level.RAID1]
-    assert plan.drive_failures_tolerated == 1
-    assert any("not two" in w for w in plan.warnings)
+    assert [layer.level for layer in plan.layers] == [Level.RAID6, Level.UNUSED]
+    assert plan.drive_failures_tolerated == 2  # the whole pool, not just most of it
+    assert any("until four drives at least that large" in w for w in plan.warnings)
+    # A fourth 8 TB-class drive would let the top slices join as RAID6.
+    bigger = make_plan([4 * TB, 4 * TB, 8 * TB, 8 * TB, 8 * TB, 8 * TB])
+    assert [layer.level for layer in bigger.layers] == [Level.RAID6, Level.RAID6]
 
 
 def test_near_equal_drives_are_grouped() -> None:
