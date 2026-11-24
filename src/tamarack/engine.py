@@ -209,6 +209,12 @@ class DriveSource(Protocol):
         """GPT partition number -> partition UUID on the drive at ``device``."""
         ...
 
+    def classify(self, devices: list[str] | None = None) -> dict[str, dict[str, Any]]:
+        """Whether each drive may join the pool (``tamarack.udisks.classify_drives``):
+        {"verdict": "refuse"|"warn"|"suggest", "reasons", "warnings", ...} per device;
+        ``None`` means every whole drive."""
+        ...
+
     def details(self, devices: list[str]) -> dict[str, dict[str, Any]]:
         """Model, serial, size, kind, temperature and age per attached device.
 
@@ -684,6 +690,7 @@ class Engine:
         if not devices:
             raise InvalidArgument("at least one drive is required")
         infos = [self._lookup(d) for d in devices]
+        warnings = self._joining(devices)
         plan = self._planner(
             lambda: make_plan(
                 [i.size for i in infos], [i.device for i in infos], [i.identity for i in infos]
@@ -692,15 +699,18 @@ class Engine:
         after = layout_from_plan(plan)
         summary = {"kind": "create", "before": None, "after": _side(after)}
         lines = render_create_steps(plan)
-        return self._store(PlanKind.CREATE, document(plan), summary, lines)
+        doc = document(plan)
+        doc["warnings"] = warnings + doc["warnings"]
+        return self._store(PlanKind.CREATE, doc, summary, lines)
 
     def plan_add(self, device: str) -> StoredPlan:
         layout = self._current()
         info = self._lookup(device)
+        warnings = self._joining([device])
         change = self._planner(
             lambda: plan_add_drive(layout, info.size, info.device, info.identity)
         )
-        return self._store_change(change)
+        return self._store_change(change, warnings)
 
     def plan_replace(self, old_device: str, new_device: str) -> StoredPlan:
         layout = self._current()
@@ -711,19 +721,21 @@ class Engine:
                 f"{old_device} is now {found.identity}, not the {old.identity} in the layout"
             )
         info = self._lookup(new_device)
+        warnings = self._joining([new_device])
         change = self._planner(
             lambda: plan_replace(layout, old_device, info.size, info.device, False, info.identity)
         )
-        return self._store_change(change)
+        return self._store_change(change, warnings)
 
     def plan_rebuild(self, failed_device: str, new_device: str) -> StoredPlan:
         layout = self._current()
         self._layout_drive(layout, failed_device)  # the failed drive need not be present
         info = self._lookup(new_device)
+        warnings = self._joining([new_device])
         change = self._planner(
             lambda: plan_replace(layout, failed_device, info.size, info.device, True, info.identity)
         )
-        return self._store_change(change)
+        return self._store_change(change, warnings)
 
     # --- executing -----------------------------------------------------------
 
@@ -1218,7 +1230,37 @@ class Engine:
         except ValueError as exc:  # includes UnsupportedChange
             raise InvalidArgument(str(exc)) from exc
 
-    def _store_change(self, change: ChangePlan) -> StoredPlan:
+    def _joining(self, devices: list[str]) -> list[str]:
+        """Refuse drives that may not join the pool; the warnings for the rest."""
+        verdicts = self.drives.classify(devices)
+        warnings: list[str] = []
+        for device in devices:
+            verdict = verdicts.get(device)
+            if verdict is None:
+                continue  # lookup already found it; nothing more is known
+            if verdict["verdict"] == "refuse":
+                raise InvalidArgument(
+                    f"{device} can't join the pool: " + "; ".join(verdict["reasons"])
+                )
+            warnings.extend(verdict["warnings"])
+        return warnings
+
+    def candidates(self) -> list[dict[str, Any]]:
+        """Every whole drive with whether it may join; the pool's own drives say so."""
+        try:
+            verdicts = self.drives.classify(None)
+        except EngineError as exc:
+            log.warning("drives can't be classified: %s", exc)
+            return []
+        pool = {d.device for d in self._layout.drives} if self._layout else set()
+        out = []
+        for device, verdict in sorted(verdicts.items()):
+            if device in pool:
+                verdict = {**verdict, "verdict": "pool", "reasons": [], "warnings": []}
+            out.append(verdict)
+        return out
+
+    def _store_change(self, change: ChangePlan, warnings: list[str] | None = None) -> StoredPlan:
         summary = {
             "kind": change.kind.value,
             "before": _side(change.before),
@@ -1227,7 +1269,9 @@ class Engine:
         lines = [
             (step.title, step.note, [c.shell() for c in step.commands]) for step in change.steps
         ]
-        return self._store(change.kind, document(change), summary, lines)
+        doc = document(change)
+        doc["warnings"] = list(warnings or []) + doc["warnings"]
+        return self._store(change.kind, doc, summary, lines)
 
     def _store(
         self,

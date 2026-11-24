@@ -298,6 +298,8 @@ def test_manager_properties(engine_bus: tuple[Any, Path]) -> None:
     assert json.loads(get(client, "Upgrades")) == {}
     assert json.loads(get(client, "JobHistory")) == []
     assert get(client, "HostName")
+    candidates = {c["device"]: c["verdict"] for c in json.loads(get(client, "Candidates"))}
+    assert candidates and set(candidates.values()) <= {"suggest", "warn", "refuse"}
 
 
 def test_introspection_matches_the_shipped_xml(engine_bus: tuple[Any, Path]) -> None:

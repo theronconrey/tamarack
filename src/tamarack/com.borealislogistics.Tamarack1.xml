@@ -50,6 +50,12 @@
          or "unreadable"), "message", "step", "steps", "erases",
          "usable_before", "usable_after"} -->
     <property name="JobHistory" type="s" access="read"/>
+    <!-- JSON list of every whole drive and whether it may join the pool:
+         {"device", "verdict": "pool" (already in it) | "suggest" | "warn" |
+         "refuse", "reasons" (why it's refused, in words), "warnings",
+         "size", "model", "serial", "identity"}. Planning refuses a refused
+         drive and puts a warned drive's warnings in the plan. -->
+    <property name="Candidates" type="s" access="read"/>
     <!-- This machine's host name, for the address clients connect to -->
     <property name="HostName" type="s" access="read"/>
     <!-- The running or paused job, or "/" -->

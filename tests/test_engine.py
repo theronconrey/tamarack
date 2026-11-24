@@ -51,6 +51,7 @@ class FakeDrives:
         self.drives = drives
         self.lookups: list[tuple[str, bool]] = []
         self.smart: dict[str, tuple[str, str]] = {}
+        self.verdicts: dict[str, dict[str, Any]] = {}
 
     def present(self, devices: list[str]) -> dict[str, str]:
         return {d: self.drives[d][1] for d in devices if d in self.drives}
@@ -72,6 +73,16 @@ class FakeDrives:
                 "power_on_hours": 1000,
             }
             for d in devices
+            if d in self.drives
+        }
+
+    def classify(self, devices: list[str] | None = None) -> dict[str, dict[str, Any]]:
+        wanted = devices if devices is not None else sorted(self.drives)
+        return {
+            d: self.verdicts.get(
+                d, {"device": d, "verdict": "suggest", "reasons": [], "warnings": []}
+            )
+            for d in wanted
             if d in self.drives
         }
 
@@ -1053,3 +1064,29 @@ def test_rotation_rate_minus_one_is_a_hard_drive() -> None:
         for rate in ({"RotationRate": -1}, {"RotationRate": 7200}, {"RotationRate": 0}, {})
     ]
     assert kinds == ["hdd", "hdd", "ssd", ""]
+
+
+def test_planning_refuses_drives_that_may_not_join_and_warns_about_the_rest(
+    tmp_path: Path,
+) -> None:
+    e = engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    fake: FakeDrives = e.drives  # type: ignore[assignment]
+    fake.verdicts["/dev/sdc"] = {
+        "device": "/dev/sdc",
+        "verdict": "refuse",
+        "reasons": ["it is connected by USB"],
+        "warnings": [],
+    }
+    with pytest.raises(InvalidArgument, match="can't join the pool: it is connected by USB"):
+        e.plan_add("/dev/sdc")
+    fake.verdicts["/dev/sdd"] = {
+        "device": "/dev/sdd",
+        "verdict": "warn",
+        "reasons": [],
+        "warnings": ["/dev/sdd holds a 8 TB NTFS drive; joining the pool erases it"],
+    }
+    plan = e.plan_add("/dev/sdd")
+    assert plan.warnings[0].startswith("/dev/sdd holds a 8 TB NTFS drive")
+    assert plan.document["warnings"][0] == plan.warnings[0]  # part of what is reviewed
+    verdicts = {c["device"]: c["verdict"] for c in e.candidates()}
+    assert verdicts["/dev/sda"] == "pool" and verdicts["/dev/sdc"] == "refuse"

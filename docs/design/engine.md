@@ -98,6 +98,34 @@ until it is retired) or `failed` (not expected). `identity.verify` checks
 every drive but the failed ones against what UDisks2 reports; plan time and
 expiry stay outside the digest, so the same inputs always give the same one.
 
+NVMe drives leave UDisks2's `Drive.WWN` empty, and their serial is the
+controller's, shared by every namespace on it, so their identity comes from
+the namespace (`NVMe.Namespace`: WWN, then NGUID, then EUI-64, else the
+controller serial plus the namespace number).
+
+### Which drives may join
+
+A drive never joins on its own; the owner picks, and the engine classifies
+every drive (`udisks.classify_drives`, the `Candidates` property). Planning
+refuses a refused drive with the reason in words and puts a warned drive's
+warnings at the top of the plan the owner reviews. Decided Nov 24, 2026,
+after research on other hardware (project notes).
+
+- **Refused:** the operating system's drives (`tamarack.system` follows the
+  system's mount points and swap down through device-mapper, md, partitions
+  and every device of a btrfs root, and compares device numbers); USB, SD or
+  eMMC and FireWire drives (always); RAID-controller logical volumes and
+  firmware RAID members; host-managed SMR drives; sectors other than 512 or
+  4096 bytes; no identity, or an identity two drives report; SMART failing;
+  a drive that holds a Tamarack pool (an import flow comes later); a drive
+  something is using.
+- **Warned:** existing data, described ("2.00 TB NTFS partition 'Photos'");
+  no SMART data; about five years or more of use.
+- **Suggested:** everything else.
+
+Not yet: recording the OS drive at install (the bootc image), a list of
+drive-managed SMR models, and naming bays.
+
 ### Status (step 4)
 
 `tamarack.service` serves the Manager and Plan objects with GDBus from
