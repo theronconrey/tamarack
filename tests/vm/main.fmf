@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Every test is tagged vm and with the group (plans/storage.fmf) whose VM it
+# runs in. Groups are balanced by run time, so the three VMs finish together.
 tag: [vm]
 duration: 45m  # first syncs and reshapes of 3 GB RAID5 layers take ~5 min each
 require:
@@ -10,49 +13,63 @@ require:
   - nodejs  # runs the Cockpit page's own logic (cockpit.sh)
 
 /create-grow:
+    tag+: [vm-build]
     summary: Create on two drives, grow to four
     test: ./create-grow.sh
 
 /single:
+    tag+: [vm-integrity]
     summary: One drive, then a second
     test: ./single.sh
 
 /replace:
+    tag+: [vm-failures]
     summary: Swap a working drive while online
     test: ./replace.sh
 
 /failed:
+    tag+: [vm-failures]
     summary: Rebuild after a drive disappears
     test: ./failed.sh
 
 /corruption:
+    tag+: [vm-integrity]
     summary: Silent corruption is caught and repaired
     test: ./corruption.sh
 
 /interrupt:
+    tag+: [vm-failures]
     summary: Engine killed mid-reshape, then resumed
     test: ./interrupt.sh
 
 /recover-by-hand:
+    tag+: [vm-build]
     summary: Stock tools alone bring the volume back
     test: ./recover-by-hand.sh
 
 /mixed:
+    tag+: [vm-build]
     summary: Mixed sizes, leftover space paired later
     test: ./mixed.sh
 
 /nfs:
+    tag+: [vm-build]
     summary: Shares over NFSv4, squashing, read-only
     test: ./nfs.sh
 
 /ppl-cost:
+    # A measurement, not a check: meaningless on RAM-backed drives, so it
+    # runs only on request (plans/measure.fmf) and on real disks.
+    tag: [measure]
     summary: Write speed with and without md's partial parity log
     test: ./ppl-cost.sh
 
 /cockpit:
+    tag+: [vm-build]
     summary: The Cockpit page reads a real pool as an ordinary user
     test: ./cockpit.sh
 
 /reboot:
+    tag+: [vm-build]
     summary: The pool comes back by itself after a reboot
     test: ./reboot.sh

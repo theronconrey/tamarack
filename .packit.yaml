@@ -26,8 +26,20 @@ jobs:
       - fedora-all
 
   # The VM test matrix (plans/storage.fmf) on Testing Farm, against the
-  # Copr build above. Needs the Packit app, like the builds.
+  # Copr build above: one VM per plan, in parallel. Needs the Packit app,
+  # like the builds.
   - job: tests
     trigger: pull_request
+    tmt_plan: "^/plans/storage/"
+    targets:
+      - fedora-latest-stable
+
+  # Measurements (plans/measure.fmf), only when asked for with
+  # "/packit test --identifier measure" on a pull request.
+  - job: tests
+    trigger: pull_request
+    identifier: measure
+    manual_trigger: true
+    tmt_plan: "^/plans/measure$"
     targets:
       - fedora-latest-stable
