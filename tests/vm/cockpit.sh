@@ -105,7 +105,7 @@ Gio.bus_get_sync(Gio.BusType.SYSTEM, None).call_sync(
     "com.borealislogistics.Tamarack1.Manager", "SetSnapshotSchedule",
     GLib.Variant("(a{su})", (json.load(sys.stdin),)), None, 0, 60_000, None)
 ' || fail "the page's schedule request was refused"
-snapper --config tamarack get-config | grep -Eq "^TIMELINE_LIMIT_HOURLY[[:space:]]*[|][[:space:]]*48[[:space:]]*$" \
+snapper --config tamarack get-config | grep -Eq "^TIMELINE_LIMIT_HOURLY[^0-9]*48[[:space:]]*$" \
     || { snapper --config tamarack get-config >&2; fail "snapper did not get the new schedule"; }
 
 # Restore: a file deleted after the snapshot comes back next to where it
