@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The Tamarack page in Cockpit: the Overview and the Drives, Shares and
-// Activity tabs. The changes it makes so far: shares, and continuing or
-// cancelling a paused job. It talks only to
+// The Tamarack page in Cockpit: the Overview and the Drives, Shares, Snapshots and
+// Activity tabs. The changes it makes so far: shares, the snapshot schedule,
+// and continuing or cancelling a paused job. It talks only to
 // the engine (com.borealislogistics.Tamarack1 on the system bus) and draws
 // what status.js works out. Every text from the engine goes in with
 // textContent, never as HTML.
@@ -452,6 +452,94 @@ function closeShareForm() {
 
 document.getElementById("tk-share-new").addEventListener("click", () => openShareForm(null));
 
+function drawSnapshots(summary, rows) {
+    document.getElementById("tk-schedule-sentence").textContent = summary.sentence;
+    document.getElementById("tk-snapshot-count").textContent = summary.count;
+    if (!rows.length) {
+        replace("tk-snapshot-list", el("p", "tk-muted", summary.count));
+        return;
+    }
+    const list = el("ol", "tk-history");
+    for (const r of rows) {
+        const item = el("li", "tk-history-item");
+        const head = el("div", "tk-history-head");
+        const when = el("strong", "", r.when);
+        when.title = r.exact;
+        head.append(when, el("span", "tk-muted tk-small", r.label + " · #" + r.number));
+        item.append(head);
+        list.append(item);
+    }
+    replace("tk-snapshot-list", list);
+}
+
+function openScheduleForm() {
+    const box = document.getElementById("tk-schedule-form");
+    const current = S.read(properties(manager)).schedule;
+    box.hidden = false;
+    document.getElementById("tk-schedule-change").hidden = true;
+    const inputs = {};
+    const errors = {};
+    const form = el("form", "tk-schedule");
+    form.noValidate = true;
+    for (const p of S.PERIODS) {
+        const row = el("div", "tk-field tk-field-inline");
+        const input = el("input");
+        input.id = "tk-keep-" + p.key;
+        input.inputMode = "numeric";
+        input.value = String(current[p.key] || 0);
+        const label = el("label", "", p.label + ", kept for");
+        label.htmlFor = input.id;
+        row.append(label, input, el("span", "tk-muted", p.unit + "s"));
+        const error = el("p", "tk-error");
+        error.hidden = true;
+        inputs[p.key] = input;
+        errors[p.key] = error;
+        form.append(row, error);
+    }
+    form.append(el("p", "tk-muted tk-small", "0 keeps none of that kind. All 0 turns snapshots off."));
+    const failure = el("p", "tk-error");
+    failure.hidden = true;
+    const save = el("button", "tk-button", "Save schedule");
+    save.type = "submit";
+    const cancel = el("button", "tk-button tk-secondary", "Cancel");
+    cancel.type = "button";
+    cancel.addEventListener("click", closeScheduleForm);
+    const actions = el("div", "tk-actions");
+    actions.append(save, cancel);
+    form.append(failure, actions);
+    form.addEventListener("submit", event => {
+        event.preventDefault();
+        const values = {};
+        for (const p of S.PERIODS) values[p.key] = inputs[p.key].value;
+        const problems = S.checkSchedule(values);
+        for (const p of S.PERIODS) {
+            errors[p.key].hidden = !problems[p.key];
+            errors[p.key].textContent = problems[p.key] || "";
+        }
+        failure.hidden = true;
+        if (Object.keys(problems).length) return;
+        save.disabled = cancel.disabled = true;
+        admin.call(ROOT, MANAGER, "SetSnapshotSchedule", [S.scheduleRequest(values)], { type: "a{su}" })
+            .then(closeScheduleForm)
+            .catch(error => {
+                failure.textContent = S.changeError(error);
+                failure.hidden = false;
+            })
+            .finally(() => { save.disabled = cancel.disabled = false; });
+    });
+    box.replaceChildren(form);
+    inputs.hourly.focus();
+}
+
+function closeScheduleForm() {
+    const box = document.getElementById("tk-schedule-form");
+    box.hidden = true;
+    box.replaceChildren();
+    document.getElementById("tk-schedule-change").hidden = false;
+}
+
+document.getElementById("tk-schedule-change").addEventListener("click", openScheduleForm);
+
 function historyList(entries) {
     const list = el("ol", "tk-history");
     for (const e of entries) {
@@ -509,7 +597,7 @@ function properties(proxy) {
 
 // --- tabs --------------------------------------------------------------------
 
-const TABS = ["overview", "drives", "shares", "activity"];
+const TABS = ["overview", "drives", "shares", "snapshots", "activity"];
 
 function currentTab() {
     const tab = cockpit.location.path[0];
@@ -546,6 +634,7 @@ function render() {
     drawCare(S.care(model, now));
     drawDriveCards(S.driveCards(model), S.upgradeAdvice(model));
     drawShareCards(S.shareCards(model));
+    drawSnapshots(S.snapshotSummary(model, now), S.snapshotRows(model, now, 50));
     drawActivity(S.activity(model, now));
     showTab(!!model.layout);
 }

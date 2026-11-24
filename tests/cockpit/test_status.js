@@ -324,3 +324,36 @@ test("a command nobody can check sends a person to a terminal, with no buttons",
     assert.match(b.text, /tamarack engine status/);
     assert.equal(b.action, undefined);
 });
+
+// --- the Snapshots tab ----------------------------------------------------------------
+
+test("the snapshot schedule reads as one sentence", () => {
+    assert.equal(S.scheduleSentence({ hourly: 24, daily: 7, weekly: 4, monthly: 6 }),
+        "A snapshot of your shares every hour, thinned out as it ages: kept for 24 hours, 7 days, 4 weeks and 6 months.");
+    assert.equal(S.scheduleSentence({ hourly: 1, daily: 0, weekly: 0, monthly: 0 }),
+        "A snapshot of your shares every hour, thinned out as it ages: kept for 1 hour.");
+    assert.match(S.scheduleSentence({ hourly: 0, daily: 0, weekly: 0, monthly: 0 }), /^Snapshots are off/);
+});
+
+test("snapshots are listed newest first, in words", () => {
+    const now = Date.parse("2026-11-24T04:30:00Z") / 1000;
+    const snaps = JSON.stringify([
+        { number: 12, date: "2026-11-24T04:00:01Z", kind: "single", cleanup: "timeline", description: "timeline" },
+        { number: 3, date: "2026-11-21T10:00:00Z", kind: "single", cleanup: "", description: "before moving photos" },
+    ]);
+    const model = S.read(props({ Snapshots: snaps }));
+    assert.equal(S.snapshotSummary(model, now).count, "2 snapshots · newest 29 minutes ago · oldest 2 days ago");
+    assert.deepEqual(S.snapshotRows(model, now).map(r => [r.when, r.label]), [
+        ["29 minutes ago", "Scheduled"],
+        ["2 days ago", "before moving photos"],
+    ]);
+    assert.match(S.snapshotSummary(S.read(props()), now).count, /^No snapshots yet/);
+});
+
+test("the schedule form takes whole numbers from 0 to 1000", () => {
+    assert.deepEqual(S.checkSchedule({ hourly: "24", daily: "7", weekly: "4", monthly: "6" }), {});
+    assert.deepEqual(Object.keys(S.checkSchedule({ hourly: "-1", daily: "1.5", weekly: "", monthly: "1001" })),
+        ["hourly", "daily", "weekly", "monthly"]);
+    assert.deepEqual(S.scheduleRequest({ hourly: " 48 ", daily: "7", weekly: "0", monthly: "12" }),
+        { hourly: 48, daily: 7, weekly: 0, monthly: 12 });
+});

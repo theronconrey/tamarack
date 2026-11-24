@@ -1020,3 +1020,43 @@ def test_job_status_says_whether_a_person_must_check_or_can_cancel(tmp_path: Pat
         start(plan.document, "2", str(jobs / "2.jsonl"), FakeRunner(cut=cut))
     stuck = e.job_status("2")
     assert stuck.state == "paused" and stuck.needs_check and not stuck.can_cancel
+
+
+SNAPPER_INFO = """<?xml version="1.0"?>
+<snapshot>
+  <type>single</type>
+  <num>{num}</num>
+  <date>{date}</date>
+  <description>{description}</description>
+  <cleanup>timeline</cleanup>
+</snapshot>
+"""
+
+
+def test_snapshots_read_from_snapper_info_files(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    snaps = Path(e.root) / "srv/tamarack/shares/.snapshots"
+    for num, date in (
+        (1, "2026-11-23 01:00:01"),
+        (2, "2026-11-23 02:00:01"),
+        (10, "2026-11-24 03:00:02"),
+    ):
+        (snaps / str(num)).mkdir(parents=True)
+        (snaps / str(num) / "info.xml").write_text(
+            SNAPPER_INFO.format(num=num, date=date, description="timeline")
+        )
+    (snaps / "3").mkdir()
+    (snaps / "3" / "info.xml").write_text("<not snapper")  # skipped, not fatal
+    (snaps / "4").mkdir()
+    (snaps / "4" / "info.xml").write_text(SNAPPER_INFO.format(num=5, date="x", description=""))
+    found = e.snapshots()
+    assert [s["number"] for s in found] == [10, 2, 1]  # newest first
+    assert found[0] == {
+        "number": 10,
+        "date": "2026-11-24T03:00:02Z",
+        "kind": "single",
+        "cleanup": "timeline",
+        "description": "timeline",
+    }
+    (tmp_path / "none").mkdir()
+    assert run_engine(tmp_path / "none").snapshots() == []  # no pool

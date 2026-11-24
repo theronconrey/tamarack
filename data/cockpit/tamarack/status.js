@@ -51,6 +51,7 @@ function read(props) {
         history: parse(props.JobHistory, []),
         shares: parse(props.Shares, []),
         hostName: props.HostName || "",
+        snapshots: parse(props.Snapshots, []),
     };
 }
 
@@ -433,6 +434,65 @@ function changeError(error) {
     return sentence(message.replace(/\.$/, ""));
 }
 
+// --- the Snapshots tab ----------------------------------------------------
+
+const PERIODS = [
+    { key: "hourly", unit: "hour", label: "Hourly snapshots" },
+    { key: "daily", unit: "day", label: "Daily snapshots" },
+    { key: "weekly", unit: "week", label: "Weekly snapshots" },
+    { key: "monthly", unit: "month", label: "Monthly snapshots" },
+];
+
+function listWords(items) {
+    if (items.length <= 1) return items.join("");
+    return items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
+}
+
+// The schedule in one sentence.
+function scheduleSentence(schedule) {
+    const kept = PERIODS.filter(p => (schedule[p.key] || 0) > 0)
+        .map(p => plural(schedule[p.key], p.unit));
+    if (!kept.length) return "Snapshots are off: nothing is kept to go back to.";
+    return "A snapshot of your shares every hour, thinned out as it ages: kept for " + listWords(kept) + ".";
+}
+
+function snapshotSummary(model, now) {
+    const list = model.snapshots || [];
+    return {
+        sentence: scheduleSentence(model.schedule || {}),
+        count: !list.length
+            ? "No snapshots yet. The first comes on the hour."
+            : plural(list.length, "snapshot") + " · newest " + ago(list[0].date, now) +
+              " · oldest " + ago(list[list.length - 1].date, now),
+    };
+}
+
+function snapshotRows(model, now, limit) {
+    return (model.snapshots || []).slice(0, limit || 50).map(s => ({
+        number: s.number,
+        when: ago(s.date, now),
+        exact: s.date,
+        label: s.cleanup === "timeline" ? "Scheduled" : (s.description || "Taken by hand"),
+    }));
+}
+
+// Problems with the schedule form, keyed by period.
+function checkSchedule(values) {
+    const errors = {};
+    for (const p of PERIODS) {
+        const text = String(values[p.key] === undefined ? "" : values[p.key]).trim();
+        if (!/^\d{1,4}$/.test(text) || Number(text) > 1000) errors[p.key] = "A whole number from 0 to 1000.";
+    }
+    return errors;
+}
+
+// SetSnapshotSchedule's a{su} argument.
+function scheduleRequest(values) {
+    const out = {};
+    for (const p of PERIODS) out[p.key] = Number(String(values[p.key]).trim());
+    return out;
+}
+
 // --- the Activity tab -----------------------------------------------------
 
 const JOB_TITLES = {
@@ -498,6 +558,7 @@ const api = {
     age, temperature, driveCards, upgradeAdvice, shareCards, ago, activity,
     splitClients, isWide, trustPreview, checkShare, shareRequest, changeError,
     SEC_SYS_NOTE, WIDE_NOTE,
+    PERIODS, scheduleSentence, snapshotSummary, snapshotRows, checkSchedule, scheduleRequest,
 };
 if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
