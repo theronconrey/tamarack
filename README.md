@@ -21,10 +21,11 @@ Pre-alpha. Not for drives holding data you care about.
   degraded arrays, UPS, recent backup), and runs approved plans step by step
   with a power-cut-safe journal. **Execution is off** unless
   `/etc/tamarack/engine.conf` turns it on (see [Packaging](#packaging)).
-- **Cockpit page** (`tamarack-cockpit`), read-only so far: the Overview
+- **Cockpit page** (`tamarack-cockpit`): the Overview
   (whether your data is protected, the drives, the space and how your data
   is looked after), Drives (each drive's health, temperature and age, and
-  the best next upgrade), Shares (how to connect and who you are trusting)
+  the best next upgrade), Shares (create, change and stop sharing; how to
+  connect and who you are trusting)
   and Activity (what ran and how it ended), in plain words
   ([design](docs/design/cockpit.md)).
 - **Testing**: unit and D-Bus tests in Fedora CI on every pull request, and

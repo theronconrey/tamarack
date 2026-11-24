@@ -200,3 +200,15 @@ def test_existing_folders_are_left_as_they_are(
 
 def test_share_round_trip_type() -> None:
     assert isinstance(make_share("m", {"clients": ["10.0.0.1"]}), Share)
+
+
+def test_cockpit_page_uses_the_same_trust_notes() -> None:
+    """The share form previews these notes before saving; keep them in step."""
+    from pathlib import Path
+
+    page = (Path(__file__).parent.parent / "data/cockpit/tamarack/status.js").read_text()
+    text = " ".join(page.split())  # the JS string is split over lines
+    joined = text.replace('" + "', "")
+    wide = make_share("wide", {"clients": ["*"], "read-only": True})
+    for note in wide.security() + make_share("n", {"clients": ["192.0.2.1"]}).security():
+        assert note in joined, note

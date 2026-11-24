@@ -321,6 +321,7 @@ function shareCards(model) {
     return (model.shares || []).map(s => {
         const security = s.security || [];
         return {
+            share: s,
             name: s.name,
             address: host + ":" + s.path,
             access: s.read_only ? "Read only" : "Can change files",
@@ -330,6 +331,94 @@ function shareCards(model) {
             tone: security.some(t => t.indexOf("wide range") >= 0) ? "warning" : "ok",
         };
     });
+}
+
+// --- changing shares ------------------------------------------------------
+//
+// The form only gathers three things: a name, who can connect, and whether
+// they can change files. Everything else has a safe default: root on a
+// client counts as nobody, and a new share's folder belongs to the person
+// signed in to Cockpit. The engine validates everything again.
+
+const SHARE_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+
+// The same notes as tamarack.shares.Share.security(); tests/test_shares.py
+// checks the wording still matches.
+const SEC_SYS_NOTE = "sec=sys trusts the user IDs each client sends: anyone in control of an " +
+    "allowed client can act as any user on this share";
+const WIDE_NOTE = "open to a wide range of addresses; consider narrowing it";
+
+function splitClients(text) {
+    return String(text || "").split(/[\s,]+/).map(c => c.trim()).filter(Boolean);
+}
+
+function isWide(client) {
+    if (client === "*" || client === "0.0.0.0/0" || client === "::/0") return true;
+    const slash = client.indexOf("/");
+    if (slash > 0) {
+        const prefix = Number(client.slice(slash + 1));
+        if (!Number.isInteger(prefix)) return false;
+        return prefix < (client.indexOf(":") >= 0 ? 48 : 16);
+    }
+    return client.indexOf("*") >= 0;
+}
+
+// What the form's answers mean, as the share card will say it.
+function trustPreview(form, existing) {
+    const squash = existing ? existing.squash : "root";
+    const notes = [SEC_SYS_NOTE, form.readOnly ? "read-only for every client" : "clients can change files"];
+    if (squash === "root") notes.push("root on a client is treated as the anonymous user nobody");
+    else if (squash === "all") notes.push("every client user is treated as uid " + existing.uid + ", gid " + existing.gid);
+    else notes.push("root on a client is root on this share (no squashing)");
+    const wide = splitClients(form.clients).some(isWide);
+    if (wide) notes.push(WIDE_NOTE);
+    return { notes: notes.map(sentence), tone: wide ? "warning" : "ok" };
+}
+
+// Problems to fix before asking the engine, keyed by field.
+function checkShare(form, model, existing) {
+    const errors = {};
+    const name = String(form.name || "");
+    if (!existing) {
+        if (!SHARE_NAME.test(name)) {
+            errors.name = "Use lowercase letters, digits, dots, dashes and underscores, " +
+                "starting with a letter or digit (up to 64).";
+        } else if ((model.shares || []).some(s => s.name === name)) {
+            errors.name = "There is already a share called " + name + ".";
+        }
+    }
+    if (!splitClients(form.clients).length) {
+        errors.clients = "List at least one computer or network: an address like 192.168.1.20, " +
+            "a network like 192.168.1.0/24, or a computer's name.";
+    }
+    return errors;
+}
+
+// The SetShare call: its name and its a{sv} options, each value tagged with
+// its D-Bus type as cockpit.dbus expects. An edit keeps the share's owner and
+// squashing; a new share's folder belongs to the signed-in user.
+function shareRequest(form, user, existing) {
+    const owner = existing || { squash: "root", uid: user.id, gid: user.gid !== undefined ? user.gid : user.id };
+    return {
+        name: existing ? existing.name : String(form.name),
+        options: {
+            clients: { t: "as", v: splitClients(form.clients) },
+            "read-only": { t: "b", v: !!form.readOnly },
+            squash: { t: "s", v: owner.squash },
+            uid: { t: "u", v: owner.uid },
+            gid: { t: "u", v: owner.gid },
+        },
+    };
+}
+
+// An engine error in words. polkit refusing is the common one.
+function changeError(error) {
+    const name = (error && error.name) || "";
+    if (name === "org.freedesktop.DBus.Error.AccessDenied") {
+        return "Not allowed. Turn on administrative access at the top of Cockpit, then try again.";
+    }
+    const message = (error && (error.message || String(error))) || "The change didn't go through.";
+    return sentence(message.replace(/\.$/, ""));
 }
 
 // --- the Activity tab -----------------------------------------------------
@@ -395,6 +484,8 @@ function activity(model, now) {
 const api = {
     formatSize, read, drives, capacity, banner, care,
     age, temperature, driveCards, upgradeAdvice, shareCards, ago, activity,
+    splitClients, isWide, trustPreview, checkShare, shareRequest, changeError,
+    SEC_SYS_NOTE, WIDE_NOTE,
 };
 if (typeof module !== "undefined" && module.exports) {
     module.exports = api;

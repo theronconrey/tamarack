@@ -107,6 +107,12 @@ a:hover { color: #004080; }
     font-weight: 700;
 }
 .tk-button:hover { color: #ffffff; background: #004080; }
+button.tk-button { border: 0; font: inherit; font-weight: 700; cursor: pointer; }
+button.tk-button:disabled { opacity: 0.6; cursor: default; }
+.tk-button.tk-secondary { background: #ffffff; color: var(--tk-blue); border: 1px solid var(--tk-blue); }
+.tk-button.tk-secondary:hover { background: var(--tk-info-bg); color: #004080; }
+.tk-button.tk-danger { background: var(--tk-danger); }
+.tk-button.tk-danger:hover { background: #a30000; }
 .tk-tone-danger .tk-button { background: var(--tk-danger); }
 
 .tk-progress {
@@ -240,6 +246,34 @@ h3 { margin: 0; font-size: 17px; font-family: "Red Hat Display", "RedHatDisplay"
 .tk-history-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .tk-history-head strong { flex: 1 1 auto; }
 .tk-history-item p { margin: 4px 0 0; }
+
+/* --- changing shares --- */
+
+.tk-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.tk-toolbar p { margin: 0; flex: 1 1 320px; }
+.tk-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+.tk-form form { display: flex; flex-direction: column; gap: 16px; max-width: 640px; }
+.tk-field { display: flex; flex-direction: column; gap: 6px; }
+.tk-field label, .tk-choice legend { font-weight: 700; }
+.tk-field p { margin: 0; }
+.tk-field input, .tk-field textarea {
+    font: inherit;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 8px 12px;
+    border: 1px solid #8a8d90;
+    border-radius: 6px;
+    background: #ffffff;
+}
+.tk-field input:disabled { background: #f0f0f0; color: var(--tk-muted); }
+.tk-field textarea { resize: vertical; font-family: "Red Hat Mono", "RedHatMono", ui-monospace, monospace; }
+.tk-choice { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.tk-radio { display: flex; align-items: center; gap: 8px; min-height: 44px; }
+.tk-radio input { width: 20px; height: 20px; margin: 0; }
+.tk-error { margin: 0; color: var(--tk-danger-text); font-weight: 500; }
+.tk-error[hidden] { display: none; }
+.tk-confirm { border-top: 1px solid var(--tk-line); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.tk-confirm p { margin: 0; }
 
 @media (max-width: 640px) {
     .tk-page { padding: 16px; }

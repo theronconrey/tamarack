@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The Tamarack page in Cockpit, read-only: the Overview and the Drives,
-// Shares and Activity tabs. It talks only to
+// The Tamarack page in Cockpit: the Overview and the Drives, Shares and
+// Activity tabs. The only change it makes so far is to shares. It talks only to
 // the engine (com.borealislogistics.Tamarack1 on the system bus) and draws
 // what status.js works out. Every text from the engine goes in with
 // textContent, never as HTML.
@@ -190,8 +190,7 @@ function drawShareCards(cards) {
     if (!cards.length) {
         const empty = el("section", "tk-card");
         empty.append(el("h2", "", "No shares yet"),
-                     el("p", "tk-muted", "Create one from a terminal for now: " +
-                        "tamarack engine share set NAME --client ADDRESS."));
+                     el("p", "tk-muted", "Make a folder other computers can open: choose New share."));
         replace("tk-share-cards", empty);
         return;
     }
@@ -209,16 +208,186 @@ function drawShareCards(cards) {
         const facts = el("dl", "tk-facts");
         facts.append(el("dt", "", "Connect to"), el("dd", "tk-mono", c.address),
                      el("dt", "", "Who can connect"), el("dd", "", c.who));
-        const trust = el("div", "tk-trust tk-tone-" + c.tone);
-        trust.append(el("strong", "", "Who you are trusting"));
-        const notes = el("ul");
-        for (const t of c.trust) notes.append(el("li", "", t));
-        trust.append(notes);
-        card.append(head, chips, facts, trust);
+        card.append(head, chips, facts, trustBox(c.trust, c.tone));
+        if (removing === c.name) {
+            card.append(confirmRemove(c.name));
+        } else {
+            const actions = el("div", "tk-actions");
+            const edit = el("button", "tk-button tk-secondary", "Edit");
+            edit.type = "button";
+            edit.addEventListener("click", () => openShareForm(c.share));
+            const stop = el("button", "tk-button tk-secondary", "Stop sharing");
+            stop.type = "button";
+            stop.addEventListener("click", () => {
+                removing = c.name;
+                render();
+            });
+            actions.append(edit, stop);
+            card.append(actions);
+        }
         list.push(card);
     }
     replace("tk-share-cards", ...list);
 }
+
+function trustBox(notes, tone) {
+    const trust = el("div", "tk-trust tk-tone-" + tone);
+    trust.append(el("strong", "", "Who you are trusting"));
+    const list = el("ul");
+    for (const t of notes) list.append(el("li", "", t));
+    trust.append(list);
+    return trust;
+}
+
+// --- changing shares ----------------------------------------------------------
+
+let removing = "";  // the share whose "Stop sharing" is being confirmed
+let removeError = "";
+let user = { id: 0, gid: 0 };
+cockpit.user().then(u => { user = u; });
+
+function confirmRemove(name) {
+    const box = el("div", "tk-confirm");
+    box.append(el("p", "", "Stop sharing " + name + "? Its files stay in your pool; " +
+        "other computers just can't open it any more."));
+    if (removeError) box.append(el("p", "tk-error", removeError));
+    const actions = el("div", "tk-actions");
+    const yes = el("button", "tk-button tk-danger", "Stop sharing");
+    yes.type = "button";
+    const no = el("button", "tk-button tk-secondary", "Keep sharing");
+    no.type = "button";
+    no.addEventListener("click", () => {
+        removing = "";
+        removeError = "";
+        render();
+    });
+    yes.addEventListener("click", () => {
+        yes.disabled = no.disabled = true;
+        admin.call(ROOT, MANAGER, "RemoveShare", [name], { type: "s" })
+            .then(() => {
+                removing = "";
+                removeError = "";
+                render();
+            })
+            .catch(error => {
+                removeError = S.changeError(error);
+                render();
+            });
+    });
+    actions.append(yes, no);
+    box.append(actions);
+    return box;
+}
+
+function field(labelText, control, help) {
+    const wrap = el("div", "tk-field");
+    const label = el("label", "", labelText);
+    label.htmlFor = control.id;
+    wrap.append(label, control);
+    if (help) wrap.append(el("p", "tk-muted tk-small", help));
+    const error = el("p", "tk-error");
+    error.hidden = true;
+    wrap.append(error);
+    return { wrap, error };
+}
+
+function openShareForm(existing) {
+    const form = document.getElementById("tk-share-form");
+    form.hidden = false;
+    removing = "";
+
+    const heading = el("h2", "", existing ? "Change " + existing.name : "New share");
+    heading.id = "share-form-h";
+
+    const name = el("input");
+    name.id = "tk-share-name";
+    name.autocomplete = "off";
+    name.spellcheck = false;
+    if (existing) {
+        name.value = existing.name;
+        name.disabled = true;
+    }
+    const nameField = field("Name", name, existing ? "" : "Lowercase, like photos or family-docs. It becomes the folder's name.");
+
+    const clients = el("textarea");
+    clients.id = "tk-share-clients";
+    clients.rows = 2;
+    clients.spellcheck = false;
+    clients.value = existing ? existing.clients.join("\n") : "";
+    const clientsField = field("Who can connect", clients,
+        "One per line: a computer's address (192.168.1.20), your home network (192.168.1.0/24) or a computer's name.");
+
+    const access = el("fieldset", "tk-choice");
+    access.append(el("legend", "", "What they can do"));
+    const choices = {};
+    for (const [value, text] of [["rw", "Open and change files"], ["ro", "Only open files"]]) {
+        const option = el("label", "tk-radio");
+        const radio = el("input");
+        radio.type = "radio";
+        radio.name = "tk-share-access";
+        radio.value = value;
+        radio.checked = existing ? (value === "ro") === existing.read_only : value === "rw";
+        choices[value] = radio;
+        option.append(radio, document.createTextNode(" " + text));
+        access.append(option);
+    }
+
+    const preview = el("div");
+    const failure = el("p", "tk-error");
+    failure.hidden = true;
+
+    const values = () => ({ name: name.value.trim(), clients: clients.value, readOnly: choices.ro.checked });
+    const update = () => {
+        const p = S.trustPreview(values(), existing);
+        preview.replaceChildren(trustBox(p.notes, p.tone));
+    };
+    for (const control of [name, clients, choices.rw, choices.ro]) control.addEventListener("input", update);
+    update();
+
+    const save = el("button", "tk-button", existing ? "Save changes" : "Share it");
+    save.type = "submit";
+    const cancel = el("button", "tk-button tk-secondary", "Cancel");
+    cancel.type = "button";
+    cancel.addEventListener("click", closeShareForm);
+    const actions = el("div", "tk-actions");
+    actions.append(save, cancel,
+                   el("span", "tk-muted tk-small", "Cockpit asks for the admin password if it needs to."));
+
+    const body = el("form");
+    body.noValidate = true;
+    body.append(nameField.wrap, clientsField.wrap, access, preview, failure, actions);
+    body.addEventListener("submit", event => {
+        event.preventDefault();
+        const draft = values();
+        const errors = S.checkShare(draft, S.read(properties(manager)), existing);
+        nameField.error.hidden = !errors.name;
+        nameField.error.textContent = errors.name || "";
+        clientsField.error.hidden = !errors.clients;
+        clientsField.error.textContent = errors.clients || "";
+        failure.hidden = true;
+        if (errors.name || errors.clients) return;
+        const request = S.shareRequest(draft, user, existing);
+        save.disabled = cancel.disabled = true;
+        admin.call(ROOT, MANAGER, "SetShare", [request.name, request.options], { type: "sa{sv}" })
+            .then(closeShareForm)
+            .catch(error => {
+                failure.textContent = S.changeError(error);
+                failure.hidden = false;
+            })
+            .finally(() => { save.disabled = cancel.disabled = false; });
+    });
+
+    form.replaceChildren(heading, body);
+    (existing ? clients : name).focus();
+}
+
+function closeShareForm() {
+    const form = document.getElementById("tk-share-form");
+    form.hidden = true;
+    form.replaceChildren();
+}
+
+document.getElementById("tk-share-new").addEventListener("click", () => openShareForm(null));
 
 function historyList(entries) {
     const list = el("ol", "tk-history");
@@ -264,6 +433,9 @@ function drawSummary(model) {
 
 const client = cockpit.dbus(BUS_NAME, { bus: "system" });
 const manager = client.proxy(MANAGER, ROOT);
+// Changes go through Cockpit's administrative access when it is on; polkit
+// still decides (com.borealislogistics.tamarack.share).
+const admin = cockpit.dbus(BUS_NAME, { bus: "system", superuser: "try" });
 let job = null;
 
 function properties(proxy) {

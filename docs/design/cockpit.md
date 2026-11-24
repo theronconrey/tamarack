@@ -2,8 +2,9 @@
 
 # Tamarack in Cockpit: design
 
-Status: **the Overview and the Drives, Shares and Activity tabs are built,
-read-only** (`data/cockpit/tamarack/`, package `tamarack-cockpit`). Changes are still made with `tamarack engine`;
+Status: **the Overview and the Drives, Shares and Activity tabs are built**
+(`data/cockpit/tamarack/`, package `tamarack-cockpit`). The one change made
+from the page so far is to shares. Changes are still made with `tamarack engine`;
 the guided flows come one at a time.
 
 ## Who it is for
@@ -82,6 +83,19 @@ chips (only "Linux computers" over NFS so far), the address to connect to
 the engine's own security notes, flagged when a share is open to a wide
 range of addresses.
 
+**Changing shares.** "New share" opens a form with three questions: a
+name, who can connect (one address, network or computer name per line) and
+whether they can change files or only open them. Everything else has a
+safe default: root on a client counts as nobody, and a new share's folder
+belongs to the person signed in to Cockpit. Before saving, the form shows
+the same "Who you are trusting" notes the card will (a Python test keeps
+the wording in step with `tamarack.shares`). Each card has Edit, which keeps
+the share's owner and squashing, and "Stop sharing", confirmed in place,
+which says the files stay. The calls go through Cockpit's administrative
+access when it is on; polkit (`…tamarack.share`) decides either way, and a
+refusal is explained in words. The VM test sends the engine the page's exact
+requests: create, edit, stop.
+
 ## Activity (built)
 
 Jobs waiting for a person first, then the history, newest first, from the
@@ -99,7 +113,7 @@ properties, read as an ordinary user.
 ## Still to build
 
 The Snapshots tab (browse and restore needs a polkit action of its own)
-and the Advanced view; then the guided flows (add, replace, rebuild, shares, schedule, resume),
+and the Advanced view; then the guided flows (add, replace, rebuild, schedule, resume),
 each a plan reviewed on the page before polkit asks for the password.
 Mockups of all of these, and the ideas taken from Drobo's dashboard (the
 box as the interface, a small vocabulary of states tied to physical

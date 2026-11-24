@@ -4,7 +4,8 @@
 # The Cockpit page on a real pool: Cockpit lists the package, an ordinary
 # user (as the page runs) can read every property it shows, and the page's
 # own logic, fed those properties, says the pool is protected and fills the
-# Drives, Shares and Activity tabs.
+# Drives, Shares and Activity tabs. Shares are created, changed and removed
+# with the exact requests the page sends.
 . "$(dirname "$0")/lib.sh"
 trap cleanup EXIT
 
@@ -13,7 +14,29 @@ start_engine
 d=("${DRIVES[@]}")
 drive create "${d[0]}" "${d[1]}"
 write_data
-tamarack engine share set photos --client 192.0.2.0/24 >/dev/null || fail "could not create a share"
+
+# Send the engine what the page's share form sends (as root: in Cockpit,
+# administrative access; polkit decides either way).
+page_share() {  # JSON {"form", "user", "existing"} -> SetShare
+    node "$HERE/page-share.js" | python3 -c '
+import json, sys
+import gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+r = json.load(sys.stdin)
+options = {k: GLib.Variant(v["t"], v["v"]) for k, v in r["options"].items()}
+Gio.bus_get_sync(Gio.BusType.SYSTEM, None).call_sync(
+    "com.borealislogistics.Tamarack1", "/com/borealislogistics/Tamarack1",
+    "com.borealislogistics.Tamarack1.Manager", "SetShare",
+    GLib.Variant("(sa{sv})", (r["name"], options)), None, 0, 60_000, None)
+'
+}
+echo '{"form": {"name": "photos", "clients": "192.0.2.0/24\n198.51.100.7", "readOnly": false},
+       "user": {"id": 1000, "gid": 1000}}' | page_share || fail "the page's new-share request was refused"
+[ "$(stat -c %u:%g /srv/tamarack/shares/photos)" = 1000:1000 ] \
+    || fail "a new share's folder should belong to the signed-in user"
+grep -q "^/srv/tamarack/shares/photos .*198.51.100.7/32(rw," /etc/exports.d/tamarack.exports \
+    || { cat /etc/exports.d/tamarack.exports >&2; fail "photos not exported as the form asked"; }
 
 cockpit-bridge --packages | grep -qw tamarack || fail "Cockpit does not list the tamarack page"
 
@@ -52,5 +75,21 @@ assert [s["name"] for s in t["shares"]] == ["photos"], t["shares"]
 assert t["shares"][0]["address"].endswith(":/srv/tamarack/shares/photos"), t["shares"]
 assert t["history"][0]["title"] == "Set up the pool" and t["history"][0]["result"] == "Done", t["history"]
 ' || fail "the Drives, Shares or Activity tab is wrong"
-tamarack engine share remove photos >/dev/null
+
+# Edit: the page sends the share it read, with only "what they can do" changed.
+echo "$props" | python3 -c '
+import json, sys
+share = json.loads(json.load(sys.stdin)["Shares"])[0]
+print(json.dumps({"form": {"clients": "\n".join(share["clients"]), "readOnly": True},
+                  "user": {"id": 0, "gid": 0}, "existing": share}))
+' | page_share || fail "the page's edit request was refused"
+grep -q "^/srv/tamarack/shares/photos .*198.51.100.7/32(ro," /etc/exports.d/tamarack.exports \
+    || { cat /etc/exports.d/tamarack.exports >&2; fail "photos should be read-only now"; }
+[ "$(stat -c %u:%g /srv/tamarack/shares/photos)" = 1000:1000 ] || fail "an edit changed the owner"
+
+# Stop sharing: the export goes, the files stay.
+gdbus call --system --dest com.borealislogistics.Tamarack1 --object-path /com/borealislogistics/Tamarack1 \
+    --method com.borealislogistics.Tamarack1.Manager.RemoveShare photos >/dev/null || fail "RemoveShare failed"
+grep -q "/photos " /etc/exports.d/tamarack.exports && fail "photos is still exported"
+[ -d /srv/tamarack/shares/photos ] || fail "stopping a share must keep its folder"
 check_avc
