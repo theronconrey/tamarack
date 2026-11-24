@@ -4,7 +4,7 @@
 
 Status: **the Overview and the Drives, Shares and Activity tabs are built**
 (`data/cockpit/tamarack/`, package `tamarack-cockpit`). The one change made
-from the page so far is to shares. Changes are still made with `tamarack engine`;
+from the page so far is to shares; other changes are still made with `tamarack engine`;
 the guided flows come one at a time.
 
 ## Who it is for
