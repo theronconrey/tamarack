@@ -56,6 +56,9 @@ test("sizes read the way drives are sold", () => {
     assert.equal(S.formatSize(16 * TB), "16 TB");
     assert.equal(S.formatSize(9.8 * TB), "9.8 TB");
     assert.equal(S.formatSize(500e9), "500 GB");
+    assert.equal(S.formatSize(4.2e6), "4 MB");
+    assert.equal(S.formatSize(1200), "1 KB");
+    assert.equal(S.formatSize(5), "5 bytes");
 });
 
 test("a healthy pool says it is protected and asks for nothing", () => {
@@ -356,4 +359,37 @@ test("the schedule form takes whole numbers from 0 to 1000", () => {
         ["hourly", "daily", "weekly", "monthly"]);
     assert.deepEqual(S.scheduleRequest({ hourly: " 48 ", daily: "7", weekly: "0", monthly: "12" }),
         { hourly: 48, daily: 7, weekly: 0, monthly: 12 });
+});
+
+// --- browsing a snapshot -------------------------------------------------------------
+
+test("the breadcrumb leads back up to the top of the shares", () => {
+    assert.deepEqual(S.breadcrumb("photos/2025"), [
+        { label: "Shares", path: "" },
+        { label: "photos", path: "photos" },
+        { label: "2025", path: "photos/2025" },
+    ]);
+    assert.deepEqual(S.breadcrumb(""), [{ label: "Shares", path: "" }]);
+});
+
+test("a snapshot folder lists what can be opened and restored", () => {
+    const listing = JSON.stringify({ entries: [
+        { name: "2025", kind: "folder", size: 0, modified: 0 },
+        { name: "latest", kind: "link", size: 0, modified: 0 },
+        { name: "notes.txt", kind: "file", size: 2.5e9, modified: 0 },
+    ], truncated: true });
+    const view = S.browseRows(listing, "photos");
+    assert.deepEqual(view.rows.map(r => [r.path, r.detail, r.canOpen, r.canRestore]), [
+        ["photos/2025", "Folder", true, true],
+        ["photos/latest", "Link (not restored on its own)", false, false],
+        ["photos/notes.txt", "2.5 GB", false, true],
+    ]);
+    assert.match(view.truncated, /5000/);
+    assert.equal(S.browseRows(JSON.stringify({ entries: [] }), "").empty, "This folder was empty.");
+});
+
+test("a restore says where the copy went", () => {
+    assert.equal(S.restoredMessage("photos/notes (from 2026-11-20 14.00).txt"),
+        "Restored as “notes (from 2026-11-20 14.00).txt” in photos, next to the original. Nothing was overwritten.");
+    assert.match(S.restoredMessage("top (from 2026-11-20 14.00).txt"), /at the top of your shares/);
 });

@@ -108,6 +108,39 @@ Gio.bus_get_sync(Gio.BusType.SYSTEM, None).call_sync(
 snapper --config tamarack get-config | grep -Eq "^TIMELINE_LIMIT_HOURLY[[:space:]]*[|][[:space:]]*48[[:space:]]*$" \
     || { snapper --config tamarack get-config >&2; fail "snapper did not get the new schedule"; }
 
+# Restore: a file deleted after the snapshot comes back next to where it
+# was, from the snapshot, through the engine (as the page asks it).
+victim=$(ls /srv/tamarack/shares/test | head -1)
+want=$(sha256sum "/srv/tamarack/shares/test/$victim" | cut -d" " -f1)
+rm "/srv/tamarack/shares/test/$victim"
+restored=$(python3 - "$victim" <<'PY'
+import json, sys
+import gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+def call(method, args, sig):
+    return bus.call_sync("com.borealislogistics.Tamarack1", "/com/borealislogistics/Tamarack1",
+        "com.borealislogistics.Tamarack1.Manager", method, GLib.Variant(sig, args),
+        None, 0, 120_000, None).unpack()
+props = bus.call_sync("com.borealislogistics.Tamarack1", "/com/borealislogistics/Tamarack1",
+    "org.freedesktop.DBus.Properties", "Get",
+    GLib.Variant("(ss)", ("com.borealislogistics.Tamarack1.Manager", "Snapshots")),
+    None, 0, 30_000, None).unpack()[0]
+number = json.loads(props)[0]["number"]
+(listing,) = call("BrowseSnapshot", (number, "test"), "(us)")
+names = [e["name"] for e in json.loads(listing)["entries"]]
+assert sys.argv[1] in names, names
+(restored,) = call("RestoreFromSnapshot", (number, "test/" + sys.argv[1]), "(us)")
+print(restored)
+PY
+) || fail "the restore failed"
+echo "restored as: $restored"
+case "$restored" in "test/$victim (from "*")") ;; *) fail "unexpected restored name: $restored" ;; esac
+[ "$(sha256sum "/srv/tamarack/shares/$restored" | cut -d" " -f1)" = "$want" ] \
+    || fail "the restored file differs from the one in the snapshot"
+[ ! -e "/srv/tamarack/shares/test/$victim" ] || fail "the restore wrote over the original name"
+
 # Stop sharing: the export goes, the files stay.
 gdbus call --system --dest com.borealislogistics.Tamarack1 --object-path /com/borealislogistics/Tamarack1 \
     --method com.borealislogistics.Tamarack1.Manager.RemoveShare photos >/dev/null || fail "RemoveShare failed"

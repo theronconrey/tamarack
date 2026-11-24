@@ -29,6 +29,7 @@ import time
 import xml.etree.ElementTree as ElementTree
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Protocol, TypeVar
 
 from . import __version__
@@ -51,6 +52,7 @@ from .planner import make_plan
 from .recovery import Resume as RecoveryResume
 from .recovery import rule_for
 from .replace import RETIRE_TITLE, plan_replace
+from .restore import RestoreError, list_folder, restore, split_path
 from .review import LEAVE, digest, document, expected_drives
 from .shares import EXPORTS_FILE, Share, ShareError, make_share
 from .shares import dump as dump_shares
@@ -902,6 +904,49 @@ class Engine:
                 found.append(info)
         found.sort(key=lambda i: i["number"], reverse=True)
         return found
+
+    def _snapshot(self, number: int) -> tuple[str, dict[str, Any]]:
+        """The folder holding snapshot ``number``'s files, and its record."""
+        if self._layout is None:
+            raise NoLayout("there is no pool yet")
+        if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
+            raise InvalidArgument("not a snapshot number")
+        for info in self.snapshots():
+            if info["number"] == number:
+                root = os.path.join(self._host_path(SNAPSHOTS_DIR), str(number), "snapshot")
+                return root, info
+        raise InvalidArgument(f"there is no snapshot {number}")
+
+    def authorize_restore(self, number: int, path: str) -> str:
+        self._snapshot(number)
+        try:
+            split_path(path)
+        except RestoreError as exc:
+            raise InvalidArgument(str(exc)) from exc
+        return f"{POLKIT}.restore"
+
+    def browse_snapshot(self, number: int, path: str) -> dict[str, Any]:
+        """One folder of a snapshot: name, kind, size and time of each entry."""
+        root, _ = self._snapshot(number)
+        try:
+            return list_folder(root, split_path(path))
+        except RestoreError as exc:
+            raise InvalidArgument(str(exc)) from exc
+        except OSError as exc:
+            raise EngineError(f"the snapshot can't be read: {exc.strerror}") from exc
+
+    def restore_from_snapshot(self, number: int, path: str) -> str:
+        """Copy a file or folder back next to the original; its new path in the shares."""
+        root, info = self._snapshot(number)
+        # The snapshot's time on this machine's clock: 2026-11-20 14.00
+        taken = datetime.strptime(info["date"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        label = taken.astimezone().strftime("%Y-%m-%d %H.%M")
+        try:
+            return restore(root, self._host_path(SHARES), split_path(path), label)
+        except RestoreError as exc:
+            raise InvalidArgument(str(exc)) from exc
+        except OSError as exc:
+            raise EngineError(f"the restore stopped: {exc.strerror}") from exc
 
     @staticmethod
     def _valid_schedule(schedule: dict[str, Any]) -> dict[str, int]:

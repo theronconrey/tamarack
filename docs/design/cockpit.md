@@ -5,8 +5,8 @@
 Status: **the Overview and the Drives, Shares, Snapshots and Activity tabs
 are built**
 (`data/cockpit/tamarack/`, package `tamarack-cockpit`). The changes made
-from the page so far are to shares, the snapshot schedule, and continuing or
-cancelling a paused job; other changes are still made with `tamarack engine`;
+from the page so far are to shares, the snapshot schedule, restoring from a
+snapshot, and continuing or cancelling a paused job; other changes are still made with `tamarack engine`;
 the guided flows come one at a time.
 
 ## Who it is for
@@ -101,7 +101,7 @@ access when it is on; polkit (`…tamarack.share`) decides either way, and a
 refusal is explained in words. The VM test sends the engine the page's exact
 requests: create, edit, stop.
 
-## Snapshots (built; browse and restore next)
+## Snapshots (built)
 
 - **Schedule** in one sentence ("A snapshot of your shares every hour,
   thinned out as it ages: kept for 24 hours, 7 days, 4 weeks and 6
@@ -112,9 +112,13 @@ requests: create, edit, stop.
   reads snapper's own `info.xml` for each snapshot (no command runs): when,
   and whether it was scheduled or taken by hand with a description. One
   line says snapshots live on the same drives, so they are not a backup.
-- **Next:** browse a snapshot and restore a file or folder next to the
-  original, never over it. That needs an engine method and its own polkit
-  action.
+- **Look inside** a snapshot: its folders with a breadcrumb back up, and
+  Restore on each file and folder. A restore puts a copy next to the
+  original, named with the snapshot's time (`notes (from 2026-11-20
+  14.00).txt`), and never overwrites anything; the page says where it went.
+  Links are listed but not restored on their own. Both browsing and
+  restoring need the `…tamarack.restore` polkit action, because a snapshot
+  holds every user's files (engine design, section 5).
 
 ## Activity (built)
 
@@ -132,8 +136,7 @@ properties, read as an ordinary user.
 
 ## Still to build
 
-Browsing and restoring from snapshots (an engine method and a polkit action
-of its own) and the Advanced view; then the guided flows (add, replace, rebuild, schedule, resume),
+The Advanced view; then the guided flows (add, replace, rebuild),
 each a plan reviewed on the page before polkit asks for the password.
 Mockups of all of these, and the ideas taken from Drobo's dashboard (the
 box as the interface, a small vocabulary of states tied to physical
