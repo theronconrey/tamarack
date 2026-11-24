@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // The Tamarack page in Cockpit: the Overview and the Drives, Shares and
-// Activity tabs. The only change it makes so far is to shares. It talks only to
+// Activity tabs. The changes it makes so far: shares, and continuing or
+// cancelling a paused job. It talks only to
 // the engine (com.borealislogistics.Tamarack1 on the system bus) and draws
 // what status.js works out. Every text from the engine goes in with
 // textContent, never as HTML.
@@ -56,7 +57,9 @@ function drawBanner(b) {
     const words = el("div", "tk-banner-words");
     words.append(el("strong", "tk-banner-title", b.title), el("span", "tk-banner-text", b.text));
     section.append(shieldIcon(b.tone), words);
-    if (b.action) {
+    if (b.action && b.action.op) {
+        section.append(jobControls(b));
+    } else if (b.action) {
         const a = el("a", "tk-button", b.action.label);
         a.href = b.action.href;
         link(a, b.action.href);
@@ -74,6 +77,66 @@ function drawBanner(b) {
         section.append(bar);
     }
     replace("tk-banner", section);
+}
+
+// --- a paused job: continue or cancel -------------------------------------------
+
+let confirmingCancel = false;
+let jobError = "";
+let jobBusy = false;
+
+function jobCall(method, args, signature) {
+    if (!job) return;
+    jobBusy = true;
+    jobError = "";
+    render();
+    admin.call(job.path, JOB, method, args, { type: signature })
+        .then(() => { confirmingCancel = false; })
+        .catch(error => { jobError = S.changeError(error); })
+        .finally(() => {
+            jobBusy = false;
+            render();
+        });
+}
+
+function jobControls(b) {
+    const box = el("div", "tk-banner-actions");
+    if (confirmingCancel) {
+        box.append(el("p", "", "Cancel this change? It stops here and won't continue; " +
+            "the steps already done stay done."));
+    }
+    const buttons = el("div", "tk-actions");
+    const primary = el("button", "tk-button", confirmingCancel ? "Keep it" : b.action.label);
+    primary.type = "button";
+    primary.disabled = jobBusy;
+    primary.addEventListener("click", () => {
+        if (confirmingCancel) {
+            confirmingCancel = false;
+            render();
+        } else {
+            jobCall("Resume", [{}], "a{sv}");
+        }
+    });
+    buttons.append(primary);
+    if (b.secondary) {
+        const cancel = el("button", "tk-button " + (confirmingCancel ? "tk-danger" : "tk-secondary"),
+                          confirmingCancel ? "Cancel the change" : b.secondary.label);
+        cancel.type = "button";
+        cancel.disabled = jobBusy;
+        cancel.addEventListener("click", () => {
+            if (confirmingCancel) {
+                jobCall("Cancel", [], "");
+            } else {
+                confirmingCancel = true;
+                render();
+            }
+        });
+        buttons.append(cancel);
+    }
+    box.append(buttons);
+    if (jobBusy) box.append(el("p", "tk-small", "Asking the engine…"));
+    if (jobError) box.append(el("p", "tk-error", jobError));
+    return box;
 }
 
 function drawDrives(rows) {

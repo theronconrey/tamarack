@@ -520,6 +520,8 @@ def test_pause_resume_and_confirm_backup(bus: str, tmp_path: Path) -> None:
         assert "battery" in get(h.client, "Message", job, JOB)
         assert get(h.client, "Step", job, JOB) == 2
         assert get(h.client, "State") == "paused" and get(h.client, "ActiveJob") == job
+        assert get(h.client, "CanCancel", job, JOB) is True  # paused between steps
+        assert get(h.client, "NeedsCheck", job, JOB) is False
         name, _ = error_of(
             lambda: call(h.client, "Resume", GLib.Variant("(a{sv})", ({},)), job, JOB)
         )

@@ -3,8 +3,9 @@
 # Tamarack in Cockpit: design
 
 Status: **the Overview and the Drives, Shares and Activity tabs are built**
-(`data/cockpit/tamarack/`, package `tamarack-cockpit`). The one change made
-from the page so far is to shares; other changes are still made with `tamarack engine`;
+(`data/cockpit/tamarack/`, package `tamarack-cockpit`). The changes made
+from the page so far are to shares and continuing or cancelling a paused
+job; other changes are still made with `tamarack engine`;
 the guided flows come one at a time.
 
 ## Who it is for
@@ -43,7 +44,10 @@ Inside, the heading says "Storage", with "Managed by Tamarack" beside it.
 ## The Overview (built)
 
 - **Banner**, worked out in `status.js` in this order: no pool yet; a job
-  running (its step, "keep the power on"); a job waiting for a person; a
+  running (its step, "keep the power on"); a job waiting for a person
+  (Continue, and Cancel when the engine would accept it, cancelling only
+  after a second click; a command nobody can check sends a person to a
+  terminal instead, never a storage question on the page); a
   drive failed or missing (which one, what size to buy, one action); a
   drive wearing out; one drive only (not protected against its failure);
   85% and 95% full (add space soon, now); otherwise "Your data is
