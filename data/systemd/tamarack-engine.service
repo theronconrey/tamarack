@@ -76,7 +76,9 @@ DeviceAllow=/dev/mapper/control rw
 
 # Partitioning, dm and md ioctls need CAP_SYS_ADMIN and CAP_SYS_RAWIO;
 # creating device nodes needs CAP_MKNOD; state files need the rest.
-CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO CAP_MKNOD CAP_DAC_OVERRIDE CAP_CHOWN
+# Restoring from a snapshot reads files their owners keep private:
+# CAP_DAC_READ_SEARCH (read and search only, never write).
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO CAP_MKNOD CAP_DAC_OVERRIDE CAP_CHOWN CAP_DAC_READ_SEARCH
 SystemCallArchitectures=native
 SystemCallFilter=@system-service @raw-io
 SystemCallErrorNumber=EPERM

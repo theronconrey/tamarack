@@ -56,6 +56,11 @@
          "size", "model", "serial", "identity"}. Planning refuses a refused
          drive and puts a warned drive's warnings in the plan. -->
     <property name="Candidates" type="s" access="read"/>
+    <!-- JSON list of the shares' snapshots, newest first, from snapper's
+         info.xml files: {"number", "date" (UTC), "kind" ("single", "pre" or
+         "post"), "cleanup" ("timeline" for scheduled ones), "description"}.
+         Refreshed every minute. -->
+    <property name="Snapshots" type="s" access="read"/>
     <!-- This machine's host name, for the address clients connect to -->
     <property name="HostName" type="s" access="read"/>
     <!-- The running or paused job, or "/" -->
@@ -113,6 +118,29 @@
       <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
                   value="com.borealislogistics.tamarack.configure"/>
       <arg name="schedule" type="a{su}" direction="in"/>
+    </method>
+
+    <!-- One folder of snapshot NUMBER (see Snapshots), PATH relative to the
+         shares ("" is the top). JSON: {"entries": [{"name", "kind":
+         "folder"|"file"|"link"|"other", "size", "modified"}], folders first,
+         "truncated": true after 5000}. Symlinks are listed, never followed.
+         Needs the restore action: snapshots hold every user's files. -->
+    <method name="BrowseSnapshot">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.restore"/>
+      <arg name="number" type="u" direction="in"/>
+      <arg name="path" type="s" direction="in"/>
+      <arg name="listing" type="s" direction="out"/>
+    </method>
+    <!-- Copy a file or folder from snapshot NUMBER back into the shares next
+         to the original, as "name (from 2026-11-20 14.00).ext": nothing is
+         ever overwritten. Returns the new path, relative to the shares. -->
+    <method name="RestoreFromSnapshot">
+      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
+                  value="com.borealislogistics.tamarack.restore"/>
+      <arg name="number" type="u" direction="in"/>
+      <arg name="path" type="s" direction="in"/>
+      <arg name="restored" type="s" direction="out"/>
     </method>
 
     <signal name="LayoutChanged">

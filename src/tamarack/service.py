@@ -51,6 +51,8 @@ JOB = f"{BUS_NAME}.Job"
 PROPERTIES = "org.freedesktop.DBus.Properties"
 ACCESS_DENIED = "org.freedesktop.DBus.Error.AccessDenied"
 READ_ACTION = "com.borealislogistics.tamarack.read"
+# Methods that may take long (a restore copies files): run on a thread.
+BACKGROUND_METHODS = frozenset({"RestoreFromSnapshot"})
 DEFAULT_STATE_DIR = "/var/lib/tamarack"
 
 log = logging.getLogger("tamarack-engine")
@@ -165,6 +167,7 @@ class Service:
         self._last_health: dict[str, Any] | None = None
         self._last_space: dict[str, int] | None = None
         self._last_drives: list[dict[str, Any]] | None = None
+        self._last_snapshots: list[dict[str, Any]] | None = None
         self.sync_objects()
 
     # --- bus plumbing --------------------------------------------------------
@@ -246,6 +249,9 @@ class Service:
                 log.info("%s from %s denied: %s", name, sender, reason)
                 invocation.return_dbus_error(ACCESS_DENIED, reason)
                 return
+            if method in BACKGROUND_METHODS:
+                self._finish_in_background(invocation, name, sender, work)
+                return
             self._finish(invocation, name, sender, work)
 
         self.authority.check(sender, action, details, decided)
@@ -263,6 +269,38 @@ class Service:
             self._refuse(invocation, name, sender, exc)
         except Exception:
             self._crash(invocation, name, sender)
+
+    def _finish_in_background(self, invocation: Any, name: str, sender: str, work: Work) -> None:
+        """Run ``work`` on a thread (a restore can copy a lot) and reply when it is done."""
+        from gi.repository import GLib
+
+        def run() -> None:
+            outcome: tuple[str, Any] | EngineError | None
+            try:
+                outcome = work()
+            except EngineError as exc:
+                outcome = exc
+            except Exception:
+                log.exception("%s from %s failed", name, sender)
+                outcome = None
+
+            def reply() -> bool:
+                if isinstance(outcome, EngineError):
+                    self._refuse(invocation, name, sender, outcome)
+                elif outcome is None:
+                    invocation.return_dbus_error(
+                        f"{ERROR_PREFIX}.Failed", "internal error; see the log"
+                    )
+                else:
+                    signature, value = outcome
+                    invocation.return_value(GLib.Variant(signature, value) if signature else None)
+                return False  # GLib.SOURCE_REMOVE
+
+            self.context.invoke_full(0, reply)
+
+        thread = threading.Thread(target=run, name=f"call-{name}")
+        self._threads = [t for t in self._threads if t.is_alive()] + [thread]
+        thread.start()
 
     @staticmethod
     def _refuse(invocation: Any, name: str, sender: str, exc: EngineError) -> None:
@@ -345,6 +383,24 @@ class Service:
                     return "", ()
 
                 return action, {}, snapshots
+            if method == "BrowseSnapshot":
+                number, folder = args
+                action = e.authorize_restore(number, folder)
+
+                def browse() -> Reply:
+                    return "(s)", (json.dumps(e.browse_snapshot(number, folder), sort_keys=True),)
+
+                return action, {"snapshot": str(number), "path": folder}, browse
+            if method == "RestoreFromSnapshot":
+                number, item = args
+                action = e.authorize_restore(number, item)
+
+                def restore() -> Reply:
+                    restored = e.restore_from_snapshot(number, item)
+                    log.info("restored %s from snapshot %d as %s", item, number, restored)
+                    return "(s)", (restored,)
+
+                return action, {"snapshot": str(number), "path": item}, restore
             if method == "ConfirmBackup":
 
                 def confirm() -> Reply:
@@ -485,6 +541,10 @@ class Service:
         if drives != self._last_drives:
             self._last_drives = drives
             self._manager_changed("Drives")
+        snapshots = self.engine.snapshots()
+        if snapshots != self._last_snapshots:
+            self._last_snapshots = snapshots
+            self._manager_changed("Snapshots")
         # The first check compares against a clean slate, so a pool that is
         # already degraded when the engine starts is reported too.
         before = self._last_health or {"status": "none", "degraded_layers": [], "drives": []}
@@ -559,6 +619,7 @@ class Service:
             "JobHistory": lambda: json.dumps(e.job_history(), sort_keys=True),
             "HostName": lambda: e.host_name,
             "Candidates": lambda: json.dumps(e.candidates(), sort_keys=True),
+            "Snapshots": lambda: json.dumps(e.snapshots(), sort_keys=True),
         }
 
     def _plan_properties(self, path: str) -> dict[str, Callable[[], Any]]:

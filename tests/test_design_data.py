@@ -146,7 +146,16 @@ def test_capabilities_are_bounded() -> None:
     caps = unit_settings()["CapabilityBoundingSet"][0].split()
     assert "CAP_SYS_MODULE" not in caps
     assert "CAP_NET_ADMIN" not in caps
-    assert len(caps) <= 5
+    # Exactly these; each is explained in the unit. Adding one means arguing
+    # for it here too.
+    assert sorted(caps) == [
+        "CAP_CHOWN",  # share folders and restored files keep their owners
+        "CAP_DAC_OVERRIDE",  # state files
+        "CAP_DAC_READ_SEARCH",  # restore reads files their owners keep private
+        "CAP_MKNOD",  # mdadm makes new array nodes
+        "CAP_SYS_ADMIN",  # partition, dm, md and btrfs ioctls
+        "CAP_SYS_RAWIO",  # partition, dm and md ioctls
+    ]
 
 
 def test_modules_needed_by_the_engine_load_at_boot() -> None:

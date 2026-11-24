@@ -26,8 +26,10 @@ import socket
 import tempfile
 import threading
 import time
+import xml.etree.ElementTree as ElementTree
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Protocol, TypeVar
 
 from . import __version__
@@ -35,7 +37,7 @@ from .boot import INTEGRITYTAB, BootError
 from .boot import lines as boot_lines
 from .boot import members as boot_members
 from .boot import merge as merge_integritytab
-from .commands import MOUNT_POINT, build_steps
+from .commands import MOUNT_POINT, SHARES, build_steps
 from .grow import plan_add_drive
 from .identity import DriveChanged as IdentityChanged
 from .identity import verify
@@ -50,6 +52,7 @@ from .planner import make_plan
 from .recovery import Resume as RecoveryResume
 from .recovery import rule_for
 from .replace import RETIRE_TITLE, plan_replace
+from .restore import RestoreError, list_folder, restore, split_path
 from .review import LEAVE, digest, document, expected_drives
 from .shares import EXPORTS_FILE, Share, ShareError, make_share
 from .shares import dump as dump_shares
@@ -84,6 +87,7 @@ JOBS_SUBDIR = "jobs"
 HISTORY_LIMIT = 50  # jobs listed in JobHistory, newest first
 # The path a what-if plan uses for a drive that isn't there (upgrade advisor).
 UPGRADE_DEVICE = "/dev/tamarack-upgrade"
+SNAPSHOTS_DIR = f"{SHARES}/.snapshots"  # snapper's, one numbered folder per snapshot
 WORTH_UPGRADING = 10**9  # gains below 1 GB aren't offered
 
 # Paths UDisks2 and udev create: /dev/sdb, /dev/nvme0n1, /dev/disk/by-id/...
@@ -339,6 +343,32 @@ def _side(layout: Layout) -> dict[str, Any]:
         "drives": [d.device for d in layout.drives],
         "drive_failures_tolerated": layout.drive_failures_tolerated,
         "usable_bytes_nominal": layout.usable_nominal,
+    }
+
+
+def _snapshot_info(path: str) -> dict[str, Any] | None:
+    """One snapper info.xml: number, date, kind and description; None if unreadable."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(65536)
+        root = ElementTree.fromstring(data)
+    except (OSError, ElementTree.ParseError):
+        return None
+    if root.tag != "snapshot":
+        return None
+    try:
+        number = int(root.findtext("num", ""))
+    except ValueError:
+        return None
+    date = root.findtext("date", "")  # "2026-11-24 03:00:01", UTC
+    if not re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d", date):
+        return None
+    return {
+        "number": number,
+        "date": date.replace(" ", "T") + "Z",
+        "kind": root.findtext("type", ""),  # single, pre or post
+        "cleanup": root.findtext("cleanup", ""),  # "timeline" for the schedule's
+        "description": root.findtext("description", ""),
     }
 
 
@@ -862,6 +892,73 @@ class Engine:
             os.path.join(self.state_dir, SCHEDULE_FILE), json.dumps(wanted, sort_keys=True) + "\n"
         )
         return wanted
+
+    def snapshots(self) -> list[dict[str, Any]]:
+        """Snapper's snapshots of the shares, newest first, from their info.xml.
+
+        Read straight from ``shares/.snapshots/N/info.xml`` (snapper's own
+        record of each snapshot), so no command runs and nothing changes.
+        Dates are UTC, "YYYY-MM-DDTHH:MM:SSZ".
+        """
+        directory = self._host_path(SNAPSHOTS_DIR)
+        if not self._layout:
+            return []
+        try:
+            names = os.listdir(directory)
+        except OSError:
+            return []
+        found = []
+        for name in names:
+            if not name.isdigit():
+                continue
+            info = _snapshot_info(os.path.join(directory, name, "info.xml"))
+            if info is not None and info["number"] == int(name):
+                found.append(info)
+        found.sort(key=lambda i: i["number"], reverse=True)
+        return found
+
+    def _snapshot(self, number: int) -> tuple[str, dict[str, Any]]:
+        """The folder holding snapshot ``number``'s files, and its record."""
+        if self._layout is None:
+            raise NoLayout("there is no pool yet")
+        if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
+            raise InvalidArgument("not a snapshot number")
+        for info in self.snapshots():
+            if info["number"] == number:
+                root = os.path.join(self._host_path(SNAPSHOTS_DIR), str(number), "snapshot")
+                return root, info
+        raise InvalidArgument(f"there is no snapshot {number}")
+
+    def authorize_restore(self, number: int, path: str) -> str:
+        self._snapshot(number)
+        try:
+            split_path(path)
+        except RestoreError as exc:
+            raise InvalidArgument(str(exc)) from exc
+        return f"{POLKIT}.restore"
+
+    def browse_snapshot(self, number: int, path: str) -> dict[str, Any]:
+        """One folder of a snapshot: name, kind, size and time of each entry."""
+        root, _ = self._snapshot(number)
+        try:
+            return list_folder(root, split_path(path))
+        except RestoreError as exc:
+            raise InvalidArgument(str(exc)) from exc
+        except OSError as exc:
+            raise EngineError(f"the snapshot can't be read: {exc.strerror}") from exc
+
+    def restore_from_snapshot(self, number: int, path: str) -> str:
+        """Copy a file or folder back next to the original; its new path in the shares."""
+        root, info = self._snapshot(number)
+        # The snapshot's time on this machine's clock: 2026-11-20 14.00
+        taken = datetime.strptime(info["date"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        label = taken.astimezone().strftime("%Y-%m-%d %H.%M")
+        try:
+            return restore(root, self._host_path(SHARES), split_path(path), label)
+        except RestoreError as exc:
+            raise InvalidArgument(str(exc)) from exc
+        except OSError as exc:
+            raise EngineError(f"the restore stopped: {exc.strerror}") from exc
 
     @staticmethod
     def _valid_schedule(schedule: dict[str, Any]) -> dict[str, int]:

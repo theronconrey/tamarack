@@ -1090,3 +1090,66 @@ def test_planning_refuses_drives_that_may_not_join_and_warns_about_the_rest(
     assert plan.document["warnings"][0] == plan.warnings[0]  # part of what is reviewed
     verdicts = {c["device"]: c["verdict"] for c in e.candidates()}
     assert verdicts["/dev/sda"] == "pool" and verdicts["/dev/sdc"] == "refuse"
+
+
+SNAPPER_INFO = """<?xml version="1.0"?>
+<snapshot>
+  <type>single</type>
+  <num>{num}</num>
+  <date>{date}</date>
+  <description>{description}</description>
+  <cleanup>timeline</cleanup>
+</snapshot>
+"""
+
+
+def test_snapshots_read_from_snapper_info_files(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    snaps = Path(e.root) / "srv/tamarack/shares/.snapshots"
+    for num, date in (
+        (1, "2026-11-23 01:00:01"),
+        (2, "2026-11-23 02:00:01"),
+        (10, "2026-11-24 03:00:02"),
+    ):
+        (snaps / str(num)).mkdir(parents=True)
+        (snaps / str(num) / "info.xml").write_text(
+            SNAPPER_INFO.format(num=num, date=date, description="timeline")
+        )
+    (snaps / "3").mkdir()
+    (snaps / "3" / "info.xml").write_text("<not snapper")  # skipped, not fatal
+    (snaps / "4").mkdir()
+    (snaps / "4" / "info.xml").write_text(SNAPPER_INFO.format(num=5, date="x", description=""))
+    found = e.snapshots()
+    assert [s["number"] for s in found] == [10, 2, 1]  # newest first
+    assert found[0] == {
+        "number": 10,
+        "date": "2026-11-24T03:00:02Z",
+        "kind": "single",
+        "cleanup": "timeline",
+        "description": "timeline",
+    }
+    (tmp_path / "none").mkdir()
+    assert run_engine(tmp_path / "none").snapshots() == []  # no pool
+
+
+def test_browse_and_restore_through_the_engine(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    shares = Path(e.root) / "srv/tamarack/shares"
+    snap = shares / ".snapshots" / "7"
+    (snap / "snapshot" / "docs").mkdir(parents=True)
+    (snap / "snapshot" / "docs" / "plan.txt").write_text("v1")
+    (snap / "info.xml").write_text(
+        SNAPPER_INFO.format(num=7, date="2026-11-20 14:00:00", description="timeline")
+    )
+    (shares / "docs").mkdir()
+    assert e.authorize_restore(7, "docs/plan.txt") == "com.borealislogistics.tamarack.restore"
+    for number, path in ((8, "docs"), (0, "docs"), (7, "../etc")):
+        with pytest.raises(InvalidArgument):
+            e.authorize_restore(number, path)
+    listing = e.browse_snapshot(7, "docs")
+    assert [x["name"] for x in listing["entries"]] == ["plan.txt"]
+    new = e.restore_from_snapshot(7, "docs/plan.txt")
+    assert new.startswith("docs/plan (from 2026-11-2") and new.endswith(").txt")
+    assert (shares / new).read_text() == "v1"
+    with pytest.raises(InvalidArgument, match="not in this snapshot"):
+        e.restore_from_snapshot(7, "docs/missing.txt")

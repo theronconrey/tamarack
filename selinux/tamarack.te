@@ -66,6 +66,14 @@ allow tamarack_engine_t self:process { getsched signal_perms };
 manage_dirs_pattern(tamarack_engine_t, tamarack_data_t, tamarack_data_t)
 read_files_pattern(tamarack_engine_t, tamarack_data_t, tamarack_data_t)
 allow tamarack_engine_t tamarack_data_t:dir { setattr ioctl };
+# Restoring from a snapshot (tamarack.restore): copy files and symlinks back
+# into the shares, clone data with FICLONE, set owner, mode, times and user
+# xattrs, and read files their owners keep private (dac_read_search: read
+# and search, never write).
+manage_files_pattern(tamarack_engine_t, tamarack_data_t, tamarack_data_t)
+manage_lnk_files_pattern(tamarack_engine_t, tamarack_data_t, tamarack_data_t)
+allow tamarack_engine_t tamarack_data_t:file { ioctl setattr };
+allow tamarack_engine_t self:capability dac_read_search;
 # btrfs filesystem resize looks at the filesystem itself (fs_t: rootcontext
 # labels only the root directory, not the superblock).
 fs_getattr_xattr_fs(tamarack_engine_t)

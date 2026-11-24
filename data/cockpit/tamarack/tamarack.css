@@ -26,6 +26,9 @@
     --tk-info-text: #003d7a;
 }
 
+/* The hidden attribute always wins over a class's display. */
+[hidden] { display: none !important; }
+
 body {
     margin: 0;
     background: var(--tk-page);
@@ -157,8 +160,9 @@ button.tk-button:disabled { opacity: 0.6; cursor: default; }
 }
 .tk-drive-danger { border: 2px solid var(--tk-danger); }
 .tk-drive-warning { border-color: var(--tk-warn); }
-.tk-drive-label { width: 64px; font-size: 13px; color: var(--tk-muted); }
-.tk-drive-size { flex: 1 1 auto; font-weight: 700; font-size: 17px; }
+.tk-drive { flex-wrap: wrap; }
+.tk-drive-label { width: 64px; font-size: 13px; color: var(--tk-muted); white-space: nowrap; }
+.tk-drive-size { flex: 1 1 auto; font-weight: 700; font-size: 17px; white-space: nowrap; }
 
 .tk-pill {
     display: inline-flex;
@@ -274,6 +278,19 @@ h3 { margin: 0; font-size: 17px; font-family: "Red Hat Display", "RedHatDisplay"
 .tk-radio input { width: 20px; height: 20px; margin: 0; }
 .tk-error { margin: 0; color: var(--tk-danger-text); font-weight: 500; }
 .tk-error[hidden] { display: none; }
+.tk-schedule { display: flex; flex-direction: column; gap: 10px; max-width: 520px; }
+.tk-field-inline { display: grid; grid-template-columns: minmax(0, 1fr) 80px 64px; align-items: center; gap: 8px 12px; }
+.tk-field-inline label { font-weight: 500; }
+.tk-field-inline input { width: 100%; }
+.tk-small-button { min-height: 36px; padding: 0 14px; font-size: 14px; }
+.tk-history-head .tk-small-button { margin-left: auto; }
+.tk-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 15px; }
+.tk-crumb { background: none; border: 0; padding: 8px 2px; color: var(--tk-blue); font: inherit; cursor: pointer; text-decoration: underline; }
+.tk-crumb-here { font-weight: 700; padding: 8px 2px; }
+.tk-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.tk-file { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 8px 0; border-top: 1px solid var(--tk-line); min-height: 44px; }
+.tk-file-name { flex: 1 1 220px; overflow-wrap: anywhere; text-align: left; }
+.tk-ok-text { color: var(--tk-ok-text); font-weight: 500; margin: 0; }
 .tk-confirm { border-top: 1px solid var(--tk-line); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
 .tk-confirm p { margin: 0; }
 
