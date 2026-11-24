@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# VM tests only (reboot.sh): bring the LIO test drives back early in boot,
+# before the pool's integrity mappings are opened, as real disks would be.
+# target.service can't: it runs after sysinit and network.target, so the
+# mappings' device jobs had already timed out.
+
+[Unit]
+Description=Tamarack VM test drives (LIO)
+DefaultDependencies=no
+Requires=sys-kernel-config.mount
+After=sys-kernel-config.mount systemd-modules-load.service
+# The drives' backing files live under /var/tmp, and /var can be its own
+# mount (it is on Fedora's cloud images): wait for it, and for /etc/target.
+RequiresMountsFor=/var/tmp/tamarack-drives /etc/target
+Before=integritysetup-pre.target cryptsetup-pre.target sysinit.target
+Wants=integritysetup-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/sbin/modprobe tcm_loop
+ExecStart=/usr/bin/targetctl restore
+# targetctl "succeeds" even when it skips every backstore: fail unless the
+# first test drive's LUN really exists.
+ExecStartPost=/usr/bin/test -e /sys/kernel/config/target/loopback/naa.5001405000000001/tpgt_1/lun/lun_0
+
+[Install]
+WantedBy=sysinit.target

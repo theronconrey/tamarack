@@ -636,12 +636,17 @@ Settled:
 - `tamarack engine` is a working command-line client of the engine.
 - Every one-drive-protection layer is RAID5 with PPL (section 9 notes,
   README).
+- md arrays are created with `--homehost=any`. Without it mdadm stores the
+  hostname at create time; early in boot the hostname is still `localhost`,
+  so udev treated the array as foreign and brought it back as `tk-l1_0`,
+  started read-auto (seen in the reboot test, #29). With `any` the arrays
+  keep their names at boot and on any host the drives move to. Pools created
+  before this change keep the old name until reassembled with
+  `mdadm --assemble --update=homehost --homehost=any`; the engine does not
+  do that yet.
 
 Open:
 
-- **md array names at boot.** Arrays are created as `/dev/md/tk-lN`; whether
-  they come back under those names on every host, or `--homehost` needs
-  setting, will show in the reboot test (#29).
 - **PPL's write cost on real disks.**
 - **Two-drive protection** (5+ drives) in grow.
 - **The Cockpit page** as the main client (track 5).

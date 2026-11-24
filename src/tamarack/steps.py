@@ -17,6 +17,7 @@ from .commands import (
     FIRST_LAYER_START,
     LV_NAME,
     MD_DATA_OFFSET,
+    MD_HOMEHOST,
     META_PARTLABEL,
     MOUNT_POINT,
     VG_NAME,
@@ -292,7 +293,7 @@ def create_array(md: str, level: Level, members: list[str]) -> Command:
     """``mdadm --create`` with Tamarack's write-safety option for the level."""
     return cmd(
         "mdadm",
-        *("--create", md, "--run", "--metadata=1.2", MD_DATA_OFFSET),
+        *("--create", md, "--run", "--metadata=1.2", MD_HOMEHOST, MD_DATA_OFFSET),
         f"--level={level.value.removeprefix('raid')}",
         f"--raid-devices={len(members)}",
         *write_safety(level),

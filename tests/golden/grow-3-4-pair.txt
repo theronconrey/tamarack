@@ -36,7 +36,7 @@ integritysetup format --batch-mode --integrity crc32c /dev/sdc3
 integritysetup open --integrity crc32c /dev/sdc3 tk-d3-p3
 
 # 6. Create layer 2 from leftover space
-mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --data-offset=128M --level=5 --raid-devices=2 --force --consistency-policy=ppl /dev/mapper/tk-d3-p3 /dev/mapper/tk-d4-p3
+mdadm --create /dev/md/tk-l2 --run --metadata=1.2 --homehost=any --data-offset=128M --level=5 --raid-devices=2 --force --consistency-policy=ppl /dev/mapper/tk-d3-p3 /dev/mapper/tk-d4-p3
 
 # 7. Grow the volume and file system
 pvresize /dev/md/tk-l1

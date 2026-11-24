@@ -52,3 +52,7 @@ require:
 /cockpit:
     summary: The Cockpit page reads a real pool as an ordinary user
     test: ./cockpit.sh
+
+/reboot:
+    summary: The pool comes back by itself after a reboot
+    test: ./reboot.sh
