@@ -533,7 +533,7 @@ class Service:
 
     def _job_changed(self, job_id: str) -> None:
         getters = self._job_properties(job_path(job_id))
-        names = ("State", "Step", "StepTitle", "Message")
+        names = ("State", "Step", "StepTitle", "Message", "NeedsCheck", "CanCancel")
         self._changed(job_path(job_id), JOB, {n: getters[n]() for n in names})
 
     # --- properties ----------------------------------------------------------
@@ -582,6 +582,8 @@ class Service:
             "StepTitle": lambda: status.step_title,
             "Progress": lambda: 0.0,  # resync and reshape progress: with the real runner
             "Message": lambda: status.message,
+            "NeedsCheck": lambda: status.needs_check,
+            "CanCancel": lambda: status.can_cancel,
         }
 
 

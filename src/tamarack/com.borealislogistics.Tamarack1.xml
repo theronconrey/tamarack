@@ -183,6 +183,13 @@
     <property name="Progress" type="d" access="read"/>
     <!-- Why the job paused or failed; empty otherwise -->
     <property name="Message" type="s" access="read"/>
+    <!-- Paused on a command that was cut off and can't be checked
+         automatically: a person must check it (Message says what) and
+         Resume with a "resolution" -->
+    <property name="NeedsCheck" type="b" access="read"/>
+    <!-- Cancel would be accepted now: the job is running (it stops at the
+         next step) or paused between steps -->
+    <property name="CanCancel" type="b" access="read"/>
 
     <!-- options: "resolution" (s), "done" or "rerun", for a command that was
          cut off and cannot be checked automatically (see Message) -->

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fake_runner import FakeRunner
+from fake_runner import FakeRunner, PowerCut
 
 from tamarack.engine import (
     PLAN_LIFETIME,
@@ -1001,3 +1001,22 @@ def test_job_history_newest_first(tmp_path: Path) -> None:
     assert first["kind"] == "create" and first["result"] == "completed"
     assert first["ended"].endswith("Z") and first["usable_before"] == 0
     assert first["step"] == first["steps"] > 0
+
+
+def test_job_status_says_whether_a_person_must_check_or_can_cancel(tmp_path: Path) -> None:
+    e = engine(tmp_path, ["/dev/sda", "/dev/sdb"])
+    jobs = tmp_path / "jobs"
+    jobs.mkdir()
+    plan = e.plan_add("/dev/sdc")
+    start(plan.document, "1", str(jobs / "1.jsonl"), FakeRunner(), gate=lambda n: "stop")
+    between = e.job_status("1")
+    assert between.state == "paused" and between.can_cancel and not between.needs_check
+
+    # Power lost during "mdadm --add": no rule can tell whether it took effect.
+    def cut(_: int, argv: tuple[str, ...]) -> bool:
+        return argv[0] == "mdadm" and "--add" in argv
+
+    with pytest.raises(PowerCut):
+        start(plan.document, "2", str(jobs / "2.jsonl"), FakeRunner(cut=cut))
+    stuck = e.job_status("2")
+    assert stuck.state == "paused" and stuck.needs_check and not stuck.can_cancel

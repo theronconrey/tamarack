@@ -88,6 +88,8 @@ a:hover { color: #004080; }
 }
 .tk-banner-words { flex: 1 1 360px; display: flex; flex-direction: column; gap: 2px; }
 .tk-banner-title { font-size: 20px; }
+.tk-banner-actions { display: flex; flex-direction: column; gap: 8px; }
+.tk-banner-actions p { margin: 0; max-width: 360px; }
 
 .tk-banner.tk-tone-ok { background: var(--tk-ok-bg); border-color: var(--tk-ok); color: var(--tk-ok-text); }
 .tk-banner.tk-tone-warning { background: var(--tk-warn-bg); border-color: var(--tk-warn); color: var(--tk-warn-text); }

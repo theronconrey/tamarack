@@ -129,11 +129,23 @@ function banner(model, job) {
         };
     }
     if (model.state === "paused") {
+        const why = job && job.Message ? sentence(job.Message.replace(/\.$/, "")) + " " : "";
+        if (!job || job.NeedsCheck) {
+            // A command was cut off and nothing can tell whether it took
+            // effect: a person has to look. Never ask that on this page.
+            return {
+                tone: "warning",
+                title: "A storage change needs a check before it can continue",
+                text: why + "Your files are available. Someone needs to look from a terminal: " +
+                    "tamarack engine status says what to check.",
+            };
+        }
         return {
             tone: "warning",
             title: "A storage change is waiting for you",
-            text: (job && job.Message ? job.Message + " " : "") +
-                "For now, continue it from a terminal: tamarack engine status says what it needs.",
+            text: why + "Your files are available. Continue when you're ready.",
+            action: { label: "Continue", op: "resume" },
+            secondary: job.CanCancel ? { label: "Cancel this change", op: "cancel" } : undefined,
         };
     }
     const rows = drives(model);

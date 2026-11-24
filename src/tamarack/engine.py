@@ -45,7 +45,10 @@ from .journal import JobState, JournalError, journal_path, load
 from .layout import Disk, Layout, layout_from_plan
 from .meta import compact
 from .model import Plan, PlanKind
+from .ops import Command
 from .planner import make_plan
+from .recovery import Resume as RecoveryResume
+from .recovery import rule_for
 from .replace import RETIRE_TITLE, plan_replace
 from .review import LEAVE, digest, document, expected_drives
 from .shares import EXPORTS_FILE, Share, ShareError, make_share
@@ -267,6 +270,11 @@ class JobStatus:
     step_count: int
     step_title: str
     message: str
+    # Paused on a command that was cut off and that no rule can check: a
+    # person must look (tamarack engine status says what), then Resume with
+    # a resolution. The page sends people to a terminal for this.
+    needs_check: bool = False
+    can_cancel: bool = False  # Cancel would be accepted now
 
 
 class JobRun:
@@ -1034,7 +1042,25 @@ class Engine:
             status = "waiting" if state.in_doubt and _is_wait(state) else "running"
         else:
             status = "paused"
-        return JobStatus(job_id, state.digest, status, step, count, title, state.message)
+        needs_check = False
+        if status == "paused" and state.in_doubt and not _is_wait(state):
+            c = state.command(state.step, state.cmd)
+            command = Command(tuple(c["argv"]), bool(c["tolerate_failure"]))
+            needs_check = rule_for(command).resume is RecoveryResume.ASK
+        can_cancel = not state.ended and (
+            self._running == job_id or not (state.step_open or state.in_doubt)
+        )
+        return JobStatus(
+            job_id,
+            state.digest,
+            status,
+            step,
+            count,
+            title,
+            state.message,
+            needs_check=needs_check,
+            can_cancel=can_cancel,
+        )
 
     # --- helpers -------------------------------------------------------------
 

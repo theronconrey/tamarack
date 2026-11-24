@@ -105,7 +105,7 @@ test("a running job shows its step and how far it is", () => {
 test("a job waiting for a person is never shown as healthy", () => {
     const b = S.banner(S.read(props({ State: "paused" })), { Message: "step 3 was cut off." });
     assert.equal(b.tone, "warning");
-    assert.match(b.text, /step 3 was cut off/);
+    assert.match(b.text, /step 3 was cut off/i);
 });
 
 test("no layout means no pool, not an error", () => {
@@ -302,4 +302,25 @@ test("engine errors come back in words", () => {
                  /administrative access/);
     assert.equal(S.changeError({ name: "x.InvalidArgument", message: "not an address, network or host name: 'a b'" }),
                  "Not an address, network or host name: 'a b'.");
+});
+
+// --- a paused job -------------------------------------------------------------------
+
+test("a paused job between steps offers Continue, and Cancel when allowed", () => {
+    const job = { Message: "the UPS is on battery; resume when power is back", NeedsCheck: false, CanCancel: true };
+    const b = S.banner(S.read(props({ State: "paused" })), job);
+    assert.equal(b.title, "A storage change is waiting for you");
+    assert.match(b.text, /^The UPS is on battery; resume when power is back\. Your files are available/);
+    assert.deepEqual(b.action, { label: "Continue", op: "resume" });
+    assert.deepEqual(b.secondary, { label: "Cancel this change", op: "cancel" });
+    const noCancel = S.banner(S.read(props({ State: "paused" })), { ...job, CanCancel: false });
+    assert.equal(noCancel.secondary, undefined);
+});
+
+test("a command nobody can check sends a person to a terminal, with no buttons", () => {
+    const job = { Message: "step 3, command 2 was cut off and cannot be checked automatically", NeedsCheck: true, CanCancel: false };
+    const b = S.banner(S.read(props({ State: "paused" })), job);
+    assert.equal(b.title, "A storage change needs a check before it can continue");
+    assert.match(b.text, /tamarack engine status/);
+    assert.equal(b.action, undefined);
 });
