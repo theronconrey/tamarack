@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# Measurements, not checks: run on request (`/packit test --identifier
+# measure` on a pull request, or `tmt run plan --name /plans/measure`), and
+# on the F4-425 Pro's real disks, where the numbers mean something.
+
+summary: Write cost of md's partial parity log
+discover:
+    how: fmf
+    filter: "tag:measure"
+provision:
+    how: virtual
+    hardware:
+        memory: ">= 16 GB"
+prepare:
+  - name: Packages under test
+    how: install
+    package:
+      - tamarack
+      - tamarack-engine
+      - tamarack-selinux
+      - python3-gobject-base
+execute:
+    how: tmt

@@ -30,10 +30,11 @@ Pre-alpha. Not for drives holding data you care about.
 - **Testing**: unit and D-Bus tests in Fedora CI on every pull request, and
   Packit Copr builds plus a tmt VM matrix ([`plans/`](plans),
   [`tests/vm/`](tests/vm)) that runs on Testing Farm with SELinux
-  enforcing. The matrix passes (10 tests: create, grow, mixed sizes, a
-  pulled drive, silent corruption, an interrupted reshape, an online swap,
-  one drive to two, recovery by hand, NFS). Execution stays for throwaway
-  VMs until a reboot test passes and the box has run on real disks.
+  enforcing, on three VMs in parallel. The matrix passes (11 tests:
+  create, grow, mixed sizes, a pulled drive, silent corruption, an
+  interrupted reshape, an online swap, one drive to two, recovery by hand,
+  NFS, the Cockpit page, and a reboot). Execution stays for throwaway
+  VMs until the box has run on real disks.
 
 ## Roadmap
 

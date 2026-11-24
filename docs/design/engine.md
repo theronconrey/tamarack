@@ -580,13 +580,25 @@ Added after that:
   refuses writes, the files land in the pool, and nfsd offers no NFSv3.
 - **PPL cost.** Write speed on a two- and a three-drive layer with md's
   partial parity log on and off. The VM's drives live in RAM, so the numbers
-  are noise; real disks will tell.
+  are noise; real disks will tell. It is a measurement, not a check, so it
+  has its own plan (`plans/measure.fmf`) that runs only on request.
 - **Every layer keeps PPL.** The grow tests end by checking that each layer's
   consistency policy is `ppl`.
 
-The whole matrix (10 tests) passes with SELinux enforcing (PR #22, Nov 23,
-2026). Still open: a real reboot, in PR #29 ("Opening the pool at boot"
-above), on file-backed drives (RAM drives don't survive one).
+The whole matrix passes with SELinux enforcing (PR #22, Nov 23, 2026),
+and since PR #29 it includes a real reboot on file-backed drives: the pool
+comes back by itself, arrays under their own names.
+
+**Three VMs in parallel.** Testing Farm runs each tmt plan on its own
+machine, at the same time, so the matrix is split into three plans in
+`plans/storage.fmf`, balanced by run time: `/build` (create and grow, mixed
+sizes, NFS, the Cockpit page, recovery by hand, reboot), `/failures` (a
+pulled drive, an online swap, the engine killed mid-reshape) and
+`/integrity` (one drive then two, silent corruption). Each test carries its
+group as a tag (`vm-build`, `vm-failures`, `vm-integrity`) in
+`tests/vm/main.fmf`; a new test goes in the group that keeps them even.
+Run in a row the tests took about 72 minutes; split, the slowest group
+takes about 25.
 
 ## 11. Implementation order
 

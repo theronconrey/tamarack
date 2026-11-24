@@ -2,14 +2,14 @@
 #
 # The VM test matrix (docs/design/engine.md, section 10). Runs on Testing
 # Farm through Packit, or locally with `tmt run` (it provisions a VM).
+# Three plans, three VMs: Testing Farm runs each plan on its own machine,
+# in parallel, so the matrix takes as long as its slowest group (about 25
+# minutes of tests) instead of all of them in a row.
 # Every test runs with SELinux enforcing, on RAM-backed scsi_debug drives
 # or file-backed LIO loopback drives created inside the VM, so nothing
 # outside the VM can ever be touched.
 
 summary: Engine on a real kernel, SELinux enforcing
-discover:
-    how: fmf
-    filter: tag:vm
 provision:
     how: virtual
     hardware:
@@ -28,3 +28,21 @@ prepare:
       - python3-gobject-base
 execute:
     how: tmt
+
+/build:
+    summary: Create, grow, mixed sizes, shares, the Cockpit page, a reboot, recovery by hand
+    discover:
+        how: fmf
+        filter: "tag:vm-build"
+
+/failures:
+    summary: A pulled drive, an online swap, the engine killed mid-reshape
+    discover:
+        how: fmf
+        filter: "tag:vm-failures"
+
+/integrity:
+    summary: One drive then two, and silent corruption caught and repaired
+    discover:
+        how: fmf
+        filter: "tag:vm-integrity"
