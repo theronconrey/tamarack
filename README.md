@@ -295,7 +295,9 @@ Three packages come out of it:
   enabled = yes
   ```
 
-  Until the VM test matrix passes, only turn that on in a throwaway VM.
+  Only turn that on in a throwaway VM, or on a test box with drives you
+  are ready to lose: [docs/hardware-testing.md](docs/hardware-testing.md)
+  installs the RPMs from Copr on real hardware and lists the first tests.
 - `tamarack-selinux`: the engine's SELinux policy module, pulled in by
   `tamarack-engine` wherever the targeted policy is installed.
 
