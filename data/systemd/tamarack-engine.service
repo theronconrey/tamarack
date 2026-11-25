@@ -13,7 +13,7 @@ After=udisks2.service upower.service polkit.service
 
 [Service]
 Type=dbus
-BusName=com.borealislogistics.Tamarack1
+BusName=io.github.theronconrey.Tamarack1
 ExecStart=/usr/libexec/tamarack-engine
 
 StateDirectory=tamarack

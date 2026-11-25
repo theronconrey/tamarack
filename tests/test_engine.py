@@ -437,7 +437,7 @@ def test_execute_a_create_plan(tmp_path: Path) -> None:
     e = run_engine(tmp_path)
     plan = e.plan_create(["/dev/sda", "/dev/sdb"])
     action, details = e.authorize_execute(plan.id, plan.digest, opts(plan))
-    assert action == "com.borealislogistics.tamarack.create"
+    assert action == "io.github.theronconrey.tamarack.create"
     assert details == {"kind": "create", "erases": "/dev/sda /dev/sdb"}
     run = e.execute(plan.id, plan.digest, opts(plan))
     assert run.job_id == "1" and e.state == "running"
@@ -510,7 +510,7 @@ def test_changes_need_a_recent_backup(tmp_path: Path) -> None:
     e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb"], clock=clock)
     plan = e.plan_add("/dev/sdc")
     action, _ = e.authorize_execute(plan.id, plan.digest, opts(plan))
-    assert action == "com.borealislogistics.tamarack.add-drive"
+    assert action == "io.github.theronconrey.tamarack.add-drive"
     with pytest.raises(NoRecentBackup):
         e.execute(plan.id, plan.digest, opts(plan))
     e.confirm_backup()
@@ -564,7 +564,7 @@ def test_gate_pauses_for_battery_and_resume_finishes(tmp_path: Path) -> None:
         e.resume_job("1", {})
     battery["on"] = False
     runner.cut = None
-    assert e.authorize_resume("1", {}) == "com.borealislogistics.tamarack.resume"
+    assert e.authorize_resume("1", {}) == "io.github.theronconrey.tamarack.resume"
     report = e.resume_job("1", {}).run()
     assert report.state == "completed"
     e.job_finished("1", report)
@@ -595,7 +595,7 @@ def test_cancel_inside_a_step_is_refused(tmp_path: Path) -> None:
     e.job_finished("1", None)
     with pytest.raises(NotBetweenSteps):
         e.cancel_job("1")
-    assert e.authorize_cancel("1") == "com.borealislogistics.tamarack.cancel"
+    assert e.authorize_cancel("1") == "io.github.theronconrey.tamarack.cancel"
 
 
 def test_reattach_only_picks_up_an_interrupted_wait(tmp_path: Path) -> None:
@@ -836,7 +836,7 @@ def test_snapshot_schedule_defaults_and_changes(tmp_path: Path) -> None:
         }
     )
     wanted = {"hourly": 12, "daily": 14, "weekly": 0, "monthly": 3}
-    assert e.authorize_snapshot_schedule(wanted) == "com.borealislogistics.tamarack.configure"
+    assert e.authorize_snapshot_schedule(wanted) == "io.github.theronconrey.tamarack.configure"
     assert e.set_snapshot_schedule(wanted) == wanted
     assert e.snapshot_schedule == wanted
     assert e.runner.calls[-1] == (  # type: ignore[union-attr]
@@ -1142,7 +1142,7 @@ def test_browse_and_restore_through_the_engine(tmp_path: Path) -> None:
         SNAPPER_INFO.format(num=7, date="2026-11-20 14:00:00", description="timeline")
     )
     (shares / "docs").mkdir()
-    assert e.authorize_restore(7, "docs/plan.txt") == "com.borealislogistics.tamarack.restore"
+    assert e.authorize_restore(7, "docs/plan.txt") == "io.github.theronconrey.tamarack.restore"
     for number, path in ((8, "docs"), (0, "docs"), (7, "../etc")):
         with pytest.raises(InvalidArgument):
             e.authorize_restore(number, path)

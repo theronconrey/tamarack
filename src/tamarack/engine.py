@@ -63,11 +63,11 @@ from .steps import ChangePlan, UnsupportedChange
 T = TypeVar("T")
 log = logging.getLogger("tamarack-engine")
 
-ERROR_PREFIX = "com.borealislogistics.Tamarack1.Error"
+ERROR_PREFIX = "io.github.theronconrey.Tamarack1.Error"
 PLAN_LIFETIME = 30 * 60  # seconds a plan stays executable after it is made
 MAX_PLANS = 16
 BACKUP_MAX_AGE = 7 * 24 * 3600  # a backup older than this is not recent
-POLKIT = "com.borealislogistics.tamarack"
+POLKIT = "io.github.theronconrey.tamarack"
 ACTIONS = {
     PlanKind.CREATE: f"{POLKIT}.create",
     PlanKind.ADD: f"{POLKIT}.add-drive",

@@ -4,12 +4,12 @@
 
      Tamarack storage engine D-Bus API, version 1 (design draft).
      See docs/design/engine.md. Every method carries the polkit action that
-     authorizes it in the com.borealislogistics.Tamarack1.PolkitAction
+     authorizes it in the io.github.theronconrey.Tamarack1.PolkitAction
      annotation; tests check these match the polkit policy file.
 -->
 <node>
-  <!-- /com/borealislogistics/Tamarack1 -->
-  <interface name="com.borealislogistics.Tamarack1.Manager">
+  <!-- /io/github/theronconrey/Tamarack1 -->
+  <interface name="io.github.theronconrey.Tamarack1.Manager">
     <property name="Version" type="s" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
     </property>
@@ -67,56 +67,56 @@
     <property name="ActiveJob" type="o" access="read"/>
 
     <method name="PlanCreate">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.read"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.read"/>
       <arg name="devices" type="as" direction="in"/>
       <arg name="plan" type="o" direction="out"/>
     </method>
     <method name="PlanAdd">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.read"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.read"/>
       <arg name="device" type="s" direction="in"/>
       <arg name="plan" type="o" direction="out"/>
     </method>
     <method name="PlanReplace">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.read"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.read"/>
       <arg name="old_device" type="s" direction="in"/>
       <arg name="new_device" type="s" direction="in"/>
       <arg name="plan" type="o" direction="out"/>
     </method>
     <method name="PlanRebuild">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.read"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.read"/>
       <arg name="failed_device" type="s" direction="in"/>
       <arg name="new_device" type="s" direction="in"/>
       <arg name="plan" type="o" direction="out"/>
     </method>
     <method name="ConfirmBackup">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.confirm-backup"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.confirm-backup"/>
     </method>
     <!-- Create or change an NFS share of shares/NAME. options: "clients" (as,
          required: addresses, networks or host names), "read-only" (b),
          "squash" (s: "root", "all" or "none"), "uid" and "gid" (u: owner of a
          new directory and the anonymous user). NFSv4, sec=sys. -->
     <method name="SetShare">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.share"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.share"/>
       <arg name="name" type="s" direction="in"/>
       <arg name="options" type="a{sv}" direction="in"/>
     </method>
     <!-- Stop exporting a share; its files are kept -->
     <method name="RemoveShare">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.share"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.share"/>
       <arg name="name" type="s" direction="in"/>
     </method>
     <!-- Keys "hourly", "daily", "weekly", "monthly" (all four); all zero
          turns timeline snapshots off. Applied with snapper set-config. -->
     <method name="SetSnapshotSchedule">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.configure"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.configure"/>
       <arg name="schedule" type="a{su}" direction="in"/>
     </method>
 
@@ -126,8 +126,8 @@
          "truncated": true after 5000}. Symlinks are listed, never followed.
          Needs the restore action: snapshots hold every user's files. -->
     <method name="BrowseSnapshot">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.restore"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.restore"/>
       <arg name="number" type="u" direction="in"/>
       <arg name="path" type="s" direction="in"/>
       <arg name="listing" type="s" direction="out"/>
@@ -136,8 +136,8 @@
          to the original, as "name (from 2026-11-20 14.00).ext": nothing is
          ever overwritten. Returns the new path, relative to the shares. -->
     <method name="RestoreFromSnapshot">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.restore"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.restore"/>
       <arg name="number" type="u" direction="in"/>
       <arg name="path" type="s" direction="in"/>
       <arg name="restored" type="s" direction="out"/>
@@ -156,8 +156,8 @@
     </signal>
   </interface>
 
-  <!-- /com/borealislogistics/Tamarack1/Plans/N -->
-  <interface name="com.borealislogistics.Tamarack1.Plan">
+  <!-- /io/github/theronconrey/Tamarack1/Plans/N -->
+  <interface name="io.github.theronconrey.Tamarack1.Plan">
     <!-- "create", "add", "replace" or "rebuild" -->
     <property name="Kind" type="s" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
@@ -187,22 +187,22 @@
 
     <!-- options: "confirm-erase" (as, required), "no-ups" (b) -->
     <method name="Execute">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.create
-                         com.borealislogistics.tamarack.add-drive
-                         com.borealislogistics.tamarack.replace-drive"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.create
+                         io.github.theronconrey.tamarack.add-drive
+                         io.github.theronconrey.tamarack.replace-drive"/>
       <arg name="digest" type="s" direction="in"/>
       <arg name="options" type="a{sv}" direction="in"/>
       <arg name="job" type="o" direction="out"/>
     </method>
     <method name="Discard">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.read"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.read"/>
     </method>
   </interface>
 
-  <!-- /com/borealislogistics/Tamarack1/Jobs/N -->
-  <interface name="com.borealislogistics.Tamarack1.Job">
+  <!-- /io/github/theronconrey/Tamarack1/Jobs/N -->
+  <interface name="io.github.theronconrey.Tamarack1.Job">
     <!-- Digest of the plan this job runs, as reviewed -->
     <property name="Digest" type="s" access="read">
       <annotation name="org.freedesktop.DBus.Property.EmitsChangedSignal" value="const"/>
@@ -228,14 +228,14 @@
     <!-- options: "resolution" (s), "done" or "rerun", for a command that was
          cut off and cannot be checked automatically (see Message) -->
     <method name="Resume">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.resume"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.resume"/>
       <arg name="options" type="a{sv}" direction="in"/>
     </method>
     <!-- Only between steps; a reshape always finishes -->
     <method name="Cancel">
-      <annotation name="com.borealislogistics.Tamarack1.PolkitAction"
-                  value="com.borealislogistics.tamarack.cancel"/>
+      <annotation name="io.github.theronconrey.Tamarack1.PolkitAction"
+                  value="io.github.theronconrey.tamarack.cancel"/>
     </method>
 
     <signal name="StepStarted">

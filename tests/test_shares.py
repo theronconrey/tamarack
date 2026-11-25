@@ -119,7 +119,7 @@ def test_first_share_starts_nfs_and_opens_the_firewall(
 ) -> None:
     e = nfs_engine(tmp_path)
     options = {"clients": ["192.168.1.0/24"], "uid": 1000, "gid": 1000}
-    assert e.authorize_share("media", options) == "com.borealislogistics.tamarack.share"
+    assert e.authorize_share("media", options) == "io.github.theronconrey.tamarack.share"
     share = e.set_share("media", options)
     folder = Path(e.root) / "srv/tamarack/shares/media"
     assert folder.is_dir() and oct(folder.stat().st_mode & 0o7777) == "0o2775"

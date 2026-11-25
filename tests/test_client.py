@@ -80,7 +80,7 @@ def test_engine_refusals_are_plain_messages(h: Harness) -> None:
 
 
 def test_polkit_denial(h: Harness) -> None:
-    h.fakes.denied.add("com.borealislogistics.tamarack.confirm-backup")
+    h.fakes.denied.add("io.github.theronconrey.tamarack.confirm-backup")
     with pytest.raises(client.ClientError, match="not authorized"):
         run(h, ["confirm-backup"])
 
@@ -94,7 +94,7 @@ def test_missing_engine_is_explained(bus: str) -> None:
 
 
 def test_job_paths() -> None:
-    assert client.job_path("3") == "/com/borealislogistics/Tamarack1/Jobs/3"
+    assert client.job_path("3") == "/io/github/theronconrey/Tamarack1/Jobs/3"
     assert client.job_path("/x/Jobs/3") == "/x/Jobs/3"
 
 

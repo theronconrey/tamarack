@@ -21,8 +21,8 @@ import time
 from collections.abc import Callable
 from typing import Any, TextIO
 
-BUS_NAME = "com.borealislogistics.Tamarack1"
-ROOT = "/com/borealislogistics/Tamarack1"
+BUS_NAME = "io.github.theronconrey.Tamarack1"
+ROOT = "/io/github/theronconrey/Tamarack1"
 MANAGER = f"{BUS_NAME}.Manager"
 PLAN = f"{BUS_NAME}.Plan"
 JOB = f"{BUS_NAME}.Job"

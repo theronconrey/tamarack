@@ -110,7 +110,7 @@ dev_read_sysfs(tamarack_engine_t)
 dev_list_all_dev_nodes(tamarack_engine_t)
 dev_getattr_all_blk_files(tamarack_engine_t)
 
-# The system bus: own com.borealislogistics.Tamarack1, talk to polkit,
+# The system bus: own io.github.theronconrey.Tamarack1, talk to polkit,
 # UDisks2, UPower and systemd (systemd-mount).
 dbus_system_bus_client(tamarack_engine_t)
 dbus_connect_system_bus(tamarack_engine_t)

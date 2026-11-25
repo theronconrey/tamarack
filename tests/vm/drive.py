@@ -27,8 +27,8 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib  # noqa: E402
 
-BUS_NAME = "com.borealislogistics.Tamarack1"
-ROOT = "/com/borealislogistics/Tamarack1"
+BUS_NAME = "io.github.theronconrey.Tamarack1"
+ROOT = "/io/github/theronconrey/Tamarack1"
 MANAGER = f"{BUS_NAME}.Manager"
 PLAN = f"{BUS_NAME}.Plan"
 JOB = f"{BUS_NAME}.Job"

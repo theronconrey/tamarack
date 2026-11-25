@@ -15,11 +15,11 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-BUS_NAME = "com.borealislogistics.Tamarack1"
+BUS_NAME = "io.github.theronconrey.Tamarack1"
 API = ROOT / "src" / "tamarack" / f"{BUS_NAME}.xml"
 BUS_POLICY = DATA / "dbus" / f"{BUS_NAME}.conf"
 ACTIVATION = DATA / "dbus" / f"{BUS_NAME}.service"
-POLKIT = DATA / "polkit" / "com.borealislogistics.tamarack.policy"
+POLKIT = DATA / "polkit" / "io.github.theronconrey.tamarack.policy"
 UNIT = DATA / "systemd" / "tamarack-engine.service"
 MODULES = DATA / "modules-load" / "tamarack.conf"
 DESIGN = ROOT / "docs" / "design" / "engine.md"
@@ -89,7 +89,7 @@ def test_destructive_actions_always_ask_for_the_admin_password() -> None:
 
 def test_only_read_is_open_to_everyone() -> None:
     open_actions = [a for a, d in polkit_actions().items() if d["allow_active"] == "yes"]
-    assert open_actions == ["com.borealislogistics.tamarack.read"]
+    assert open_actions == ["io.github.theronconrey.tamarack.read"]
 
 
 def test_bus_policy_covers_every_interface_and_only_root_owns() -> None:
@@ -170,7 +170,7 @@ def test_modules_needed_by_the_engine_load_at_boot() -> None:
 def test_design_doc_lists_every_polkit_action() -> None:
     text = DESIGN.read_text()
     for action_id in polkit_actions():
-        suffix = action_id.removeprefix("com.borealislogistics.")
+        suffix = action_id.removeprefix("io.github.theronconrey.")
         assert f"`…{suffix}`" in text, f"{action_id} missing from the design doc"
 
 
