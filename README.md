@@ -212,7 +212,7 @@ pull request.
 
 The engine is the part that changes disks: a system service,
 `tamarack-engine.service`, on the D-Bus system bus as
-`com.borealislogistics.Tamarack1`. A client (a Cockpit page, later the CLI)
+`io.github.theronconrey.Tamarack1`. A client (a Cockpit page, later the CLI)
 works with it in four steps:
 
 1. **Plan.** `PlanCreate`, `PlanAdd`, `PlanReplace` or `PlanRebuild` returns
@@ -248,7 +248,7 @@ the password prompt when you run it from a terminal, as `systemctl` does.
 
 The design, with the reasoning and the status of each part:
 [docs/design/engine.md](docs/design/engine.md). The interface:
-[`src/tamarack/com.borealislogistics.Tamarack1.xml`](src/tamarack/com.borealislogistics.Tamarack1.xml).
+[`src/tamarack/io.github.theronconrey.Tamarack1.xml`](src/tamarack/io.github.theronconrey.Tamarack1.xml).
 Unit, bus and polkit policy: [`data/`](data/). SELinux policy:
 [`selinux/`](selinux/).
 
@@ -273,7 +273,7 @@ engine by hand on your session bus:
 
 ```sh
 python3 -m tamarack.service --session --state-dir /tmp/tamarack-state &
-busctl --user introspect com.borealislogistics.Tamarack1 /com/borealislogistics/Tamarack1
+busctl --user introspect io.github.theronconrey.Tamarack1 /io/github/theronconrey/Tamarack1
 ```
 
 On the session bus it only plans: execution is never enabled there, and

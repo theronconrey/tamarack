@@ -45,21 +45,24 @@ polkit authorization and a dry run the user has seen.
 
 ## 3. D-Bus API
 
-Bus name **`com.borealislogistics.Tamarack1`** on the system bus: the
-reversed domain borealislogistics.com, which the project's owner controls, as
-the D-Bus specification recommends. The trailing `1` is the API version and
-changes only on incompatible changes. Object paths and polkit action IDs use
-the same prefix (`/com/borealislogistics/Tamarack1`,
-`com.borealislogistics.tamarack.*`). The full interface is in
-[`src/tamarack/com.borealislogistics.Tamarack1.xml`](../../src/tamarack/com.borealislogistics.Tamarack1.xml) (inside the package, so the engine loads the same file it is documented by).
+Bus name **`io.github.theronconrey.Tamarack1`** on the system bus: the
+reversed name of the project's GitHub home, github.com/theronconrey, as the
+D-Bus specification recommends for projects hosted there. It was
+`com.borealislogistics.Tamarack1` until Nov 25, 2026, renamed before the
+first release so that the name stays the project's for good. The trailing
+`1` is the API version, as in `org.freedesktop.systemd1`: an incompatible
+change gets `Tamarack2` alongside, so clients of `Tamarack1` keep working. Object paths and polkit action IDs use
+the same prefix (`/io/github/theronconrey/Tamarack1`,
+`io.github.theronconrey.tamarack.*`). The full interface is in
+[`src/tamarack/io.github.theronconrey.Tamarack1.xml`](../../src/tamarack/io.github.theronconrey.Tamarack1.xml) (inside the package, so the engine loads the same file it is documented by).
 
 Objects:
 
 | Path | Interface | What it is |
 | --- | --- | --- |
-| `/com/borealislogistics/Tamarack1` | `…Tamarack1.Manager` | The box: layout, health, plan factory |
-| `/com/borealislogistics/Tamarack1/Plans/N` | `…Tamarack1.Plan` | One reviewed-but-not-run change |
-| `/com/borealislogistics/Tamarack1/Jobs/N` | `…Tamarack1.Job` | One change being run |
+| `/io/github/theronconrey/Tamarack1` | `…Tamarack1.Manager` | The box: layout, health, plan factory |
+| `/io/github/theronconrey/Tamarack1/Plans/N` | `…Tamarack1.Plan` | One reviewed-but-not-run change |
+| `/io/github/theronconrey/Tamarack1/Jobs/N` | `…Tamarack1.Job` | One change being run |
 
 ### Flow: plan, review, execute
 
@@ -156,7 +159,7 @@ and in the RPM's `%check`.
 ## 4. polkit actions
 
 Defined in
-[`data/polkit/com.borealislogistics.tamarack.policy`](../../data/polkit/com.borealislogistics.tamarack.policy).
+[`data/polkit/io.github.theronconrey.tamarack.policy`](../../data/polkit/io.github.theronconrey.tamarack.policy).
 
 | Action | Used by | Default (any / inactive / active) |
 | --- | --- | --- |

@@ -123,14 +123,14 @@ install -Dpm 0644 data/systemd/tamarack-engine.service \
 install -Dpm 0644 data/systemd/srv-tamarack.mount %{buildroot}%{_unitdir}/srv-tamarack.mount
 install -Dpm 0644 data/systemd/tamarack-scrub.service %{buildroot}%{_unitdir}/tamarack-scrub.service
 install -Dpm 0644 data/systemd/tamarack-scrub.timer %{buildroot}%{_unitdir}/tamarack-scrub.timer
-install -Dpm 0644 data/dbus/com.borealislogistics.Tamarack1.conf \
-    %{buildroot}%{_datadir}/dbus-1/system.d/com.borealislogistics.Tamarack1.conf
-install -Dpm 0644 data/dbus/com.borealislogistics.Tamarack1.service \
-    %{buildroot}%{_datadir}/dbus-1/system-services/com.borealislogistics.Tamarack1.service
-install -Dpm 0644 src/tamarack/com.borealislogistics.Tamarack1.xml \
-    %{buildroot}%{_datadir}/dbus-1/interfaces/com.borealislogistics.Tamarack1.xml
-install -Dpm 0644 data/polkit/com.borealislogistics.tamarack.policy \
-    %{buildroot}%{_datadir}/polkit-1/actions/com.borealislogistics.tamarack.policy
+install -Dpm 0644 data/dbus/io.github.theronconrey.Tamarack1.conf \
+    %{buildroot}%{_datadir}/dbus-1/system.d/io.github.theronconrey.Tamarack1.conf
+install -Dpm 0644 data/dbus/io.github.theronconrey.Tamarack1.service \
+    %{buildroot}%{_datadir}/dbus-1/system-services/io.github.theronconrey.Tamarack1.service
+install -Dpm 0644 src/tamarack/io.github.theronconrey.Tamarack1.xml \
+    %{buildroot}%{_datadir}/dbus-1/interfaces/io.github.theronconrey.Tamarack1.xml
+install -Dpm 0644 data/polkit/io.github.theronconrey.tamarack.policy \
+    %{buildroot}%{_datadir}/polkit-1/actions/io.github.theronconrey.tamarack.policy
 install -Dpm 0644 data/modules-load/tamarack.conf \
     %{buildroot}%{_modulesloaddir}/tamarack.conf
 install -dm 0755 %{buildroot}%{_sysconfdir}/tamarack
@@ -198,10 +198,10 @@ fi
 %{_unitdir}/srv-tamarack.mount
 %{_unitdir}/tamarack-scrub.service
 %{_unitdir}/tamarack-scrub.timer
-%{_datadir}/dbus-1/system.d/com.borealislogistics.Tamarack1.conf
-%{_datadir}/dbus-1/system-services/com.borealislogistics.Tamarack1.service
-%{_datadir}/dbus-1/interfaces/com.borealislogistics.Tamarack1.xml
-%{_datadir}/polkit-1/actions/com.borealislogistics.tamarack.policy
+%{_datadir}/dbus-1/system.d/io.github.theronconrey.Tamarack1.conf
+%{_datadir}/dbus-1/system-services/io.github.theronconrey.Tamarack1.service
+%{_datadir}/dbus-1/interfaces/io.github.theronconrey.Tamarack1.xml
+%{_datadir}/polkit-1/actions/io.github.theronconrey.tamarack.policy
 %{_modulesloaddir}/tamarack.conf
 %{_datadir}/snapper/config-templates/tamarack
 %dir %{_sysconfdir}/nfs.conf.d

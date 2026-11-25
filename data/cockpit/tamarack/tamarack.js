@@ -3,15 +3,15 @@
 // The Tamarack page in Cockpit: the Overview and the Drives, Shares, Snapshots and
 // Activity tabs. The changes it makes so far: shares, the snapshot schedule,
 // restoring from a snapshot, and continuing or cancelling a paused job. It talks only to
-// the engine (com.borealislogistics.Tamarack1 on the system bus) and draws
+// the engine (io.github.theronconrey.Tamarack1 on the system bus) and draws
 // what status.js works out. Every text from the engine goes in with
 // textContent, never as HTML.
 
 /* global cockpit, TamarackStatus */
 "use strict";
 
-const BUS_NAME = "com.borealislogistics.Tamarack1";
-const ROOT = "/com/borealislogistics/Tamarack1";
+const BUS_NAME = "io.github.theronconrey.Tamarack1";
+const ROOT = "/io/github/theronconrey/Tamarack1";
 const MANAGER = BUS_NAME + ".Manager";
 const JOB = BUS_NAME + ".Job";
 
@@ -695,7 +695,7 @@ function drawSummary(model) {
 const client = cockpit.dbus(BUS_NAME, { bus: "system" });
 const manager = client.proxy(MANAGER, ROOT);
 // Changes go through Cockpit's administrative access when it is on; polkit
-// still decides (com.borealislogistics.tamarack.share).
+// still decides (io.github.theronconrey.tamarack.share).
 const admin = cockpit.dbus(BUS_NAME, { bus: "system", superuser: "try" });
 let job = null;
 

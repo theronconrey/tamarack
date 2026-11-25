@@ -46,7 +46,7 @@ from tamarack.service import (  # noqa: E402
 from tamarack.udisks import UDisksDrives  # noqa: E402
 
 TB = 10**12
-ERR = "com.borealislogistics.Tamarack1.Error."
+ERR = "io.github.theronconrey.Tamarack1.Error."
 
 if shutil.which("dbus-daemon") is None and not os.environ.get("TAMARACK_REQUIRE_DBUS_TESTS"):
     pytest.skip("dbus-daemon is not installed", allow_module_level=True)
@@ -466,7 +466,7 @@ def test_execute_runs_the_job_and_records_the_layout(
     # Execute was authorized with the create action, naming the drives.
     assert (
         h.client.get_unique_name(),
-        "com.borealislogistics.tamarack.create",
+        "io.github.theronconrey.tamarack.create",
         {"kind": "create", "erases": "/dev/sda /dev/sdb"},
     ) in h.fakes.checks
 
@@ -485,7 +485,7 @@ def test_execute_refusals(runner_harness: tuple[Harness, FakeRunner]) -> None:
         lambda: execute(h, plan, ["/dev/sda"], **{"no-ups": GLib.Variant("b", False)})
     )
     assert name == ERR + "NoUps"
-    h.fakes.denied.add("com.borealislogistics.tamarack.create")
+    h.fakes.denied.add("io.github.theronconrey.tamarack.create")
     name, _ = error_of(lambda: execute(h, plan, ["/dev/sda"]))
     assert name == "org.freedesktop.DBus.Error.AccessDenied"
     assert runner.calls == []
@@ -537,7 +537,7 @@ def test_pause_resume_and_confirm_backup(bus: str, tmp_path: Path) -> None:
         call(h.client, "ConfirmBackup")
         assert get(h.client, "LastBackupConfirmed") > 0
         assert any(
-            a == "com.borealislogistics.tamarack.confirm-backup" for _, a, _ in h.fakes.checks
+            a == "io.github.theronconrey.tamarack.confirm-backup" for _, a, _ in h.fakes.checks
         )
     finally:
         h.stop()
@@ -610,7 +610,7 @@ def test_snapshot_schedule_over_the_bus(runner_harness: tuple[Harness, FakeRunne
     call(h.client, "SetSnapshotSchedule", GLib.Variant("(a{su})", (schedule,)))
     assert get(h.client, "SnapshotSchedule") == schedule
     assert runner.calls[-1][:4] == ("snapper", "--config", "tamarack", "set-config")
-    assert any(a == "com.borealislogistics.tamarack.configure" for _, a, _ in h.fakes.checks)
+    assert any(a == "io.github.theronconrey.tamarack.configure" for _, a, _ in h.fakes.checks)
     bad = {"hourly": 6}
     name, _ = error_of(
         lambda: call(h.client, "SetSnapshotSchedule", GLib.Variant("(a{su})", (bad,)))
@@ -642,7 +642,7 @@ def test_shares_over_the_bus(bus: str, tmp_path: Path, chowns: list[tuple[str, i
         assert share["path"] == "/srv/tamarack/shares/media" and share["read_only"]
         assert share["security"][0].startswith("sec=sys trusts the user IDs")
         assert (root / "etc/exports.d/tamarack.exports").read_text().count("media") == 1
-        assert any(a == "com.borealislogistics.tamarack.share" for _, a, _ in h.fakes.checks)
+        assert any(a == "io.github.theronconrey.tamarack.share" for _, a, _ in h.fakes.checks)
         bad = {"clients": GLib.Variant("as", ["host(rw)"])}
         name, _ = error_of(lambda: call(h.client, "SetShare", GLib.Variant("(sa{sv})", ("x", bad))))
         assert name == ERR + "InvalidArgument"
@@ -674,12 +674,12 @@ def test_browse_and_restore_over_the_bus(bus: str, tmp_path: Path) -> None:
         assert [e["name"] for e in json.loads(listing)["entries"]] == ["notes.txt"]
         (restored,) = call(h.client, "RestoreFromSnapshot", GLib.Variant("(us)", (3, "notes.txt")))
         assert (root / "srv/tamarack/shares" / restored).read_text() == "v1"
-        assert ("com.borealislogistics.tamarack.restore") in [a for _, a, _ in h.fakes.checks]
+        assert ("io.github.theronconrey.tamarack.restore") in [a for _, a, _ in h.fakes.checks]
         name, _ = error_of(
             lambda: call(h.client, "RestoreFromSnapshot", GLib.Variant("(us)", (3, "gone.txt")))
         )
         assert name == ERR + "InvalidArgument"
-        h.fakes.denied.add("com.borealislogistics.tamarack.restore")
+        h.fakes.denied.add("io.github.theronconrey.tamarack.restore")
         name, _ = error_of(lambda: call(h.client, "BrowseSnapshot", GLib.Variant("(us)", (3, ""))))
         assert name == "org.freedesktop.DBus.Error.AccessDenied"
     finally:

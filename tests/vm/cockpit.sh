@@ -26,8 +26,8 @@ from gi.repository import Gio, GLib
 r = json.load(sys.stdin)
 options = {k: GLib.Variant(v["t"], v["v"]) for k, v in r["options"].items()}
 Gio.bus_get_sync(Gio.BusType.SYSTEM, None).call_sync(
-    "com.borealislogistics.Tamarack1", "/com/borealislogistics/Tamarack1",
-    "com.borealislogistics.Tamarack1.Manager", "SetShare",
+    "io.github.theronconrey.Tamarack1", "/io/github/theronconrey/Tamarack1",
+    "io.github.theronconrey.Tamarack1.Manager", "SetShare",
     GLib.Variant("(sa{sv})", (r["name"], options)), None, 0, 60_000, None)
 '
 }
@@ -50,9 +50,9 @@ gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
 reply = bus.call_sync(
-    "com.borealislogistics.Tamarack1", "/com/borealislogistics/Tamarack1",
+    "io.github.theronconrey.Tamarack1", "/io/github/theronconrey/Tamarack1",
     "org.freedesktop.DBus.Properties", "GetAll",
-    GLib.Variant("(s)", ("com.borealislogistics.Tamarack1.Manager",)),
+    GLib.Variant("(s)", ("io.github.theronconrey.Tamarack1.Manager",)),
     None, 0, 30_000, None)
 print(json.dumps(reply.unpack()[0]))
 PY
@@ -101,8 +101,8 @@ import gi
 gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 Gio.bus_get_sync(Gio.BusType.SYSTEM, None).call_sync(
-    "com.borealislogistics.Tamarack1", "/com/borealislogistics/Tamarack1",
-    "com.borealislogistics.Tamarack1.Manager", "SetSnapshotSchedule",
+    "io.github.theronconrey.Tamarack1", "/io/github/theronconrey/Tamarack1",
+    "io.github.theronconrey.Tamarack1.Manager", "SetSnapshotSchedule",
     GLib.Variant("(a{su})", (json.load(sys.stdin),)), None, 0, 60_000, None)
 ' || fail "the page's schedule request was refused"
 snapper --config tamarack get-config | grep -Eq "^TIMELINE_LIMIT_HOURLY[^0-9]*48[[:space:]]*$" \
@@ -120,12 +120,12 @@ gi.require_version("Gio", "2.0")
 from gi.repository import Gio, GLib
 bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
 def call(method, args, sig):
-    return bus.call_sync("com.borealislogistics.Tamarack1", "/com/borealislogistics/Tamarack1",
-        "com.borealislogistics.Tamarack1.Manager", method, GLib.Variant(sig, args),
+    return bus.call_sync("io.github.theronconrey.Tamarack1", "/io/github/theronconrey/Tamarack1",
+        "io.github.theronconrey.Tamarack1.Manager", method, GLib.Variant(sig, args),
         None, 0, 120_000, None).unpack()
-props = bus.call_sync("com.borealislogistics.Tamarack1", "/com/borealislogistics/Tamarack1",
+props = bus.call_sync("io.github.theronconrey.Tamarack1", "/io/github/theronconrey/Tamarack1",
     "org.freedesktop.DBus.Properties", "Get",
-    GLib.Variant("(ss)", ("com.borealislogistics.Tamarack1.Manager", "Snapshots")),
+    GLib.Variant("(ss)", ("io.github.theronconrey.Tamarack1.Manager", "Snapshots")),
     None, 0, 30_000, None).unpack()[0]
 number = json.loads(props)[0]["number"]
 (listing,) = call("BrowseSnapshot", (number, "test"), "(us)")
@@ -142,8 +142,8 @@ case "$restored" in "test/$victim (from "*")") ;; *) fail "unexpected restored n
 [ ! -e "/srv/tamarack/shares/test/$victim" ] || fail "the restore wrote over the original name"
 
 # Stop sharing: the export goes, the files stay.
-gdbus call --system --dest com.borealislogistics.Tamarack1 --object-path /com/borealislogistics/Tamarack1 \
-    --method com.borealislogistics.Tamarack1.Manager.RemoveShare photos >/dev/null || fail "RemoveShare failed"
+gdbus call --system --dest io.github.theronconrey.Tamarack1 --object-path /io/github/theronconrey/Tamarack1 \
+    --method io.github.theronconrey.Tamarack1.Manager.RemoveShare photos >/dev/null || fail "RemoveShare failed"
 grep -q "/photos " /etc/exports.d/tamarack.exports && fail "photos is still exported"
 [ -d /srv/tamarack/shares/photos ] || fail "stopping a share must keep its folder"
 check_avc

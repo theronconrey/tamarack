@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""The engine on D-Bus: ``com.borealislogistics.Tamarack1`` on the system bus.
+"""The engine on D-Bus: ``io.github.theronconrey.Tamarack1`` on the system bus.
 
 Uses GDBus through PyGObject (Fedora's python3-gobject), with the interface
 definition shipped in this package as the single source of truth: the
@@ -41,8 +41,8 @@ from .engine import ERROR_PREFIX, Engine, EngineError, JobRun, NotSupported, Sto
 from .job import Report
 from .journal import JobState
 
-BUS_NAME = "com.borealislogistics.Tamarack1"
-MANAGER_PATH = "/com/borealislogistics/Tamarack1"
+BUS_NAME = "io.github.theronconrey.Tamarack1"
+MANAGER_PATH = "/io/github/theronconrey/Tamarack1"
 PLANS_PATH = f"{MANAGER_PATH}/Plans"
 JOBS_PATH = f"{MANAGER_PATH}/Jobs"
 MANAGER = f"{BUS_NAME}.Manager"
@@ -50,7 +50,7 @@ PLAN = f"{BUS_NAME}.Plan"
 JOB = f"{BUS_NAME}.Job"
 PROPERTIES = "org.freedesktop.DBus.Properties"
 ACCESS_DENIED = "org.freedesktop.DBus.Error.AccessDenied"
-READ_ACTION = "com.borealislogistics.tamarack.read"
+READ_ACTION = "io.github.theronconrey.tamarack.read"
 # Methods that may take long (a restore copies files): run on a thread.
 BACKGROUND_METHODS = frozenset({"RestoreFromSnapshot"})
 DEFAULT_STATE_DIR = "/var/lib/tamarack"
