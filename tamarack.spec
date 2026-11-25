@@ -133,7 +133,6 @@ install -Dpm 0644 data/polkit/io.github.theronconrey.tamarack.policy \
     %{buildroot}%{_datadir}/polkit-1/actions/io.github.theronconrey.tamarack.policy
 install -Dpm 0644 data/tmpfiles/tamarack.conf %{buildroot}%{_tmpfilesdir}/tamarack.conf
 install -dm 0755 %{buildroot}%{_sysconfdir}/tamarack
-install -Dpm 0644 data/nfs/tamarack.conf %{buildroot}%{_sysconfdir}/nfs.conf.d/tamarack.conf
 install -Dpm 0644 data/snapper/tamarack \
     %{buildroot}%{_datadir}/snapper/config-templates/tamarack
 install -Dpm 0644 selinux/tamarack.pp.bz2 \
@@ -211,8 +210,7 @@ fi
 %{_datadir}/polkit-1/actions/io.github.theronconrey.tamarack.policy
 %{_tmpfilesdir}/tamarack.conf
 %{_datadir}/snapper/config-templates/tamarack
-%dir %{_sysconfdir}/nfs.conf.d
-%config(noreplace) %{_sysconfdir}/nfs.conf.d/tamarack.conf
+%ghost %config(noreplace) %{_sysconfdir}/nfs.conf.d/tamarack.conf
 %dir %{_sysconfdir}/tamarack
 %ghost %config(noreplace) %{_sysconfdir}/integritytab
 

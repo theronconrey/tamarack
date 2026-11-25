@@ -44,6 +44,11 @@ files_config_file(tamarack_etc_t)
 type tamarack_integritytab_t;
 files_config_file(tamarack_integritytab_t)
 
+# /etc/nfs.conf.d/tamarack.conf: empty until the engine makes NFS v4-only
+# at the first share; nfs-utils' daemons read it.
+type tamarack_nfs_conf_t;
+files_config_file(tamarack_nfs_conf_t)
+
 # tamarack-meta: writes the layout record to tk-meta partitions. The only
 # Tamarack code with raw-disk access; it checks the partition label first.
 type tamarack_meta_t;
@@ -92,6 +97,7 @@ files_var_lib_filetrans(tamarack_engine_t, tamarack_var_lib_t, dir)
 
 read_files_pattern(tamarack_engine_t, tamarack_etc_t, tamarack_etc_t)
 rw_files_pattern(tamarack_engine_t, tamarack_integritytab_t, tamarack_integritytab_t)
+rw_files_pattern(tamarack_engine_t, tamarack_nfs_conf_t, tamarack_nfs_conf_t)
 list_dirs_pattern(tamarack_engine_t, tamarack_etc_t, tamarack_etc_t)
 files_read_etc_files(tamarack_engine_t)
 
@@ -293,3 +299,12 @@ dev_list_all_dev_nodes(tamarack_meta_t)
 udev_read_db(tamarack_meta_t)
 storage_raw_read_fixed_disk(tamarack_meta_t)
 storage_raw_write_fixed_disk(tamarack_meta_t)
+
+# nfs-utils reads /etc/nfs.conf.d/*.conf: rpc.nfsd and rpc.mountd (nfsd_t),
+# statd, idmapd and nfsdcld (rpcd_t), gssd (gssd_t).
+optional_policy(`
+	gen_require(`
+		type nfsd_t, rpcd_t, gssd_t;
+	')
+	read_files_pattern({ nfsd_t rpcd_t gssd_t }, tamarack_nfs_conf_t, tamarack_nfs_conf_t)
+')

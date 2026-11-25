@@ -35,6 +35,8 @@ ReadWritePaths=-/etc/lvm/archive -/etc/lvm/backup -/etc/lvm/devices
 ReadWritePaths=-/etc/integritytab
 # The engine writes /etc/exports.d/tamarack.exports for NFS shares.
 ReadWritePaths=-/etc/exports.d
+# And makes NFS v4-only when the first share is made (written in place).
+ReadWritePaths=-/etc/nfs.conf.d/tamarack.conf
 # The volume itself: subvolumes and share folders.
 ReadWritePaths=-/srv/tamarack
 RuntimeDirectory=mdadm lvm lock/lvm cryptsetup

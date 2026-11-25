@@ -623,6 +623,8 @@ def test_shares_over_the_bus(bus: str, tmp_path: Path, chowns: list[tuple[str, i
     state.mkdir()
     (root / "srv" / "tamarack" / "shares").mkdir(parents=True)
     (root / "etc" / "exports.d").mkdir(parents=True)
+    (root / "etc" / "nfs.conf.d").mkdir(parents=True)
+    (root / "etc" / "nfs.conf.d" / "tamarack.conf").write_text("")  # tmpfiles.d
     plan = make_plan(
         [4 * TB, 4 * TB],
         ["/dev/sda", "/dev/sdb"],

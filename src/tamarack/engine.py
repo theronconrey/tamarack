@@ -54,7 +54,7 @@ from .recovery import rule_for
 from .replace import RETIRE_TITLE, plan_replace
 from .restore import RestoreError, list_folder, restore, split_path
 from .review import LEAVE, digest, document, expected_drives
-from .shares import EXPORTS_FILE, Share, ShareError, make_share
+from .shares import EXPORTS_FILE, NFS_CONF_FILE, NFS_V4_ONLY, Share, ShareError, make_share
 from .shares import dump as dump_shares
 from .shares import exports as render_exports
 from .shares import load as load_shares
@@ -1051,11 +1051,13 @@ class Engine:
                 log.warning("%s exited %d: %s", " ".join(argv), result.exit, result.stderr.strip())
             return result
 
+        steps: list[tuple[str, ...]]
         if shares:
-            steps = [
-                ("systemctl", "enable", "--now", NFS_SERVICE),
-                ("systemctl", "reload", NFS_SERVICE),
-            ]
+            steps = [("systemctl", "enable", "--now", NFS_SERVICE)]
+            if self._nfs_v4_only():
+                # vers3 and udp are read when nfsd starts, not on reload.
+                steps.append(("systemctl", "restart", NFS_SERVICE))
+            steps.append(("systemctl", "reload", NFS_SERVICE))
         else:
             steps = [("systemctl", "reload", NFS_SERVICE)]
         for argv in steps:
@@ -1067,8 +1069,8 @@ class Engine:
                     write_atomically(exports_path, previous)
                 run("systemctl", "reload", NFS_SERVICE)
                 raise EngineError(f"nfs-server refused the new exports: {result.stderr.strip()}")
-        # Open or close NFS (port 2049 only: the package makes the server
-        # NFSv4-only) in firewalld, now and after reboots.
+        # Open or close NFS (port 2049 only: the server is NFSv4-only) in
+        # firewalld, now and after reboots.
         change = "--add-service=nfs" if shares else "--remove-service=nfs"
         for argv in (("firewall-cmd", "--permanent", change), ("firewall-cmd", change)):
             try:
@@ -1077,6 +1079,38 @@ class Engine:
                 log.warning("firewalld is not available (%s); open NFS yourself", exc)
                 break
         write_atomically(os.path.join(self.state_dir, SHARES_FILE), dump_shares(shares))
+
+    def keep_nfs_v4_only(self) -> None:
+        """At start: with shares, make sure NFS stays v4-only.
+
+        Packages before 0.1.0 shipped the setting as a config file; on
+        upgrade it is emptied, so put it back. The running nfs-server keeps
+        what it read at its start; the file counts from its next start.
+        """
+        if not self.shares:
+            return
+        try:
+            self._nfs_v4_only()
+        except EngineError as exc:
+            log.warning("%s", exc)
+
+    def _nfs_v4_only(self) -> bool:
+        """Make this machine's NFS server NFSv4-only; True if that changed anything.
+
+        The file exists already (tmpfiles.d) and the engine may only write
+        it in place, as with /etc/integritytab.
+        """
+        path = self._host_path(NFS_CONF_FILE)
+        try:
+            with open(path, encoding="utf-8") as f:
+                if f.read() == NFS_V4_ONLY:
+                    return False
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(NFS_V4_ONLY)
+        except OSError as exc:
+            raise EngineError(f"cannot make NFS v4-only ({path}): {exc.strerror}") from exc
+        log.info("NFS is now v4-only (%s)", NFS_CONF_FILE)
+        return True
 
     def authorize_confirm_backup(self) -> str:
         return f"{POLKIT}.confirm-backup"

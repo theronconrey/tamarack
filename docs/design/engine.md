@@ -307,6 +307,11 @@ rules assemble the arrays from their superblocks, LVM activates the
   is left as it is. Removing a share stops exporting it and keeps the files.
 - **NFSv4 only.** `/etc/nfs.conf.d/tamarack.conf` turns NFSv3 and UDP off,
   so only TCP port 2049 is used and no rpcbind or mountd faces the network.
+  The package only makes the file exist, empty (tmpfiles.d, with its own
+  SELinux label that nfs-utils' daemons may read); the engine writes the
+  setting when the first share is made and restarts nfs-server once, since
+  installing the package must not change the machine's NFS server. With
+  shares, the engine checks it again at every start.
 - **The engine owns the exports file**, `/etc/exports.d/tamarack.exports`,
   rendered from `/var/lib/tamarack/shares.json`. After writing it, the engine
   runs `systemctl enable --now` and `systemctl reload` on
