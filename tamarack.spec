@@ -48,11 +48,11 @@ Requires:       parted
 Requires:       integritysetup
 Requires:       mdadm
 Requires:       lvm2
-Requires:       device-mapper
 Requires:       btrfs-progs
 Requires:       util-linux-core
 Requires:       systemd
-Requires(post): systemd
+# %%posttrans asks the running engine whether a job is running (busctl).
+Requires(posttrans): systemd
 # SMART monitoring (smartd, enabled by Fedora's presets) and the weekly md
 # check (raid-check.timer, from mdadm).
 Requires:       smartmontools
@@ -65,7 +65,6 @@ Recommends:     firewalld
 Recommends:     upower
 # The engine's own SELinux domain, wherever the targeted policy is in use.
 Requires:       (%{name}-selinux if selinux-policy-%{selinuxtype})
-%{?systemd_requires}
 
 %description engine
 The privileged half of Tamarack: a tightly confined systemd service on the
@@ -79,6 +78,7 @@ it on. It is meant for test machines until the VM test matrix passes.
 Summary:        SELinux policy module for the Tamarack storage engine
 Requires:       selinux-policy-%{selinuxtype}
 Requires(post): selinux-policy-%{selinuxtype}
+%{?_selinux_policy_version:Requires: selinux-policy >= %{_selinux_policy_version}}
 %{?selinux_requires}
 
 %description selinux
@@ -131,8 +131,7 @@ install -Dpm 0644 src/tamarack/io.github.theronconrey.Tamarack1.xml \
     %{buildroot}%{_datadir}/dbus-1/interfaces/io.github.theronconrey.Tamarack1.xml
 install -Dpm 0644 data/polkit/io.github.theronconrey.tamarack.policy \
     %{buildroot}%{_datadir}/polkit-1/actions/io.github.theronconrey.tamarack.policy
-install -Dpm 0644 data/modules-load/tamarack.conf \
-    %{buildroot}%{_modulesloaddir}/tamarack.conf
+install -Dpm 0644 data/tmpfiles/tamarack.conf %{buildroot}%{_tmpfilesdir}/tamarack.conf
 install -dm 0755 %{buildroot}%{_sysconfdir}/tamarack
 install -Dpm 0644 data/nfs/tamarack.conf %{buildroot}%{_sysconfdir}/nfs.conf.d/tamarack.conf
 install -Dpm 0644 data/snapper/tamarack \
@@ -152,24 +151,32 @@ install -pm 0644 data/cockpit/tamarack/manifest.json data/cockpit/tamarack/index
 %pytest -o pythonpath=
 
 %post engine
-%systemd_post tamarack-engine.service
-# The engine keeps its lines in /etc/integritytab (the sandbox only lets it
-# write that one file, so the file has to exist).
-if [ ! -e %{_sysconfdir}/integritytab ]; then
-    touch %{_sysconfdir}/integritytab
-    chmod 0644 %{_sysconfdir}/integritytab
-fi
-command -v restorecon >/dev/null && restorecon %{_sysconfdir}/integritytab || :
-# The sandboxed engine cannot load kernel modules, and modules-load.d is
-# only read at boot: load the md personalities and dm-integrity now, so a
-# pool can be made before the first reboot.
-/usr/lib/systemd/systemd-modules-load %{_modulesloaddir}/tamarack.conf || :
+%systemd_post tamarack-engine.service tamarack-scrub.timer srv-tamarack.mount
+%tmpfiles_create %{_tmpfilesdir}/tamarack.conf
 
 %preun engine
-%systemd_preun tamarack-engine.service
+%systemd_preun tamarack-engine.service tamarack-scrub.timer tamarack-scrub.service srv-tamarack.mount
 
 %postun engine
-%systemd_postun_with_restart tamarack-engine.service
+# No restart here: an upgrade must never kill a storage command mid-job
+# (the job would then wait for a person). See %%posttrans.
+%systemd_postun tamarack-engine.service tamarack-scrub.timer tamarack-scrub.service srv-tamarack.mount
+
+%posttrans engine
+# Pick up the new version now only if the engine is running and no job is:
+# idle, or paused waiting for a person (the journal carries the job across a
+# restart). Otherwise it starts the new version after the job, at its next
+# start. Nothing happens in an image build, where nothing runs.
+if systemctl is-active --quiet tamarack-engine.service 2>/dev/null; then
+    state=$(busctl --system get-property io.github.theronconrey.Tamarack1 \
+        /io/github/theronconrey/Tamarack1 io.github.theronconrey.Tamarack1.Manager State 2>/dev/null || :)
+    case "$state" in
+        's "idle"'|'s "paused"')
+            systemctl try-restart tamarack-engine.service >/dev/null 2>&1 || : ;;
+        *)
+            echo "tamarack-engine: a storage job is running; the new version starts after it, at the next restart." >&2 ;;
+    esac
+fi
 
 %pre selinux
 %selinux_relabel_pre -s %{selinuxtype}
@@ -186,7 +193,7 @@ fi
 %selinux_relabel_post -s %{selinuxtype}
 
 %files -f %{pyproject_files}
-%doc README.md CONTRIBUTING.md
+%doc README.md
 %{_bindir}/tamarack
 %{_mandir}/man1/tamarack.1*
 
@@ -202,7 +209,7 @@ fi
 %{_datadir}/dbus-1/system-services/io.github.theronconrey.Tamarack1.service
 %{_datadir}/dbus-1/interfaces/io.github.theronconrey.Tamarack1.xml
 %{_datadir}/polkit-1/actions/io.github.theronconrey.tamarack.policy
-%{_modulesloaddir}/tamarack.conf
+%{_tmpfilesdir}/tamarack.conf
 %{_datadir}/snapper/config-templates/tamarack
 %dir %{_sysconfdir}/nfs.conf.d
 %config(noreplace) %{_sysconfdir}/nfs.conf.d/tamarack.conf
@@ -210,6 +217,7 @@ fi
 %ghost %config(noreplace) %{_sysconfdir}/integritytab
 
 %files selinux
+%license LICENSE
 %{_datadir}/selinux/packages/%{selinuxtype}/tamarack.pp.bz2
 %{_datadir}/selinux/devel/include/distributed/tamarack.if
 %ghost %attr(0644,root,root) %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/tamarack

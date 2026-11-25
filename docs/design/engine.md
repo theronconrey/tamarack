@@ -415,12 +415,13 @@ every plan kind. Details settled while building it:
   `SystemCallArchitectures=native`, `SystemCallFilter=@system-service @raw-io`.
 - `DevicePolicy=closed` with `DeviceAllow=` only for block devices,
   `/dev/mapper/control` and `/dev/md*`.
-- `ProtectKernelModules=yes`: dm-integrity, raid1 and raid456 are loaded at
-  boot from `/usr/lib/modules-load.d/tamarack.conf` instead.
+- `ProtectKernelModules=yes`: dm-integrity, raid1 and raid456 are loaded by
+  systemd's `modprobe@` units, which the engine's unit `Wants=` and starts
+  `After=`, so they load only when the engine runs.
 - Relaxed, each with a comment in the unit: `ProtectKernelTunables=no`
   (mdadm writes md sysfs attributes), `PrivateDevices=no` (raw block
   access), a capability set limited to `CAP_SYS_ADMIN CAP_SYS_RAWIO
-  CAP_MKNOD CAP_DAC_OVERRIDE CAP_CHOWN`.
+  CAP_MKNOD CAP_DAC_OVERRIDE CAP_CHOWN CAP_DAC_READ_SEARCH`.
 
 `systemd-analyze security tamarack-engine.service` runs in CI once the unit
 ships, and every remaining exposure is either fixed or explained.
@@ -429,8 +430,8 @@ ships, and every remaining exposure is either fixed or explained.
 
 - **Packaged** as the `tamarack-engine` subpackage: `/usr/libexec/tamarack-engine`,
   the unit, the bus policy and activation file, the interface XML in
-  `/usr/share/dbus-1/interfaces`, the polkit policy and the modules-load
-  file. It requires the storage tools it runs. CI installs it, runs
+  `/usr/share/dbus-1/interfaces`, the polkit policy and a tmpfiles.d entry
+  that makes an empty `/etc/integritytab`. It requires the storage tools it runs. CI installs it, runs
   `systemd-analyze verify` on the unit and prints `systemd-analyze
   security --offline`.
 - **The real runner** (`tamarack.runner`) runs only allowed programs, resolved
@@ -507,10 +508,14 @@ What the first enforcing VM runs taught us:
   too, so it runs in `lvm_t` like `cryptsetup`; this belongs in
   selinux-policy upstream and should move there.
 - `tamarack-meta` (Python) reads `/etc/passwd` and `/etc/pki` at start-up.
-- `modules-load.d` is only read at boot, and the sandboxed engine cannot load
-  modules, so on a freshly installed box `mdadm --create` failed with no md
-  personality loaded. The package's `%post` now runs `systemd-modules-load`
-  for Tamarack's list.
+- The sandboxed engine cannot load modules, so on a freshly installed box
+  `mdadm --create` failed with no md personality loaded. The unit now pulls
+  in `modprobe@raid456.service` (and raid1, dm_integrity) before it starts;
+  an earlier `%post` running `systemd-modules-load` was dropped, since it
+  did nothing in image builds and loaded raid modules at every boot.
+- **Upgrades don't restart a busy engine.** `%postun` doesn't restart it
+  (a killed storage command would leave the job waiting for a person);
+  `%posttrans` asks it over D-Bus and restarts it only when idle or paused.
 - On Fedora 45, writing md_mod's `new_array` fails and `mdadm --create` falls
   back to making `/dev/mdN` itself with `mknod`. `DevicePolicy=closed` with
   `DeviceAllow=block-md rw` refused that, so md arrays now get `rwm`; the

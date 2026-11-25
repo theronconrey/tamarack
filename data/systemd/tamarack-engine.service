@@ -10,6 +10,10 @@ Description=Tamarack storage engine
 Documentation=man:tamarack(1) https://github.com/theronconrey/tamarack
 Wants=udisks2.service upower.service
 After=udisks2.service upower.service polkit.service
+# The sandbox can't load kernel modules (ProtectKernelModules=yes), so the md
+# personalities and dm-integrity are loaded before the engine starts.
+Wants=modprobe@dm_integrity.service modprobe@raid1.service modprobe@raid456.service
+After=modprobe@dm_integrity.service modprobe@raid1.service modprobe@raid456.service
 
 [Service]
 Type=dbus

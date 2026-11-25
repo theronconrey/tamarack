@@ -21,7 +21,7 @@ BUS_POLICY = DATA / "dbus" / f"{BUS_NAME}.conf"
 ACTIVATION = DATA / "dbus" / f"{BUS_NAME}.service"
 POLKIT = DATA / "polkit" / "io.github.theronconrey.tamarack.policy"
 UNIT = DATA / "systemd" / "tamarack-engine.service"
-MODULES = DATA / "modules-load" / "tamarack.conf"
+TMPFILES = DATA / "tmpfiles" / "tamarack.conf"
 DESIGN = ROOT / "docs" / "design" / "engine.md"
 ANNOTATION = f"{BUS_NAME}.PolkitAction"
 
@@ -158,13 +158,23 @@ def test_capabilities_are_bounded() -> None:
     ]
 
 
-def test_modules_needed_by_the_engine_load_at_boot() -> None:
-    modules = {
-        line.strip()
-        for line in MODULES.read_text().splitlines()
+def test_modules_the_engine_needs_load_before_it_starts() -> None:
+    # Through systemd's modprobe@ units, not a modules-load.d file that would
+    # load them at every boot on any machine with the package installed.
+    settings = unit_settings()
+    wanted = {m for line in settings["Wants"] for m in line.split()}
+    after = {m for line in settings["After"] for m in line.split()}
+    needed = {f"modprobe@{m}.service" for m in ("dm_integrity", "raid1", "raid456")}
+    assert needed <= wanted and needed <= after
+
+
+def test_integritytab_is_made_by_tmpfiles() -> None:
+    lines = [
+        line.split()
+        for line in TMPFILES.read_text().splitlines()
         if line.strip() and not line.startswith("#")
-    }
-    assert modules == {"dm_integrity", "raid1", "raid456"}
+    ]
+    assert ["f", "/etc/integritytab", "0644", "root", "root", "-"] in lines
 
 
 def test_design_doc_lists_every_polkit_action() -> None:
