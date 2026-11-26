@@ -3,7 +3,10 @@
 # Every test is tagged vm and with the group (plans/storage.fmf) whose VM it
 # runs in. Groups are balanced by run time, so the three VMs finish together.
 tag: [vm]
-duration: 45m  # first syncs and reshapes of 3 GB RAID5 layers take ~5 min each
+# 45m by default (first syncs and reshapes of 3 GB RAID5 layers take ~5 min
+# each); short tests get less, so a VM that gets stuck costs minutes, not
+# hours (each limit is about 3x the test's usual time).
+duration: 45m
 require:
   - kernel-modules-extra  # scsi_debug
   - audit
@@ -43,16 +46,19 @@ require:
     test: ./interrupt.sh
 
 /recover-by-hand:
+    duration: 15m
     tag+: [vm-build]
     summary: Stock tools alone bring the volume back
     test: ./recover-by-hand.sh
 
 /mixed:
+    duration: 40m
     tag+: [vm-build]
     summary: Mixed sizes, leftover space paired later
     test: ./mixed.sh
 
 /nfs:
+    duration: 15m
     tag+: [vm-build]
     summary: Shares over NFSv4, squashing, read-only
     test: ./nfs.sh
@@ -65,11 +71,13 @@ require:
     test: ./ppl-cost.sh
 
 /cockpit:
+    duration: 15m
     tag+: [vm-build]
     summary: The Cockpit page reads a real pool as an ordinary user
     test: ./cockpit.sh
 
 /reboot:
+    duration: 20m
     tag+: [vm-build]
     summary: The pool comes back by itself after a reboot
     test: ./reboot.sh

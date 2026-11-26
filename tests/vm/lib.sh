@@ -248,30 +248,45 @@ cleanup() {  # [status]
     local status=${1:-$?}
     set +e
     diagnostics "$status"
-    systemctl stop tamarack-engine 2>/dev/null || :
-    systemctl disable --now srv-tamarack.mount 2>/dev/null || :
-    umount /mnt/rescue 2>/dev/null || :
-    while mountpoint -q /srv/tamarack; do umount /srv/tamarack || break; done
+    # Every teardown command gets a time limit: a storage command stuck in
+    # the kernel (D state) after a failed or killed test would otherwise
+    # hang this cleanup, and every later test in the same VM behind it.
+    local t="timeout 120"
+    $t systemctl stop tamarack-engine 2>/dev/null || :
+    $t systemctl disable --now srv-tamarack.mount 2>/dev/null || :
+    $t umount /mnt/rescue 2>/dev/null || :
+    while mountpoint -q /srv/tamarack; do $t umount /srv/tamarack || break; done
     # Take the stack down from the top. The VG may not be in the host's LVM
     # devices file, so remove its dm devices directly as well.
-    vgchange -an tamarack 2>/dev/null || :
+    $t vgchange -an tamarack 2>/dev/null || :
     for m in /dev/mapper/tamarack-*; do
-        if [ -e "$m" ]; then dmsetup remove --retry "$(basename "$m")" || :; fi
+        if [ -e "$m" ]; then $t dmsetup remove --retry "$(basename "$m")" || :; fi
     done
     for md in /dev/md/tk-* /dev/md/rescue* /dev/md12[0-7]; do
-        if [ -e "$md" ]; then mdadm --stop "$md" >/dev/null 2>&1 || :; fi
+        if [ -e "$md" ]; then $t mdadm --stop "$md" >/dev/null 2>&1 || :; fi
     done
-    mdadm --stop --scan 2>/dev/null || :
+    $t mdadm --stop --scan 2>/dev/null || :
     for m in /dev/mapper/tk-* /dev/mapper/rescue-*; do
-        if [ -e "$m" ]; then integritysetup close "$(basename "$m")" || :; fi
+        if [ -e "$m" ]; then $t integritysetup close "$(basename "$m")" || :; fi
     done
+    if dmsetup ls 2>/dev/null | grep -Eq '^(tamarack-|tk-|rescue-)'; then
+        # Something didn't come down: say what the kernel is stuck on.
+        echo "WARNING: storage devices are still up after cleanup; blocked tasks:" >&2
+        echo w > /proc/sysrq-trigger 2>/dev/null || :
+        journalctl -k -b --no-pager 2>/dev/null | tail -200 >&2 || :
+    fi
+    # NFS back to how a fresh install has it, so no test depends on which
+    # ran before it (and nfs.sh exercises the first-share restart).
+    $t systemctl disable --now nfs-server 2>/dev/null || :
+    rm -f /etc/exports.d/tamarack.exports
+    if [ -e /etc/nfs.conf.d/tamarack.conf ]; then : > /etc/nfs.conf.d/tamarack.conf; fi
     # Wipe the test drives, so a job that failed half way (partitions but
     # no layout record) cannot make the engine refuse the next test. Only
     # the drives this test made: scsi_debug and tk-test-* LIO disks.
     for d in "${DRIVES[@]:-}"; do
-        [ -b "$d" ] && wipefs --all --force "$d"?* "$d" >/dev/null 2>&1 || :
+        [ -b "$d" ] && $t wipefs --all --force "$d"?* "$d" >/dev/null 2>&1 || :
     done
-    udevadm settle
+    $t udevadm settle
     if lsmod | grep -q '^scsi_debug ' && ! modprobe -r scsi_debug; then
         echo "WARNING: scsi_debug is still in use; the next test may see these drives" >&2
         dmsetup ls >&2 || :
