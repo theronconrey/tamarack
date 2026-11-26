@@ -229,6 +229,9 @@ class Service:
             Gio.DBusSignalFlags.NONE,
             self._udisks_changed,
         )
+        # A pool drive that came up after boot opened the pool (late, or
+        # re-seated while the engine wasn't running) is caught here.
+        self._readd_returning()
 
     def _udisks_changed(self, *_: Any) -> None:
         from gi.repository import GLib
@@ -263,7 +266,18 @@ class Service:
                 )
         self._manager_changed("Candidates")
         self.check_health()  # a pulled pool drive shows as missing now, not in a minute
+        self._readd_returning()
         return False  # GLib.SOURCE_REMOVE
+
+    def _readd_returning(self) -> None:
+        """A pool drive that came back is put back in its layers (no question asked)."""
+        try:
+            run = self.engine.readd_returning()
+        except Exception:
+            log.exception("re-adding a returning drive failed to start")
+            return
+        if run is not None:
+            self._launch(run)
 
     def close(self) -> None:
 
@@ -805,8 +819,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     engine.sync_boot()
     engine.keep_nfs_v4_only()
+    service.start_reattached()  # an interrupted job first: it may need the drives
     service.watch_drives()
-    service.start_reattached()
     loop = GLib.MainLoop()
     GLib.timeout_add_seconds(30, service.sync_objects)
     service.check_health()

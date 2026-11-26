@@ -30,6 +30,12 @@ require:
     summary: Swap a working drive while online
     test: ./replace.sh
 
+/returning:
+    tag+: [vm-failures]
+    summary: A pulled drive that comes back is put back by itself
+    test: ./returning.sh
+    duration: 20m
+
 /failed:
     tag+: [vm-failures]
     summary: Rebuild after a drive disappears

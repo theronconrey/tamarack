@@ -35,6 +35,7 @@ class PlanKind(StrEnum):
     ADD = "add"  # add one drive
     REPLACE = "replace"  # swap a working drive for another
     REBUILD = "rebuild"  # swap a failed drive for another
+    READD = "readd"  # a pool drive that came back; the engine starts it itself
 
 
 @dataclass(frozen=True)

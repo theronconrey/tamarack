@@ -37,7 +37,7 @@ from .boot import INTEGRITYTAB, BootError
 from .boot import lines as boot_lines
 from .boot import members as boot_members
 from .boot import merge as merge_integritytab
-from .commands import MOUNT_POINT, SHARES, build_steps
+from .commands import MOUNT_POINT, SHARES, build_steps, integrity_device_name
 from .grow import plan_add_drive
 from .identity import DriveChanged as IdentityChanged
 from .identity import verify
@@ -49,6 +49,7 @@ from .meta import compact
 from .model import Plan, PlanKind
 from .ops import Command
 from .planner import make_plan
+from .readd import plan_readd
 from .recovery import Resume as RecoveryResume
 from .recovery import rule_for
 from .replace import RETIRE_TITLE, plan_replace
@@ -73,6 +74,9 @@ ACTIONS = {
     PlanKind.ADD: f"{POLKIT}.add-drive",
     PlanKind.REPLACE: f"{POLKIT}.replace-drive",
     PlanKind.REBUILD: f"{POLKIT}.replace-drive",
+    # Started by the engine itself, never through Execute; listed so every
+    # kind names an action.
+    PlanKind.READD: f"{POLKIT}.replace-drive",
 }
 NEEDS_BACKUP = {PlanKind.ADD, PlanKind.REPLACE, PlanKind.REBUILD}
 LAYOUT_FILE = "layout.json"
@@ -766,6 +770,99 @@ class Engine:
             lambda: plan_replace(layout, failed_device, info.size, info.device, True, info.identity)
         )
         return self._store_change(change, warnings)
+
+    # --- a pool drive that comes back ---------------------------------------------
+
+    def _md_members(self, layer: int) -> set[str]:
+        """device-mapper names of the members md has in layer ``layer`` now."""
+        link = os.path.join(self.root, "dev", "md", f"tk-l{layer}")
+        md = os.path.basename(os.path.realpath(link))
+        base = os.path.join(self.root, "sys", "block", md, "md")
+        names: set[str] = set()
+        try:
+            entries = [e for e in os.listdir(base) if e.startswith("dev-")]
+        except OSError:
+            return names
+        for entry in entries:
+            block = os.path.basename(os.path.realpath(os.path.join(base, entry, "block")))
+            try:
+                with open(os.path.join(self.root, "sys", "block", block, "dm", "name")) as f:
+                    names.add(f.read().strip())
+            except OSError:
+                continue
+        return names
+
+    def returning_drive(self) -> tuple[int, str, list[tuple[int, int]]] | None:
+        """A pool drive that is attached again but missing from its layers.
+
+        (drive index, its path now, [(partition, layer)] md doesn't have), or
+        None. Found by identity, so a new /dev name doesn't matter; only when
+        the drive's own members are what the degraded layers lack.
+        """
+        layout = self._layout
+        if layout is None or self._running or self.unfinished_jobs():
+            return None
+        degraded = set(self.degraded_layers())
+        if not degraded:
+            return None
+        try:
+            verdicts = self.drives.classify(None)
+        except EngineError:
+            return None
+        where: dict[str, list[str]] = {}
+        for device, verdict in verdicts.items():
+            if verdict.get("identity"):
+                where.setdefault(verdict["identity"], []).append(device)
+        for index, disk in enumerate(layout.drives):
+            paths = where.get(disk.identity, [])
+            if len(paths) != 1:
+                continue  # not attached, or the same identity twice: leave it alone
+            missing = [
+                (m.partition, layer.index)
+                for layer in layout.layers
+                if layer.index in degraded
+                for m in layer.members
+                if m.drive == index
+                and integrity_device_name(index, m.partition) not in self._md_members(layer.index)
+            ]
+            if missing:
+                return index, paths[0], missing
+        return None
+
+    def readd_returning(self) -> JobRun | None:
+        """Start re-adding a returning pool drive, if there is one.
+
+        Decided Nov 24, 2026: no question asked, since nothing is erased.
+        Still only with execution on, no other job, the drive's identity
+        checked again before every step, and not on battery.
+        """
+        if self.runner is None:
+            return None
+        found = self.returning_drive()
+        if found is None:
+            return None
+        index, device, missing = found
+        layout = self._layout
+        assert layout is not None
+        if self.on_battery:
+            log.info("%s is back, but the UPS is on battery: not re-adding it now", device)
+            return None
+        change = plan_readd(layout, index, device, missing)
+        doc = document(change)
+        with self._lock:
+            if self._running:
+                return None
+            job_id = self._new_job_id()
+            path = self._journal(job_id)
+            self._running = job_id
+            self._session_jobs.add(job_id)
+        runner = self.runner
+        log.info("%s is a pool drive that came back: re-adding it (job %s)", device, job_id)
+
+        def work(observer: Observer | None) -> Report:
+            return start(doc, job_id, path, runner, self._gate(job_id, doc), observer=observer)
+
+        return JobRun(self, job_id, work)
 
     # --- executing -----------------------------------------------------------
 
