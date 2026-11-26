@@ -736,6 +736,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         log.error("%s", exc)
         return 1
     engine.sync_boot()
+    engine.keep_nfs_v4_only()
     service.start_reattached()
     loop = GLib.MainLoop()
     GLib.timeout_add_seconds(30, service.sync_objects)

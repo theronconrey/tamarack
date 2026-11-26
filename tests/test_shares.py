@@ -11,7 +11,7 @@ import pytest
 from fake_runner import FakeRunner
 from test_engine import run_engine
 
-from tamarack.engine import Busy, InvalidArgument, NoLayout, NotSupported
+from tamarack.engine import Busy, EngineError, InvalidArgument, NoLayout, NotSupported
 from tamarack.job import Result
 from tamarack.shares import (
     SEC_SYS_NOTE,
@@ -111,6 +111,8 @@ def nfs_engine(tmp_path: Path, runner: Any = None) -> Any:
     root = Path(e.root)
     (root / "srv" / "tamarack" / "shares").mkdir(parents=True)
     (root / "etc" / "exports.d").mkdir(parents=True)
+    (root / "etc" / "nfs.conf.d").mkdir(parents=True)
+    (root / "etc" / "nfs.conf.d" / "tamarack.conf").write_text("")  # as tmpfiles.d makes it
     return e
 
 
@@ -128,11 +130,26 @@ def test_first_share_starts_nfs_and_opens_the_firewall(
     assert "/srv/tamarack/shares/media 192.168.1.0/24(rw," in exported
     assert e.runner.calls == [
         ("systemctl", "enable", "--now", "nfs-server.service"),
+        ("systemctl", "restart", "nfs-server.service"),  # NFSv4-only takes a restart
         ("systemctl", "reload", "nfs-server.service"),
         ("firewall-cmd", "--permanent", "--add-service=nfs"),
         ("firewall-cmd", "--add-service=nfs"),
     ]
     assert e.shares == [share]
+    conf = (Path(e.root) / "etc/nfs.conf.d/tamarack.conf").read_text()
+    assert "vers3=n" in conf and "udp=n" in conf
+    # The second share finds NFS v4-only already: no restart.
+    e.runner.calls.clear()
+    e.set_share("docs", {"clients": ["192.168.1.0/24"]})
+    assert ("systemctl", "restart", "nfs-server.service") not in e.runner.calls
+
+
+def test_nothing_changes_nfs_until_the_first_share(tmp_path: Path) -> None:
+    e = nfs_engine(tmp_path)
+    assert (Path(e.root) / "etc/nfs.conf.d/tamarack.conf").read_text() == ""
+    (Path(e.root) / "etc/nfs.conf.d/tamarack.conf").unlink()  # tmpfiles.d never ran
+    with pytest.raises(EngineError, match="cannot make NFS v4-only"):
+        e.set_share("media", {"clients": ["192.168.1.0/24"]})
 
 
 def test_removing_the_last_share_keeps_files_and_closes_the_firewall(tmp_path: Path) -> None:
@@ -212,3 +229,14 @@ def test_cockpit_page_uses_the_same_trust_notes() -> None:
     wide = make_share("wide", {"clients": ["*"], "read-only": True})
     for note in wide.security() + make_share("n", {"clients": ["192.0.2.1"]}).security():
         assert note in joined, note
+
+
+def test_the_engine_keeps_nfs_v4_only_at_start(tmp_path: Path) -> None:
+    e = nfs_engine(tmp_path)
+    conf = Path(e.root) / "etc/nfs.conf.d/tamarack.conf"
+    e.keep_nfs_v4_only()
+    assert conf.read_text() == ""  # no shares: NFS left as the machine has it
+    e.set_share("media", {"clients": ["192.168.1.0/24"]})
+    conf.write_text("")  # an upgrade from a package that owned the file
+    e.keep_nfs_v4_only()
+    assert "vers3=n" in conf.read_text()

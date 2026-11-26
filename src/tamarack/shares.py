@@ -24,6 +24,19 @@ from typing import Any
 from .commands import SHARES
 
 EXPORTS_FILE = "/etc/exports.d/tamarack.exports"
+# Written by the engine when the first share is made, never on install: it
+# changes the whole machine's NFS server. The package only makes the file
+# exist, empty (tmpfiles.d), with its own SELinux label.
+NFS_CONF_FILE = "/etc/nfs.conf.d/tamarack.conf"
+NFS_V4_ONLY = """\
+# Written by the Tamarack engine when the first share was made. Tamarack
+# shares over NFSv4 only: one TCP port (2049) for firewalld to open, and no
+# rpcbind or mountd on the network. Empty this file to allow NFSv3 again.
+
+[nfsd]
+vers3=n
+udp=n
+"""
 _NAME = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 # Host names and NFS wildcards (*.lan); nothing that could close or add options.
 _HOST = re.compile(r"[A-Za-z0-9*?]([A-Za-z0-9*?.-]{0,252})")

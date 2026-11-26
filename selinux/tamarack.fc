@@ -8,6 +8,7 @@
 /var/lib/tamarack(/.*)?		gen_context(system_u:object_r:tamarack_var_lib_t,s0)
 /etc/tamarack(/.*)?		gen_context(system_u:object_r:tamarack_etc_t,s0)
 /etc/integritytab	--	gen_context(system_u:object_r:tamarack_integritytab_t,s0)
+/etc/nfs\.conf\.d/tamarack\.conf	--	gen_context(system_u:object_r:tamarack_nfs_conf_t,s0)
 # Fedora's policy labels cryptsetup lvm_exec_t but leaves integritysetup,
 # from the same project and doing the same job, as bin_t, so it would run
 # unconfined in the engine's domain and the engine would need raw access
