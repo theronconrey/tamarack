@@ -393,3 +393,46 @@ test("a restore says where the copy went", () => {
         "Restored as “notes (from 2026-11-20 14.00).txt” in photos, next to the original. Nothing was overwritten.");
     assert.match(S.restoredMessage("top (from 2026-11-20 14.00).txt"), /at the top of your shares/);
 });
+
+// --- drives coming and going ----------------------------------------------------------
+
+function candidates(extra = []) {
+    const pool = ["/dev/sda", "/dev/sdb", "/dev/sdc", "/dev/sdd"].map(device => ({ device, verdict: "pool" }));
+    return JSON.stringify(pool.concat(extra));
+}
+
+test("a new drive that may join gets the banner when nothing else is wrong", () => {
+    const fresh = { device: "/dev/sde", verdict: "suggest", size: 8 * TB, model: "WDC WD80", serial: "WD-ABCD1234", warnings: [], reasons: [] };
+    const b = S.banner(S.read(props({ Candidates: candidates([fresh]) })));
+    assert.equal(b.title, "A new 8 TB drive is ready");
+    assert.match(b.text, /tamarack engine add \/dev\/sde/);
+    const usb = { device: "/dev/sdf", verdict: "refuse", size: 1 * TB, reasons: ["it is connected by USB, which can drop out"] };
+    assert.equal(S.banner(S.read(props({ Candidates: candidates([usb]) }))).title, "Your data is protected");
+});
+
+test("a failed drive with a big enough new one says how to rebuild onto it", () => {
+    const fresh = { device: "/dev/sde", verdict: "suggest", size: 8 * TB };
+    const b = S.banner(S.read(props({
+        Health: health("degraded", { "/dev/sdc": "missing" }),
+        Candidates: candidates([fresh]),
+    })));
+    assert.equal(b.tone, "danger");
+    assert.match(b.text, /tamarack engine rebuild \/dev\/sdc \/dev\/sde/);
+    const small = { device: "/dev/sde", verdict: "suggest", size: 2 * TB };
+    const c = S.banner(S.read(props({
+        Health: health("degraded", { "/dev/sdc": "missing" }),
+        Candidates: candidates([small]),
+    })));
+    assert.match(c.text, /Replace it with a drive of 4 TB or more/);
+});
+
+test("other drives say whether they can be used, and why not", () => {
+    const rows = S.otherDrives(S.read(props({ Candidates: candidates([
+        { device: "/dev/sde", verdict: "warn", size: 2e12, model: "ST2000", serial: "Z1Z2Z3Z4", warnings: ["/dev/sde holds a 2.00 TB NTFS drive; joining the pool erases it"] },
+        { device: "/dev/sdf", verdict: "refuse", size: 64e9, model: "Flash", serial: "", reasons: ["it is connected by USB"] },
+    ]) })));
+    assert.deepEqual(rows.map(r => [r.stateText, r.name, r.lines[0]]), [
+        ["Can be added", "ST2000, serial …Z3Z4", "/dev/sde holds a 2.00 TB NTFS drive; joining the pool erases it"],
+        ["Can't be used", "Flash", "It is connected by USB."],
+    ]);
+});

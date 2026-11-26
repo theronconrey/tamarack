@@ -290,6 +290,7 @@ h3 { margin: 0; font-size: 17px; font-family: "Red Hat Display", "RedHatDisplay"
 .tk-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .tk-file { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 8px 0; border-top: 1px solid var(--tk-line); min-height: 44px; }
 .tk-file-name { flex: 1 1 220px; overflow-wrap: anywhere; text-align: left; }
+.tk-file-note { flex: 1 1 100%; margin: 0; }
 .tk-ok-text { color: var(--tk-ok-text); font-weight: 500; margin: 0; }
 .tk-confirm { border-top: 1px solid var(--tk-line); padding-top: 14px; display: flex; flex-direction: column; gap: 10px; }
 .tk-confirm p { margin: 0; }

@@ -80,6 +80,14 @@ one click away.
   any space waiting for a partner drive. From the engine's `Drives`
   property (UDisks2 data).
 
+**Other drives** (built): drives that are connected but not in the pool,
+each with what the engine made of it: "Ready to add", "Can be added" with
+its warnings (existing data in words), or "Can't be used" with the reason.
+A drive that may join brings a banner when nothing more urgent is showing;
+with a drive missing, the failed-drive banner says how to rebuild onto a
+new one that is large enough. Adding is still a command until the guided
+flow exists.
+
 ## Shares (built)
 
 One card per share: whether clients can change files, the "ways to open"

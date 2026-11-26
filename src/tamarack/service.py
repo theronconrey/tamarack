@@ -51,6 +51,9 @@ JOB = f"{BUS_NAME}.Job"
 PROPERTIES = "org.freedesktop.DBus.Properties"
 ACCESS_DENIED = "org.freedesktop.DBus.Error.AccessDenied"
 READ_ACTION = "io.github.theronconrey.tamarack.read"
+UDISKS_NAME = "org.freedesktop.UDisks2"
+UDISKS_ROOT = "/org/freedesktop/UDisks2"
+DRIVES_SETTLE_MS = 1500  # after the last UDisks2 change, look at the drives
 # Methods that may take long (a restore copies files): run on a thread.
 BACKGROUND_METHODS = frozenset({"RestoreFromSnapshot"})
 DEFAULT_STATE_DIR = "/var/lib/tamarack"
@@ -168,6 +171,9 @@ class Service:
         self._last_space: dict[str, int] | None = None
         self._last_drives: list[dict[str, Any]] | None = None
         self._last_snapshots: list[dict[str, Any]] | None = None
+        self._last_candidates: dict[str, dict[str, Any]] | None = None
+        self._drives_timer = 0
+        self._udisks_watch = 0
         self.sync_objects()
 
     # --- bus plumbing --------------------------------------------------------
@@ -206,7 +212,69 @@ class Service:
                 )
         return True  # keep the GLib timeout running
 
+    # --- drives coming and going -----------------------------------------------
+
+    def watch_drives(self) -> None:
+        """Follow UDisks2: a drive plugged in or pulled updates Candidates and
+        Health at once, and a new drive is announced with DriveAppeared."""
+        from gi.repository import Gio
+
+        self._last_candidates = {c["device"]: c for c in self.engine.candidates()}
+        self._udisks_watch = self.connection.signal_subscribe(
+            UDISKS_NAME,
+            "org.freedesktop.DBus.ObjectManager",
+            None,  # InterfacesAdded and InterfacesRemoved
+            UDISKS_ROOT,
+            None,
+            Gio.DBusSignalFlags.NONE,
+            self._udisks_changed,
+        )
+
+    def _udisks_changed(self, *_: Any) -> None:
+        from gi.repository import GLib
+
+        # A drive arrives as a burst of objects (drive, block, partitions):
+        # wait for it to settle, then look once.
+        if not self._drives_timer:
+            source = GLib.timeout_source_new(DRIVES_SETTLE_MS)
+            source.set_callback(lambda *_: self._drives_settled())
+            self._drives_timer = source.attach(self.context)
+
+    def _drives_settled(self) -> bool:
+        self._drives_timer = 0
+        try:
+            candidates = {c["device"]: c for c in self.engine.candidates()}
+        except Exception:
+            log.exception("looking at the drives failed")
+            return False
+        before, self._last_candidates = self._last_candidates or {}, candidates
+        for device, candidate in sorted(candidates.items()):
+            old = before.get(device)
+            if candidate["verdict"] == "pool":
+                continue
+            if old is None or old.get("identity") != candidate.get("identity"):
+                log.info("drive %s appeared (%s)", device, candidate["verdict"])
+                self._emit(
+                    MANAGER_PATH,
+                    MANAGER,
+                    "DriveAppeared",
+                    "(ss)",
+                    (device, json.dumps(candidate, sort_keys=True)),
+                )
+        self._manager_changed("Candidates")
+        self.check_health()  # a pulled pool drive shows as missing now, not in a minute
+        return False  # GLib.SOURCE_REMOVE
+
     def close(self) -> None:
+
+        if self._udisks_watch:
+            self.connection.signal_unsubscribe(self._udisks_watch)
+            self._udisks_watch = 0
+        if self._drives_timer:
+            source = self.context.find_source_by_id(self._drives_timer)
+            if source is not None:
+                source.destroy()
+            self._drives_timer = 0
         for thread in self._threads:
             thread.join()
         for registration in [self._manager, *self._plans.values(), *self._jobs.values()]:
@@ -737,6 +805,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
     engine.sync_boot()
     engine.keep_nfs_v4_only()
+    service.watch_drives()
     service.start_reattached()
     loop = GLib.MainLoop()
     GLib.timeout_add_seconds(30, service.sync_objects)

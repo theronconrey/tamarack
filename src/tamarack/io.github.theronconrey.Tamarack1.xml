@@ -149,6 +149,13 @@
     <signal name="ArrayDegraded">
       <arg name="layer" type="u"/>
     </signal>
+    <!-- A drive that is not in the pool was plugged in (or appeared at
+         boot after the engine started). CANDIDATE is its entry from
+         Candidates, as JSON: whether it may join, and why not. -->
+    <signal name="DriveAppeared">
+      <arg name="device" type="s"/>
+      <arg name="candidate" type="s"/>
+    </signal>
     <!-- A drive in the pool started failing SMART checks or disappeared -->
     <signal name="DriveFailing">
       <arg name="device" type="s"/>
