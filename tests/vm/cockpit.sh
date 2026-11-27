@@ -163,9 +163,24 @@ done
 kill "$monitor" 2>/dev/null || :
 grep -q "DriveAppeared ('$plugged'" "$monitor_log" \
     || { cat "$monitor_log" >&2; fail "plugging in $plugged was not announced"; }
-gdbus call --system --dest io.github.theronconrey.Tamarack1 \
-    --object-path /io/github/theronconrey/Tamarack1 \
-    --method org.freedesktop.DBus.Properties.Get io.github.theronconrey.Tamarack1.Manager Candidates \
-    | grep -qF "\"device\": \"$plugged\"" \
-    || fail "$plugged is not in Candidates"
+# Read Candidates as JSON: gdbus prints a string holding an apostrophe with
+# every double quote escaped, so grepping its output for JSON text misses.
+candidates=$(python3 - <<'PY'
+import gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+reply = bus.call_sync(
+    "io.github.theronconrey.Tamarack1", "/io/github/theronconrey/Tamarack1",
+    "org.freedesktop.DBus.Properties", "Get",
+    GLib.Variant("(ss)", ("io.github.theronconrey.Tamarack1.Manager", "Candidates")),
+    None, 0, 30_000, None)
+print(reply.unpack()[0])
+PY
+) || fail "Candidates can't be read"
+echo "$candidates" | python3 -c '
+import json, sys
+found = [c for c in json.load(sys.stdin) if c["device"] == sys.argv[1]]
+assert found and found[0]["verdict"] in ("suggest", "warn"), found
+' "$plugged" || { echo "$candidates" >&2; fail "$plugged is not in Candidates as a drive that may join"; }
 check_avc
