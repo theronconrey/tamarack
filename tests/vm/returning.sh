@@ -31,13 +31,19 @@ check_data
 
 # Plug it back in: the same drive, data and all.
 echo "- - -" > "/sys/class/scsi_host/host$host/scan"
-udevadm settle
+# sd probes the disk asynchronously after the scan returns, so the disk may
+# not exist yet when udev settles: look for it for up to a minute.
 back=""
-for dev in /sys/block/sd*; do
-    [ "$(cat "$dev/device/model" 2>/dev/null | tr -d ' ')" = "scsi_debug" ] || continue
-    path="/dev/$(basename "$dev")"
-    # The scsi_debug drive that isn't one of the two that stayed.
-    if [ "$path" != "${d[0]}" ] && [ "$path" != "${d[2]}" ]; then back=$path; fi
+for _ in $(seq 60); do
+    udevadm settle
+    for dev in /sys/block/sd*; do
+        [ "$(cat "$dev/device/model" 2>/dev/null | tr -d ' ')" = "scsi_debug" ] || continue
+        path="/dev/$(basename "$dev")"
+        # The scsi_debug drive that isn't one of the two that stayed.
+        if [ "$path" != "${d[0]}" ] && [ "$path" != "${d[2]}" ]; then back=$path; fi
+    done
+    [ -n "$back" ] && break
+    sleep 1
 done
 [ -n "$back" ] || { lsblk >&2; fail "the drive did not come back after the rescan"; }
 echo "the drive is back as $back"
