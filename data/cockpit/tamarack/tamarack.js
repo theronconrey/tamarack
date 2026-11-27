@@ -249,6 +249,21 @@ function drawDriveCards(cards, advice) {
     replace("tk-upgrade", ...parts);
 }
 
+function drawOtherDrives(rows) {
+    document.getElementById("tk-other-card").hidden = !rows.length;
+    const list = el("ul", "tk-files");
+    for (const r of rows) {
+        const item = el("li", "tk-file");
+        const name = el("span", "tk-file-name");
+        name.append(el("strong", "", r.size + " drive"), document.createTextNode(" · " + r.name));
+        name.title = r.device;
+        item.append(name, el("span", "tk-pill tk-tone-" + r.tone, r.stateText));
+        for (const line of r.lines) item.append(el("p", "tk-small tk-muted tk-file-note", line));
+        list.append(item);
+    }
+    replace("tk-other-drives", list);
+}
+
 function drawShareCards(cards) {
     if (!cards.length) {
         const empty = el("section", "tk-card");
@@ -743,6 +758,7 @@ function render() {
     drawCapacity(S.capacity(model));
     drawCare(S.care(model, now));
     drawDriveCards(S.driveCards(model), S.upgradeAdvice(model));
+    drawOtherDrives(S.otherDrives(model));
     drawShareCards(S.shareCards(model));
     drawSnapshots(S.snapshotSummary(model, now), S.snapshotRows(model, now, 50));
     drawActivity(S.activity(model, now));

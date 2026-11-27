@@ -686,3 +686,31 @@ def test_browse_and_restore_over_the_bus(bus: str, tmp_path: Path) -> None:
         assert name == "org.freedesktop.DBus.Error.AccessDenied"
     finally:
         h.stop()
+
+
+def test_a_plugged_in_drive_is_announced(bus: str, tmp_path: Path) -> None:
+    state = tmp_path / "state"
+    state.mkdir()
+    h = Harness(bus, state)
+    try:
+        h.engine_loop.context.invoke_full(
+            GLib.PRIORITY_DEFAULT, lambda: h.service.watch_drives() or False
+        )
+        h.wait(lambda: h.service._udisks_watch != 0)
+        h.fakes.drives["/dev/sdz"] = (8 * TB, "wwn:0x50000000000000ff")
+        fakes_bus = h.fake_loop.result
+        fakes_bus.emit_signal(
+            None,
+            "/org/freedesktop/UDisks2",
+            "org.freedesktop.DBus.ObjectManager",
+            "InterfacesAdded",
+            GLib.Variant("(oa{sa{sv}})", ("/org/freedesktop/UDisks2/block_devices/sdz", {})),
+        )
+        h.wait(lambda: any(name == "DriveAppeared" for _, name, _ in h.signals), timeout=10)
+        ((device, candidate),) = [a for _, n, a in h.signals if n == "DriveAppeared"]
+        assert device == "/dev/sdz"
+        assert json.loads(candidate)["verdict"] in ("suggest", "warn")
+        # The drives already there when the watch began are not announced.
+        assert all(a[0] == "/dev/sdz" for _, n, a in h.signals if n == "DriveAppeared")
+    finally:
+        h.stop()

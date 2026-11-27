@@ -54,6 +54,7 @@ function read(props) {
         shares: parse(props.Shares, []),
         hostName: props.HostName || "",
         snapshots: parse(props.Snapshots, []),
+        candidates: parse(props.Candidates, []),
     };
 }
 
@@ -112,6 +113,29 @@ function protectedText(tolerated) {
     return "If any one drive fails, every file stays readable and nothing is lost.";
 }
 
+// Drives that are connected but not in the pool, as the engine judged them.
+function otherDrives(model) {
+    return (model.candidates || []).filter(c => c.verdict !== "pool").map(c => {
+        const words = {
+            suggest: ["Ready to add", "ok", []],
+            warn: ["Can be added", "warning", c.warnings || []],
+            refuse: ["Can't be used", "neutral", (c.reasons || []).map(sentence)],
+        }[c.verdict] || ["Unknown", "neutral", []];
+        const serial = String(c.serial || "");
+        return {
+            device: c.device,
+            size: formatSize(c.size || 0),
+            name: [c.model, serial ? "serial …" + serial.slice(-4) : ""].filter(Boolean).join(", "),
+            verdict: c.verdict,
+            stateText: words[0],
+            tone: words[1],
+            lines: words[2],
+            usable: c.verdict === "suggest" || c.verdict === "warn",
+            bytes: c.size || 0,
+        };
+    });
+}
+
 // The banner: tone (ok, warning, danger, working, neutral), a title, one
 // sentence, and at most one action.
 function banner(model, job) {
@@ -154,14 +178,23 @@ function banner(model, job) {
     const rows = drives(model);
     const missing = rows.filter(d => d.state === "missing");
     const failing = rows.filter(d => d.state === "failing");
+    const fresh = otherDrives(model).filter(d => d.usable);
     if (model.health.status === "degraded") {
+        let next = missing.length === 1
+            ? "Replace it with a drive of " + missing[0].size + " or more."
+            : "Replace the failed drive.";
+        if (missing.length === 1) {
+            const needed = model.layout.drives.find(d => d.device === missing[0].device).size;
+            const spare = fresh.find(d => d.bytes >= needed);
+            if (spare) {
+                next = "A new " + spare.size + " drive is connected. To rebuild onto it, for now run: " +
+                    "tamarack engine rebuild " + missing[0].device + " " + spare.device + ".";
+            }
+        }
         return {
             tone: "danger",
             title: missing.length === 1 ? missing[0].label + " has failed" : "A drive has failed",
-            text: "Every file is still readable, but another failure now would lose data. " +
-                (missing.length === 1
-                    ? "Replace it with a drive of " + missing[0].size + " or more."
-                    : "Replace the failed drive."),
+            text: "Every file is still readable, but another failure now would lose data. " + next,
             action: { label: "Replace the drive", href: "#drives" },
         };
     }
@@ -193,6 +226,16 @@ function banner(model, job) {
                 (cap.fullness >= 0.95 ? "Add space now: " : "Add space soon: ") +
                 "put in another drive or replace a smaller one.",
             action: { label: "Ways to add space", href: "#drives" },
+        };
+    }
+    if (fresh.length) {
+        const d = fresh[0];
+        return {
+            tone: "neutral",
+            title: "A new " + d.size + " drive is ready",
+            text: "It isn't part of your pool yet. " + (d.lines.length ? d.lines[0] + ". " : "") +
+                "To add it, for now run: tamarack engine add " + d.device + ".",
+            action: { label: "See the drive", href: "#drives" },
         };
     }
     return {
@@ -603,7 +646,7 @@ const api = {
     splitClients, isWide, trustPreview, checkShare, shareRequest, changeError,
     SEC_SYS_NOTE, WIDE_NOTE,
     PERIODS, scheduleSentence, snapshotSummary, snapshotRows, checkSchedule, scheduleRequest,
-    breadcrumb, browseRows, restoredMessage,
+    breadcrumb, browseRows, restoredMessage, otherDrives,
 };
 if (typeof module !== "undefined" && module.exports) {
     module.exports = api;

@@ -146,4 +146,41 @@ gdbus call --system --dest io.github.theronconrey.Tamarack1 --object-path /io/gi
     --method io.github.theronconrey.Tamarack1.Manager.RemoveShare photos >/dev/null || fail "RemoveShare failed"
 grep -q "/photos " /etc/exports.d/tamarack.exports && fail "photos is still exported"
 [ -d /srv/tamarack/shares/photos ] || fail "stopping a share must keep its folder"
+# Hot-plug: a drive plugged in while the engine runs is announced on the
+# bus (DriveAppeared), and Candidates shows it as one that may join.
+monitor_log=/var/tmp/tamarack-monitor
+timeout 40 gdbus monitor --system --dest io.github.theronconrey.Tamarack1 > "$monitor_log" 2>&1 &
+monitor=$!
+sleep 2
+pool=("${DRIVES[@]}")
+make_file_drives 1024
+plugged=${DRIVES[0]}
+DRIVES=("${pool[@]}" "$plugged")  # cleanup wipes every drive this test made
+for _ in $(seq 30); do
+    grep -q "DriveAppeared ('$plugged'" "$monitor_log" && break
+    sleep 1
+done
+kill "$monitor" 2>/dev/null || :
+grep -q "DriveAppeared ('$plugged'" "$monitor_log" \
+    || { cat "$monitor_log" >&2; fail "plugging in $plugged was not announced"; }
+# Read Candidates as JSON: gdbus prints a string holding an apostrophe with
+# every double quote escaped, so grepping its output for JSON text misses.
+candidates=$(python3 - <<'PY'
+import gi
+gi.require_version("Gio", "2.0")
+from gi.repository import Gio, GLib
+bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+reply = bus.call_sync(
+    "io.github.theronconrey.Tamarack1", "/io/github/theronconrey/Tamarack1",
+    "org.freedesktop.DBus.Properties", "Get",
+    GLib.Variant("(ss)", ("io.github.theronconrey.Tamarack1.Manager", "Candidates")),
+    None, 0, 30_000, None)
+print(reply.unpack()[0])
+PY
+) || fail "Candidates can't be read"
+echo "$candidates" | python3 -c '
+import json, sys
+found = [c for c in json.load(sys.stdin) if c["device"] == sys.argv[1]]
+assert found and found[0]["verdict"] in ("suggest", "warn"), found
+' "$plugged" || { echo "$candidates" >&2; fail "$plugged is not in Candidates as a drive that may join"; }
 check_avc

@@ -129,6 +129,21 @@ after research on other hardware (project notes).
 Not yet: recording the OS drive at install (the bootc image), a list of
 drive-managed SMR models, and naming bays.
 
+### Drives coming and going
+
+The engine follows UDisks2's `InterfacesAdded` and `InterfacesRemoved`
+signals. A drive arrives as a burst of objects, so it waits 1.5 seconds
+after the last one, then classifies every drive again: `Candidates`
+changes, Health is checked at once (a pulled pool drive shows as missing
+straight away, not at the next minute's check), and each drive that is new
+and not in the pool is announced with the `DriveAppeared(device,
+candidate)` signal. Cockpit turns that into "A new 8 TB drive is ready"
+(or, with a drive missing, "rebuild onto it"). Nothing is written to a new
+drive until the owner reviews a plan for it.
+
+Next: a pool drive that comes back (re-seated, or late at boot) is re-added
+without asking, as a journaled job that erases nothing (decided Nov 24).
+
 ### Status (step 4)
 
 `tamarack.service` serves the Manager and Plan objects with GDBus from
