@@ -774,7 +774,12 @@ class Engine:
     # --- a pool drive that comes back ---------------------------------------------
 
     def _md_members(self, layer: int) -> set[str]:
-        """device-mapper names of the members md has in layer ``layer`` now."""
+        """device-mapper names of the working members md has in layer ``layer`` now.
+
+        A member md marked faulty is left out: when a drive is pulled, md
+        keeps it in the array as faulty (``dm-1[1](F)``) until it is removed,
+        and the drive is just as missing.
+        """
         link = os.path.join(self.root, "dev", "md", f"tk-l{layer}")
         md = os.path.basename(os.path.realpath(link))
         base = os.path.join(self.root, "sys", "block", md, "md")
@@ -784,6 +789,12 @@ class Engine:
         except OSError:
             return names
         for entry in entries:
+            try:
+                with open(os.path.join(base, entry, "state")) as f:
+                    if "faulty" in f.read().strip().split(","):
+                        continue
+            except OSError:
+                pass
             block = os.path.basename(os.path.realpath(os.path.join(base, entry, "block")))
             try:
                 with open(os.path.join(self.root, "sys", "block", block, "dm", "name")) as f:

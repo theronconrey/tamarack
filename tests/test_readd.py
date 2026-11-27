@@ -59,17 +59,24 @@ def test_nothing_to_readd_is_refused() -> None:
 # --- noticing the drive is back ---------------------------------------------------
 
 
-def degraded_without(root: Path, layer: int, members: list[str]) -> None:
-    """Layer ``layer`` degraded, md holding only the dm mappings in ``members``."""
+def degraded_without(
+    root: Path, layer: int, members: list[str], faulty: tuple[str, ...] = ()
+) -> None:
+    """Layer ``layer`` degraded, md holding the dm mappings in ``members``.
+
+    Those named in ``faulty`` are still in the array but marked faulty, as md
+    leaves a pulled drive's member until it is removed.
+    """
     md = f"md{127 - layer}"
     base = root / "sys" / "block" / md / "md"
     (base / "degraded").write_text("1\n")
-    for i, name in enumerate(members):
+    for i, name in enumerate([*members, *faulty]):
         dm = f"dm-{layer * 10 + i}"
         (root / "sys" / "block" / dm / "dm").mkdir(parents=True)
         (root / "sys" / "block" / dm / "dm" / "name").write_text(name + "\n")
         (base / f"dev-{dm}").mkdir()
         (base / f"dev-{dm}" / "block").symlink_to(root / "sys" / "block" / dm)
+        (base / f"dev-{dm}" / "state").write_text("faulty\n" if name in faulty else "in_sync\n")
 
 
 def classify_by_identity(e: Any, where: dict[str, str]) -> None:
@@ -85,7 +92,8 @@ def classify_by_identity(e: Any, where: dict[str, str]) -> None:
 def test_a_returning_drive_is_found_by_identity_and_readded(tmp_path: Path) -> None:
     e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb", "/dev/sdc"])
     root = Path(e.root)
-    degraded_without(root, 1, ["tk-d1-p2", "tk-d3-p2"])
+    # As md leaves it when a drive is pulled: its member still listed, faulty.
+    degraded_without(root, 1, ["tk-d1-p2", "tk-d3-p2"], faulty=("tk-d2-p2",))
     ids = {d: DRIVES[d][1] for d in ("/dev/sda", "/dev/sdb", "/dev/sdc")}
     # /dev/sdb came back as /dev/sde.
     classify_by_identity(
@@ -101,6 +109,14 @@ def test_a_returning_drive_is_found_by_identity_and_readded(tmp_path: Path) -> N
     assert plan["kind"] == "readd" and plan["erases"] == []
     assert e.layout is not None and e.layout.drives[1].device == "/dev/sde"
     assert ("mdadm", "/dev/md/tk-l1", "--add", "/dev/mapper/tk-d2-p2") in e.runner.calls
+
+
+def test_a_drive_whose_members_md_still_uses_is_not_readded(tmp_path: Path) -> None:
+    e = run_engine(tmp_path, ["/dev/sda", "/dev/sdb", "/dev/sdc"])
+    # Degraded because of another drive; /dev/sdb's member is working.
+    degraded_without(Path(e.root), 1, ["tk-d1-p2", "tk-d2-p2"])
+    classify_by_identity(e, {d: DRIVES[d][1] for d in ("/dev/sda", "/dev/sdb")})
+    assert e.returning_drive() is None
 
 
 def test_nothing_is_readded_while_the_drive_is_still_away(tmp_path: Path) -> None:
