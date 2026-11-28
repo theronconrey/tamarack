@@ -46,7 +46,7 @@ if [ "${TMT_REBOOT_COUNT:-0}" -eq 0 ]; then
     write_data
     grep -q '^tk-' /etc/integritytab || fail "no integrity devices in /etc/integritytab"
     install -d -m 0700 "$STATE"
-    echo "$START" > "$STATE/start"
+    echo "$AUDIT_START" > "$STATE/audit-start"
     ls /dev/md/ | grep '^tk-l' | sort > "$STATE/arrays"
     [ -s "$STATE/arrays" ] || fail "no /dev/md/tk-l* arrays"
     # Created with --homehost=any, so every host (and boot, before the
@@ -64,7 +64,8 @@ if [ "${TMT_REBOOT_COUNT:-0}" -eq 0 ]; then
 fi
 
 trap boot_exit EXIT
-START=$(cat "$STATE/start")
+AUDIT_LOG=/var/log/audit/audit.log
+AUDIT_START=$(cat "$STATE/audit-start")
 
 # Everything below must have happened at boot, with no help from the test.
 systemctl is-active --quiet "$EARLY_DRIVES" || fail "the test drives did not come back"

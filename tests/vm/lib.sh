@@ -185,7 +185,11 @@ start_engine() {
     auditctl -a always,exit -F arch=b64 -S all -F exe="$(readlink -f "$(command -v mdadm)")" \
         -F success=0 -k tamarack-md >&2 || echo "auditctl: could not add the mdadm rule" >&2
     systemctl restart tamarack-engine
-    START=$(date '+%m/%d/%Y %H:%M:%S')  # ausearch's format
+    # Where this test's audit records start: a byte offset into the log, not
+    # a time. ausearch -ts parses its date by locale (date +%x) and, with
+    # its errors hidden, matched nothing at all, so denials went unseen.
+    AUDIT_LOG=/var/log/audit/audit.log
+    AUDIT_START=$(stat -c %s "$AUDIT_LOG") || fail "cannot read $AUDIT_LOG"
     JOURNAL_START=$(date '+%Y-%m-%d %H:%M:%S')  # journalctl's
     local domain
     domain=$(ps -eo label,comm | grep -c '^system_u:system_r:tamarack_engine_t:s0 *tamarack-engine') || :
@@ -232,9 +236,21 @@ check_ppl() {
     done
 }
 
+# The audit records written since start_engine (all of the log if auditd
+# rotated it since).
+audit_since_start() {
+    local size
+    size=$(stat -c %s "$AUDIT_LOG") || fail "cannot read $AUDIT_LOG"
+    if [ "$size" -ge "$AUDIT_START" ]; then
+        tail -c +"$((AUDIT_START + 1))" "$AUDIT_LOG"
+    else
+        cat "$AUDIT_LOG"
+    fi
+}
+
 check_avc() {
     local denials
-    denials=$(ausearch -m AVC,USER_AVC -ts "$START" 2>/dev/null | grep denied \
+    denials=$(audit_since_start | grep -E '^type=(AVC|USER_AVC) ' | grep denied \
         | grep -Ev "$TRANSITION_NOISE" | grep -Ev "$FEDORA_POLICY_GAPS") || :
     if [ -n "$denials" ]; then
         echo "$denials" >&2
