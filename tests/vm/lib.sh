@@ -185,17 +185,6 @@ start_engine() {
     auditctl -a always,exit -F arch=b64 -S all -F exe="$(readlink -f "$(command -v mdadm)")" \
         -F success=0 -k tamarack-md >&2 || echo "auditctl: could not add the mdadm rule" >&2
     systemctl restart tamarack-engine
-    # auditd writes records out in batches (Fedora: flush =
-    # INCREMENTAL_ASYNC, freq = 50), so a marker or a denial can sit unwritten
-    # while check_avc reads the log. In these test VMs, write every record
-    # as it comes (flush = DATA), applied by reloading auditd's config.
-    if ! grep -Eq '^flush *= *DATA$' /etc/audit/auditd.conf; then
-        sed -i -E 's/^flush *=.*/flush = DATA/' /etc/audit/auditd.conf
-        grep -Eq '^flush *= *DATA$' /etc/audit/auditd.conf || echo "flush = DATA" >> /etc/audit/auditd.conf
-        auditctl --signal reload 2>/dev/null || pkill -HUP -x auditd \
-            || fail "cannot make auditd reload its configuration"
-        sleep 1
-    fi
     # Where this test's audit records start: a marker record, found by
     # check_avc across rotated logs too (auditing mdadm's failed calls fills
     # the log fast). Not a time: ausearch -ts parses its date by locale and,
@@ -259,12 +248,15 @@ audit_since_start() {
 }
 
 check_avc() {
-    local denials
-    audit_since_start | grep -qF "$AUDIT_MARK" || {
+    local records denials
+    # Read once, then search the copy: with pipefail, grep -q stopping at its
+    # first match would fail the pipeline through the reader's SIGPIPE.
+    records=$(audit_since_start) || fail "cannot read the audit log"
+    grep -qF "$AUDIT_MARK" <<< "$records" || {
         ls -l /var/log/audit/ >&2
         fail "check_avc does not see this test's audit records (no $AUDIT_MARK)"
     }
-    denials=$(audit_since_start | grep -E '^type=(AVC|USER_AVC) ' | grep denied \
+    denials=$(grep -E '^type=(AVC|USER_AVC) ' <<< "$records" | grep denied \
         | grep -Ev "$TRANSITION_NOISE" | grep -Ev "$FEDORA_POLICY_GAPS") || :
     if [ -n "$denials" ]; then
         echo "$denials" >&2
