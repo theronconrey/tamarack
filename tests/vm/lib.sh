@@ -190,6 +190,10 @@ start_engine() {
     # its errors hidden, matched nothing at all, so denials went unseen.
     AUDIT_LOG=/var/log/audit/audit.log
     AUDIT_START=$(stat -c %s "$AUDIT_LOG") || fail "cannot read $AUDIT_LOG"
+    # A record check_avc must find past that offset, so a check that reads
+    # nothing fails instead of passing.
+    AUDIT_MARK="tamarack-test-start-$$-$AUDIT_START"
+    auditctl -m "$AUDIT_MARK" || fail "auditctl cannot write a marker record"
     JOURNAL_START=$(date '+%Y-%m-%d %H:%M:%S')  # journalctl's
     local domain
     domain=$(ps -eo label,comm | grep -c '^system_u:system_r:tamarack_engine_t:s0 *tamarack-engine') || :
@@ -250,6 +254,8 @@ audit_since_start() {
 
 check_avc() {
     local denials
+    audit_since_start | grep -qF "$AUDIT_MARK" \
+        || fail "check_avc does not see this test's audit records (no $AUDIT_MARK)"
     denials=$(audit_since_start | grep -E '^type=(AVC|USER_AVC) ' | grep denied \
         | grep -Ev "$TRANSITION_NOISE" | grep -Ev "$FEDORA_POLICY_GAPS") || :
     if [ -n "$denials" ]; then
