@@ -177,6 +177,18 @@ optional_policy(`
 	allow snapperd_t tamarack_data_t:dir { ioctl relabelfrom relabelto };
 ')
 
+# snapperd labels shares/.snapshots and each snapshot's folder and info.xml
+# snapperd_data_t. The engine lists them and reads info.xml (Snapshots,
+# BrowseSnapshot, RestoreFromSnapshot); the files inside a snapshot keep
+# their own label (tamarack_data_t). Read only: snapper makes and prunes.
+optional_policy(`
+	gen_require(`
+		type snapperd_data_t;
+	')
+	list_dirs_pattern(tamarack_engine_t, snapperd_data_t, snapperd_data_t)
+	read_files_pattern(tamarack_engine_t, snapperd_data_t, snapperd_data_t)
+')
+
 # snapper is a D-Bus client of snapperd, which makes and prunes snapshots.
 optional_policy(`
 	gen_require(`

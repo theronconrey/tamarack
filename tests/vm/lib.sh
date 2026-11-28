@@ -185,7 +185,12 @@ start_engine() {
     auditctl -a always,exit -F arch=b64 -S all -F exe="$(readlink -f "$(command -v mdadm)")" \
         -F success=0 -k tamarack-md >&2 || echo "auditctl: could not add the mdadm rule" >&2
     systemctl restart tamarack-engine
-    START=$(date '+%m/%d/%Y %H:%M:%S')  # ausearch's format
+    # Where this test's audit records start: a marker record, found by
+    # check_avc across rotated logs too (auditing mdadm's failed calls fills
+    # the log fast). Not a time: ausearch -ts parses its date by locale and,
+    # with its errors hidden, matched nothing at all, so denials went unseen.
+    AUDIT_MARK="tamarack-test-start-$$-$(date +%s%N)"
+    auditctl -m "$AUDIT_MARK" || fail "auditctl cannot write a marker record"
     JOURNAL_START=$(date '+%Y-%m-%d %H:%M:%S')  # journalctl's
     local domain
     domain=$(ps -eo label,comm | grep -c '^system_u:system_r:tamarack_engine_t:s0 *tamarack-engine') || :
@@ -232,9 +237,26 @@ check_ppl() {
     done
 }
 
+# The audit records written since start_engine's marker, oldest rotated
+# log first (audit.log.N ... audit.log.1, then audit.log). Empty if the
+# marker is gone, which check_avc treats as a failure, never as clean.
+audit_since_start() {
+    local logs
+    logs=$(ls /var/log/audit/audit.log.* 2>/dev/null | sort -t. -k3 -rn) || :
+    # shellcheck disable=SC2086 # file names without spaces, one per word
+    cat $logs /var/log/audit/audit.log | sed -n "/$AUDIT_MARK/,\$p"
+}
+
 check_avc() {
-    local denials
-    denials=$(ausearch -m AVC,USER_AVC -ts "$START" 2>/dev/null | grep denied \
+    local records denials
+    # Read once, then search the copy: with pipefail, grep -q stopping at its
+    # first match would fail the pipeline through the reader's SIGPIPE.
+    records=$(audit_since_start) || fail "cannot read the audit log"
+    grep -qF "$AUDIT_MARK" <<< "$records" || {
+        ls -l /var/log/audit/ >&2
+        fail "check_avc does not see this test's audit records (no $AUDIT_MARK)"
+    }
+    denials=$(grep -E '^type=(AVC|USER_AVC) ' <<< "$records" | grep denied \
         | grep -Ev "$TRANSITION_NOISE" | grep -Ev "$FEDORA_POLICY_GAPS") || :
     if [ -n "$denials" ]; then
         echo "$denials" >&2
