@@ -185,14 +185,11 @@ start_engine() {
     auditctl -a always,exit -F arch=b64 -S all -F exe="$(readlink -f "$(command -v mdadm)")" \
         -F success=0 -k tamarack-md >&2 || echo "auditctl: could not add the mdadm rule" >&2
     systemctl restart tamarack-engine
-    # Where this test's audit records start: a byte offset into the log, not
-    # a time. ausearch -ts parses its date by locale (date +%x) and, with
-    # its errors hidden, matched nothing at all, so denials went unseen.
-    AUDIT_LOG=/var/log/audit/audit.log
-    AUDIT_START=$(stat -c %s "$AUDIT_LOG") || fail "cannot read $AUDIT_LOG"
-    # A record check_avc must find past that offset, so a check that reads
-    # nothing fails instead of passing.
-    AUDIT_MARK="tamarack-test-start-$$-$AUDIT_START"
+    # Where this test's audit records start: a marker record, found by
+    # check_avc across rotated logs too (auditing mdadm's failed calls fills
+    # the log fast). Not a time: ausearch -ts parses its date by locale and,
+    # with its errors hidden, matched nothing at all, so denials went unseen.
+    AUDIT_MARK="tamarack-test-start-$$-$(date +%s%N)"
     auditctl -m "$AUDIT_MARK" || fail "auditctl cannot write a marker record"
     JOURNAL_START=$(date '+%Y-%m-%d %H:%M:%S')  # journalctl's
     local domain
@@ -240,22 +237,22 @@ check_ppl() {
     done
 }
 
-# The audit records written since start_engine (all of the log if auditd
-# rotated it since).
+# The audit records written since start_engine's marker, oldest rotated
+# log first (audit.log.N ... audit.log.1, then audit.log). Empty if the
+# marker is gone, which check_avc treats as a failure, never as clean.
 audit_since_start() {
-    local size
-    size=$(stat -c %s "$AUDIT_LOG") || fail "cannot read $AUDIT_LOG"
-    if [ "$size" -ge "$AUDIT_START" ]; then
-        tail -c +"$((AUDIT_START + 1))" "$AUDIT_LOG"
-    else
-        cat "$AUDIT_LOG"
-    fi
+    local logs
+    logs=$(ls /var/log/audit/audit.log.* 2>/dev/null | sort -t. -k3 -rn) || :
+    # shellcheck disable=SC2086 # file names without spaces, one per word
+    cat $logs /var/log/audit/audit.log | sed -n "/$AUDIT_MARK/,\$p"
 }
 
 check_avc() {
     local denials
-    audit_since_start | grep -qF "$AUDIT_MARK" \
-        || fail "check_avc does not see this test's audit records (no $AUDIT_MARK)"
+    audit_since_start | grep -qF "$AUDIT_MARK" || {
+        ls -l /var/log/audit/ >&2
+        fail "check_avc does not see this test's audit records (no $AUDIT_MARK)"
+    }
     denials=$(audit_since_start | grep -E '^type=(AVC|USER_AVC) ' | grep denied \
         | grep -Ev "$TRANSITION_NOISE" | grep -Ev "$FEDORA_POLICY_GAPS") || :
     if [ -n "$denials" ]; then
