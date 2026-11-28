@@ -587,6 +587,7 @@ const JOB_TITLES = {
     add: "Added a drive",
     replace: "Replaced a drive",
     rebuild: "Rebuilt onto a new drive",
+    readd: "Put a returning drive back",
 };
 
 const RESULTS = {

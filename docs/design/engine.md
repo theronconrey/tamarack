@@ -141,8 +141,20 @@ candidate)` signal. Cockpit turns that into "A new 8 TB drive is ready"
 (or, with a drive missing, "rebuild onto it"). Nothing is written to a new
 drive until the owner reviews a plan for it.
 
-Next: a pool drive that comes back (re-seated, or late at boot) is re-added
-without asking, as a journaled job that erases nothing (decided Nov 24).
+**A pool drive that comes back** (re-seated, a loose cable, late at boot)
+is put back without asking, as a journaled job that erases nothing
+(decided Nov 24, 2026; `tamarack.readd`). After drives settle, and once at
+start, the engine looks for a pool drive that is attached again (found by
+identity, so a new `/dev` name doesn't matter) while md lacks its members in
+degraded layers (from `/sys/block/mdN/md/dev-*`). The job clears the stale
+md members and integrity mappings, opens the drive's mappings again (never
+formats), `mdadm --add`s each member back and waits: without a bitmap (PPL)
+md copies that member's part of every stripe from the other drives, so
+nothing the drive held is trusted until rewritten. A new path updates the
+layout and the tk-meta records. Only with execution on, no other job, and
+not on battery; the drive's identity is checked before every step as in any
+job. The VM test `returning` pulls a drive from the running pool and finds
+it again with a SCSI rescan.
 
 ### Status (step 4)
 
